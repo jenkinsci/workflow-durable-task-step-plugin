@@ -24,14 +24,18 @@
   ~ THE SOFTWARE.
   -->
 
-<j:jelly xmlns:j="jelly:core" xmlns:t="/lib/hudson" xmlns:l="/lib/layout">
+<j:jelly xmlns:j="jelly:core" xmlns:t="/lib/hudson" xmlns:l="/lib/layout" xmlns:st="jelly:stapler">
     <td class="pane">
         <div style="white-space: normal">
             <j:set var="r" value="${it.parent.runForDisplay()}"/>
             <j:set var="rAuth" value="${r != null and h.hasPermission(r.parent, r.parent.READ) ? r : null}"/>
             <j:choose>
                 <j:when test="${rAuth != null}">
-                    part of <a href="${rootURL}/${r.parent.url}"><l:breakable value="${r.parent.fullDisplayName}"/></a>
+                    <a href="${rootURL}/${r.parent.url}"><l:breakable value="${r.parent.fullDisplayName}"/></a>
+                    <j:set var="label" value="${it.parent.enclosingLabel}"/>
+                    <j:if test="${label != null}">
+                        <st:nbsp/>(${label})
+                    </j:if>
                     <t:buildProgressBar build="${it.parent}" executor="${executor}"/>
                 </j:when>
                 <j:otherwise>

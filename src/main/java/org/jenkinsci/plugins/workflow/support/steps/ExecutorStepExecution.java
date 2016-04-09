@@ -46,13 +46,16 @@ import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
+import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graph.FlowNodeSerialWalker;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -327,6 +330,36 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public String getFullDisplayName() {
             return getDisplayName();
+        }
+
+        @Restricted(NoExternalUse.class) // for Jelly
+        public @CheckForNull String getEnclosingLabel() throws Exception {
+            FlowNode executorStepNode = context.get(FlowNode.class);
+            if (executorStepNode != null) {
+                for (StepExecution exec : executorStepNode.getExecution().getCurrentExecutions(true).get(1, TimeUnit.MINUTES)) {
+                    FlowNode runningNode = exec.getContext().get(FlowNode.class);
+                    if (runningNode != null) {
+                        // See if this step is inside our node {} block, and track the associated label.
+                        boolean match = false;
+                        String label = null;
+                        for (FlowNode n : new FlowNodeSerialWalker(runningNode)) {
+                            if (label == null) {
+                                LabelAction a = n.getAction(LabelAction.class);
+                                if (a != null) {
+                                    label = a.getDisplayName();
+                                }
+                            }
+                            if (n.equals(executorStepNode)) {
+                                match = true;
+                            }
+                        }
+                        if (match) {
+                            return label;
+                        }
+                    }
+                }
+            }
+            return null;
         }
 
         @Override public long getEstimatedDuration() {

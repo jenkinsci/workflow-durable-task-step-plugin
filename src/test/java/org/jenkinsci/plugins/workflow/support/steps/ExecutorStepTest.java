@@ -25,10 +25,12 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.model.Computer;
+import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
+import hudson.model.queue.SubTask;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
@@ -418,6 +420,30 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}"));
                 story.j.assertLogContains("ran node block #49", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+            }
+        });
+    }
+
+    @Issue("JENKINS-26132")
+    @Test public void enclosingLabel() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                story.j.jenkins.setNumExecutors(1);
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition("stage 'one'; node {semaphore 'one'; stage 'two'; semaphore 'two'}"));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("one/1", b);
+                List<Executor> executors = story.j.jenkins.toComputer().getExecutors();
+                assertEquals(1, executors.size());
+                SubTask task = executors.get(0).getCurrentExecutable().getParent();
+                assertEquals(ExecutorStepExecution.PlaceholderTask.class, task.getClass());
+                ExecutorStepExecution.PlaceholderTask ptask = (ExecutorStepExecution.PlaceholderTask) task;
+                assertEquals("one", ptask.getEnclosingLabel());
+                SemaphoreStep.success("one/1", null);
+                SemaphoreStep.waitForStart("two/1", b);
+                assertEquals("two", ptask.getEnclosingLabel());
+                SemaphoreStep.success("two/1", null);
+                story.j.waitForCompletion(b);
             }
         });
     }
