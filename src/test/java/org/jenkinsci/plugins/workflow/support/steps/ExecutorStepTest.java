@@ -429,8 +429,10 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 story.j.jenkins.setNumExecutors(1);
+                WorkflowJob ds = story.j.jenkins.createProject(WorkflowJob.class, "ds");
+                ds.setDefinition(new CpsFlowDefinition("semaphore 'ds'", true));
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("stage 'one'; node {semaphore 'one'; stage 'two'; semaphore 'two'}"));
+                p.setDefinition(new CpsFlowDefinition("stage 'one'; node {semaphore 'one'; stage 'two'; semaphore 'two'; build 'ds'; semaphore 'two-b'}"));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
                 List<Executor> executors = story.j.jenkins.toComputer().getExecutors();
@@ -443,6 +445,12 @@ public class ExecutorStepTest {
                 SemaphoreStep.waitForStart("two/1", b);
                 assertEquals("two", ptask.getEnclosingLabel());
                 SemaphoreStep.success("two/1", null);
+                SemaphoreStep.waitForStart("ds/1", null);
+                assertEquals(org.jenkinsci.plugins.workflow.support.steps.build.Messages.BuildTriggerStepExecution_building_("ds"), ptask.getEnclosingLabel());
+                SemaphoreStep.success("ds/1", null);
+                SemaphoreStep.waitForStart("two-b/1", null);
+                assertEquals("two", ptask.getEnclosingLabel());
+                SemaphoreStep.success("two-b/1", null);
                 story.j.waitForCompletion(b);
             }
         });

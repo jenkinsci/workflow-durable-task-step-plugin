@@ -46,7 +46,6 @@ import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
-import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
@@ -342,12 +341,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         // See if this step is inside our node {} block, and track the associated label.
                         boolean match = false;
                         String label = null;
-                        for (FlowNode n : new FlowNodeSerialWalker(runningNode)) {
+                        FlowNodeSerialWalker.EnhancedIterator it = new FlowNodeSerialWalker(runningNode).iterator();
+                        while (it.hasNext()) {
+                            FlowNode n = it.next();
                             if (label == null) {
-                                LabelAction a = n.getAction(LabelAction.class);
-                                if (a != null) {
-                                    label = a.getDisplayName();
-                                }
+                                label = it.currentLabel();
                             }
                             if (n.equals(executorStepNode)) {
                                 match = true;
