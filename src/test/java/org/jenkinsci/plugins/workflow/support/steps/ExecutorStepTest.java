@@ -441,6 +441,7 @@ public class ExecutorStepTest {
                 assertEquals(ExecutorStepExecution.PlaceholderTask.class, task.getClass());
                 ExecutorStepExecution.PlaceholderTask ptask = (ExecutorStepExecution.PlaceholderTask) task;
                 assertEquals("one", ptask.getEnclosingLabel());
+                assertEquals("one", ptask.getEnclosingLabel());
                 SemaphoreStep.success("one/1", null);
                 SemaphoreStep.waitForStart("two/1", b);
                 assertEquals("two", ptask.getEnclosingLabel());
@@ -449,6 +450,7 @@ public class ExecutorStepTest {
                 assertEquals(org.jenkinsci.plugins.workflow.support.steps.build.Messages.BuildTriggerStepExecution_building_("ds"), ptask.getEnclosingLabel());
                 SemaphoreStep.success("ds/1", null);
                 SemaphoreStep.waitForStart("two-b/1", null);
+                assertEquals("two", ptask.getEnclosingLabel());
                 assertEquals("two", ptask.getEnclosingLabel());
                 SemaphoreStep.success("two-b/1", null);
                 story.j.waitForCompletion(b);

@@ -30,6 +30,7 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -330,26 +331,47 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return getDisplayName();
         }
 
+        /** hash code of list of heads */
+        private transient int lastCheckedHashCode;
+        private transient String lastEnclosingLabel;
         @Restricted(NoExternalUse.class) // for Jelly
         public @CheckForNull String getEnclosingLabel() throws Exception {
             FlowNode executorStepNode = context.get(FlowNode.class);
-            if (executorStepNode != null) {
-                for (FlowNode runningNode : executorStepNode.getExecution().getCurrentHeads()) {
-                    // See if this step is inside our node {} block, and track the associated label.
-                    boolean match = false;
-                    String label = null;
-                    FlowNodeSerialWalker.EnhancedIterator it = new FlowNodeSerialWalker(runningNode).iterator();
-                    while (it.hasNext()) {
-                        FlowNode n = it.next();
-                        if (label == null) {
-                            label = it.currentLabel();
-                        }
-                        if (n.equals(executorStepNode)) {
-                            match = true;
+            if (executorStepNode == null) {
+                return null;
+            }
+            List<FlowNode> heads = executorStepNode.getExecution().getCurrentHeads();
+            int headsHash = heads.hashCode(); // deterministic based on IDs of those heads
+            if (headsHash == lastCheckedHashCode) {
+                return lastEnclosingLabel;
+            } else {
+                lastCheckedHashCode = headsHash;
+                return lastEnclosingLabel = computeEnclosingLabel(executorStepNode, heads);
+            }
+        }
+        private String computeEnclosingLabel(FlowNode executorStepNode, List<FlowNode> heads) {
+            for (FlowNode runningNode : heads) {
+                // See if this step is inside our node {} block, and track the associated label.
+                boolean match = false;
+                String label = null;
+                FlowNodeSerialWalker.EnhancedIterator it = new FlowNodeSerialWalker(runningNode).iterator();
+                int count = 0;
+                while (it.hasNext()) {
+                    FlowNode n = it.next();
+                    if (label == null) {
+                        label = it.currentLabel();
+                        if (match && label != null) {
+                            return label;
                         }
                     }
-                    if (match) {
-                        return label;
+                    if (n.equals(executorStepNode)) {
+                        if (label != null) {
+                            return label;
+                        }
+                        match = true;
+                    }
+                    if (count++ > 100) {
+                        break; // not important enough to bother
                     }
                 }
             }
