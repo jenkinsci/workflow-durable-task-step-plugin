@@ -54,7 +54,6 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
-import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -335,25 +334,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull String getEnclosingLabel() throws Exception {
             FlowNode executorStepNode = context.get(FlowNode.class);
             if (executorStepNode != null) {
-                for (StepExecution exec : executorStepNode.getExecution().getCurrentExecutions(true).get(1, TimeUnit.MINUTES)) {
-                    FlowNode runningNode = exec.getContext().get(FlowNode.class);
-                    if (runningNode != null) {
-                        // See if this step is inside our node {} block, and track the associated label.
-                        boolean match = false;
-                        String label = null;
-                        FlowNodeSerialWalker.EnhancedIterator it = new FlowNodeSerialWalker(runningNode).iterator();
-                        while (it.hasNext()) {
-                            FlowNode n = it.next();
-                            if (label == null) {
-                                label = it.currentLabel();
-                            }
-                            if (n.equals(executorStepNode)) {
-                                match = true;
-                            }
+                for (FlowNode runningNode : executorStepNode.getExecution().getCurrentHeads()) {
+                    // See if this step is inside our node {} block, and track the associated label.
+                    boolean match = false;
+                    String label = null;
+                    FlowNodeSerialWalker.EnhancedIterator it = new FlowNodeSerialWalker(runningNode).iterator();
+                    while (it.hasNext()) {
+                        FlowNode n = it.next();
+                        if (label == null) {
+                            label = it.currentLabel();
                         }
-                        if (match) {
-                            return label;
+                        if (n.equals(executorStepNode)) {
+                            match = true;
                         }
+                    }
+                    if (match) {
+                        return label;
                     }
                 }
             }
