@@ -497,7 +497,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
-                                .withDisplayName(null)
                                 .withCallback(new Callback(cookie, lease))
                                 .start();
                         LOGGER.log(FINE, "started {0}", cookie);
