@@ -351,12 +351,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return cookie != null; // in which case this is after a restart and we still claim the executor
         }
 
-        private static void finish(@CheckForNull String cookie) {
+        private static void finish(@CheckForNull final String cookie) {
             if (cookie == null) {
                 return;
             }
             synchronized (runningTasks) {
-                RunningTask runningTask = runningTasks.remove(cookie);
+                final RunningTask runningTask = runningTasks.remove(cookie);
                 if (runningTask == null) {
                     LOGGER.log(FINE, "no running task corresponds to {0}", cookie);
                     return;
@@ -370,17 +370,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 Timer.get().submit(new Runnable() { // JENKINS-31614
                     @Override public void run() {
                         execution.completed(null);
+                        try {
+                            runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
+                        } catch (ChannelClosedException x) {
+                            // fine, Jenkins was shutting down
+                        } catch (RequestAbortedException x) {
+                            // slave was exiting; too late to kill subprocesses
+                        } catch (Exception x) {
+                            LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
+                        }
                     }
                 });
-                try {
-                    runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
-                } catch (ChannelClosedException x) {
-                    // fine, Jenkins was shutting down
-                } catch (RequestAbortedException x) {
-                    // slave was exiting; too late to kill subprocesses
-                } catch (Exception x) {
-                    LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
-                }
             }
         }
 
