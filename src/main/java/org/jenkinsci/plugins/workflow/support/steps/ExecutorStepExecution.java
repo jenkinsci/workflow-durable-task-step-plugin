@@ -61,7 +61,7 @@ import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
-    @Inject(optional=true) private transient ExecutorStep step;
+    @Inject(optional=true) private ExecutorStep step;
     @StepContextParameter private transient TaskListener listener;
     @StepContextParameter private transient Run<?,?> run;
     // Here just for requiredContext; could perhaps be passed to the PlaceholderTask constructor:
@@ -132,6 +132,36 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         // TODO also would like to listen for our queue item being canceled directly (Queue.cancel(Item)) and interrupt automatically,
         // but ScheduleResult.getCreateItem().getFuture().getStartCondition() is not a ListenableFuture so we cannot wait for it to be cancelled without consuming a thread,
         // and Item.cancel(Queue) is private and cannot be overridden; the only workaround for now is to have a custom QueueListener
+    }
+
+    @Override public void onResume() {
+        super.onResume();
+        // See if we are still running, or scheduled to run. Cf. stop logic above.
+        for (Queue.Item item : Queue.getInstance().getItems()) {
+            if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
+                return;
+            }
+        }
+        Jenkins j = Jenkins.getInstance();
+        if (j != null) {
+            COMPUTERS: for (Computer c : j.getComputers()) {
+                for (Executor e : c.getExecutors()) {
+                    Queue.Executable exec = e.getCurrentExecutable();
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
+                        return;
+                    }
+                }
+            }
+        }
+        if (step == null) {
+            return; // compatibility: used to be transient
+        }
+        listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281); rescheduling");
+        try {
+            start();
+        } catch (Exception x) {
+            getContext().onFailure(x);
+        }
     }
 
     /** Transient handle of a running executor task. */
