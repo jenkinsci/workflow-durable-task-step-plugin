@@ -139,6 +139,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         // See if we are still running, or scheduled to run. Cf. stop logic above.
         for (Queue.Item item : Queue.getInstance().getItems()) {
             if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
+                LOGGER.log(FINE, "Queue item for node block in {0} is still waiting after reload", run);
                 return;
             }
         }
@@ -148,13 +149,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 for (Executor e : c.getExecutors()) {
                     Queue.Executable exec = e.getCurrentExecutable();
                     if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
+                        LOGGER.log(FINE, "Node block in {0} is running on {1} after reload", new Object[] {run, c.getName()});
                         return;
                     }
                 }
             }
         }
-        if (step == null) {
-            return; // compatibility: used to be transient
+        if (step == null) { // compatibility: used to be transient
+            listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281), but cannot reschedule");
+            return;
         }
         listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281); rescheduling");
         try {
