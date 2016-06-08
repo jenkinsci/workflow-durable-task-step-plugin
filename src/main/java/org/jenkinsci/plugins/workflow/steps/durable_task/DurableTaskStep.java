@@ -29,25 +29,23 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.model.Computer;
 import hudson.model.TaskListener;
-import jenkins.model.Jenkins;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.annotation.CheckForNull;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
+import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
-
-import javax.annotation.CheckForNull;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Runs an durable task on a slave, such as a shell script.
@@ -86,15 +84,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         private String remote;
 
         @Override public boolean start() throws Exception {
-            for (Computer c : Jenkins.getActiveInstance().getComputers()) {
-                if (c.getChannel() == ws.getChannel()) {
-                    node = c.getName();
-                    break;
-                }
-            }
-            if (node == null) {
-                throw new IllegalStateException("no known node for " + ws);
-            }
+            node = FilePathUtils.getNodeName(ws);
             controller = step.task().launch(env, ws, launcher, listener);
             this.remote = ws.getRemote();
             setupTimer();
@@ -103,21 +93,11 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
 
         private @CheckForNull FilePath getWorkspace() throws AbortException {
             if (ws == null) {
-                Jenkins j = Jenkins.getInstance();
-                if (j == null) {
-                    LOGGER.fine("Jenkins is not running");
+                ws = FilePathUtils.find(node, remote);
+                if (ws == null) {
+                    LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
-                Computer c = j.getComputer(node);
-                if (c == null) {
-                    LOGGER.log(Level.FINE, "no such computer {0}", node);
-                    return null;
-                }
-                if (c.isOffline()) {
-                    LOGGER.log(Level.FINE, "{0} is offline", node);
-                    return null;
-                }
-                ws = new FilePath(c.getChannel(), remote);
             }
             boolean directory;
             try {
