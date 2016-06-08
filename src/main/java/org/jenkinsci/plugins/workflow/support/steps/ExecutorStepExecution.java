@@ -2,7 +2,9 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import com.google.inject.Inject;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.AbortException;
 import hudson.EnvVars;
+import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.Computer;
@@ -17,6 +19,7 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.model.queue.CauseOfBlockage;
+import hudson.model.queue.QueueListener;
 import hudson.model.queue.SubTask;
 import hudson.remoting.ChannelClosedException;
 import hudson.remoting.RequestAbortedException;
@@ -53,6 +56,7 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
+import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -165,6 +169,18 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         } catch (Exception x) {
             getContext().onFailure(x);
         }
+    }
+
+    @Extension public static class CancelledItemListener extends QueueListener {
+
+        @Override public void onLeft(Queue.LeftItem li) {
+            if (li.isCancelled()) {
+                if (li.task instanceof PlaceholderTask) {
+                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                }
+            }
+        }
+
     }
 
     /** Transient handle of a running executor task. */

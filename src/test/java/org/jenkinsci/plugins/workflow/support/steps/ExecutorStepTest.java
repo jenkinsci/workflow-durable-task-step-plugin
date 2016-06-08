@@ -27,6 +27,7 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
@@ -59,6 +60,7 @@ import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
+import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
 import static org.junit.Assert.assertEquals;
@@ -398,15 +400,20 @@ public class ExecutorStepTest {
                         assertEquals(p, items[0].task.getOwnerTask());
                     }
                 });
-                /* TODO uncomment when on 1.639+, or 1.625.3 if JENKINS-31649 is backported:
                 ACL.impersonate(User.get("devel").impersonate(), new Runnable() {
                     @Override public void run() {
                         Queue.Item[] items = Queue.getInstance().getItems();
                         assertEquals(0, items.length); // fails in 1.609.2
                     }
                 });
-                */
                 // TODO this would be a good time to add a third user with READ but no CANCEL permission and check behavior
+                // Also try canceling the task and verify that the step aborts promptly:
+                Queue.Item[] items = Queue.getInstance().getItems();
+                assertEquals(1, items.length);
+                assertEquals(p, items[0].task.getOwnerTask());
+                assertTrue(Queue.getInstance().cancel(items[0]));
+                story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
+                story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
             }
         });
     }
