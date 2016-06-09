@@ -2,7 +2,9 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import com.google.inject.Inject;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.AbortException;
 import hudson.EnvVars;
+import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.Computer;
@@ -17,6 +19,7 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.model.queue.CauseOfBlockage;
+import hudson.model.queue.QueueListener;
 import hudson.model.queue.SubTask;
 import hudson.remoting.ChannelClosedException;
 import hudson.remoting.RequestAbortedException;
@@ -53,6 +56,7 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
+import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -61,7 +65,7 @@ import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
-    @Inject(optional=true) private transient ExecutorStep step;
+    @Inject(optional=true) private ExecutorStep step;
     @StepContextParameter private transient TaskListener listener;
     @StepContextParameter private transient Run<?,?> run;
     // Here just for requiredContext; could perhaps be passed to the PlaceholderTask constructor:
@@ -132,6 +136,51 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         // TODO also would like to listen for our queue item being canceled directly (Queue.cancel(Item)) and interrupt automatically,
         // but ScheduleResult.getCreateItem().getFuture().getStartCondition() is not a ListenableFuture so we cannot wait for it to be cancelled without consuming a thread,
         // and Item.cancel(Queue) is private and cannot be overridden; the only workaround for now is to have a custom QueueListener
+    }
+
+    @Override public void onResume() {
+        super.onResume();
+        // See if we are still running, or scheduled to run. Cf. stop logic above.
+        for (Queue.Item item : Queue.getInstance().getItems()) {
+            if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
+                LOGGER.log(FINE, "Queue item for node block in {0} is still waiting after reload", run);
+                return;
+            }
+        }
+        Jenkins j = Jenkins.getInstance();
+        if (j != null) {
+            COMPUTERS: for (Computer c : j.getComputers()) {
+                for (Executor e : c.getExecutors()) {
+                    Queue.Executable exec = e.getCurrentExecutable();
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
+                        LOGGER.log(FINE, "Node block in {0} is running on {1} after reload", new Object[] {run, c.getName()});
+                        return;
+                    }
+                }
+            }
+        }
+        if (step == null) { // compatibility: used to be transient
+            listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281), but cannot reschedule");
+            return;
+        }
+        listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281); rescheduling");
+        try {
+            start();
+        } catch (Exception x) {
+            getContext().onFailure(x);
+        }
+    }
+
+    @Extension public static class CancelledItemListener extends QueueListener {
+
+        @Override public void onLeft(Queue.LeftItem li) {
+            if (li.isCancelled()) {
+                if (li.task instanceof PlaceholderTask) {
+                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                }
+            }
+        }
+
     }
 
     /** Transient handle of a running executor task. */
