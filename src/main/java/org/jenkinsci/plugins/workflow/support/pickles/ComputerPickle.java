@@ -29,6 +29,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import hudson.Extension;
 import hudson.model.Computer;
 import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 
 /**
  * Reference to {@link Computer}
@@ -43,7 +44,7 @@ public class ComputerPickle extends Pickle {
     }
 
     @Override
-    public ListenableFuture<Computer> rehydrate() {
+    public ListenableFuture<Computer> rehydrate(FlowExecutionOwner owner) {
         return new TryRepeatedly<Computer>(1) {
             @Override
             protected Computer tryResolve() {

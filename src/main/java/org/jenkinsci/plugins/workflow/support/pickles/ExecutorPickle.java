@@ -31,9 +31,12 @@ import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
 import hudson.model.Queue;
+import hudson.model.TaskListener;
+import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
 
 import java.util.concurrent.Future;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
@@ -60,19 +63,26 @@ public class ExecutorPickle extends Pickle {
         }
     }
 
-    @Override public ListenableFuture<Executor> rehydrate() {
+    @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
-            Future<Queue.Executable> future;
+            long itemID;
             @Override
             protected Executor tryResolve() throws Exception {
-                if (future == null) {
-                    Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
+                Queue.Item item;
+                if (itemID == 0) {
+                    item = Queue.getInstance().schedule2(task, 0).getItem();
                     if (item == null) {
                         // TODO should also report when !ScheduleResult.created, since that is arguably an error
                         throw new IllegalStateException("queue refused " + task);
                     }
-                    future = item.getFuture().getStartCondition();
+                    itemID = item.getId();
+                } else {
+                    item = Queue.getInstance().getItem(itemID);
+                    if (item == null) {
+                        throw new IllegalStateException("queue lost item #" + itemID);
+                    }
                 }
+                Future<Queue.Executable> future = item.getFuture().getStartCondition();
 
                 if (!future.isDone()) {
                     return null;
@@ -87,6 +97,23 @@ public class ExecutorPickle extends Pickle {
                 // TODO this could happen as a race condition if the executable takes <1s to run; how could that be prevented?
                 // Or can we schedule a placeholder Task whose Executable does nothing but return Executor.currentExecutor and then end?
                 throw new IllegalStateException(exec + " was scheduled but no executor claimed it");
+            }
+            @Override protected FlowExecutionOwner getOwner() {
+                return owner;
+            }
+            @Override protected void printWaitingMessage(TaskListener listener) {
+                Queue.Item item = Queue.getInstance().getItem(itemID);
+                if (item == null) { // ???
+                    listener.getLogger().println("Waiting to start " + task.getFullDisplayName());
+                    return;
+                }
+                CauseOfBlockage causeOfBlockage = item.getCauseOfBlockage();
+                if (causeOfBlockage != null) {
+                    listener.getLogger().print("Waiting to start " + task.getFullDisplayName() + ": ");
+                    causeOfBlockage.print(listener); // note that in case of Messages.Queue_Unknown for WaitingItem this is not very helpful
+                } else {
+                    listener.getLogger().println("Waiting to start " + task.getFullDisplayName());
+                }
             }
         };
     }

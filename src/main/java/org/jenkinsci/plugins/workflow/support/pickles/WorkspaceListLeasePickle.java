@@ -32,6 +32,7 @@ import hudson.remoting.VirtualChannel;
 import hudson.slaves.WorkspaceList;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 
 public class WorkspaceListLeasePickle extends Pickle {
@@ -45,7 +46,7 @@ public class WorkspaceListLeasePickle extends Pickle {
         path = lease.path.getRemote();
     }
 
-    @Override public ListenableFuture<?> rehydrate() {
+    @Override public ListenableFuture<?> rehydrate(FlowExecutionOwner owner) {
         return new TryRepeatedly<WorkspaceList.Lease>(1) {
             @Override protected WorkspaceList.Lease tryResolve() throws InterruptedException {
                 Jenkins j = Jenkins.getInstance();
