@@ -119,8 +119,8 @@ public class BuildQueueTasksTest {
         WorkflowRun b = build.getStartCondition().get();
         int secondsWaiting = 0;
         while (true) {
-            if (secondsWaiting > 5) {
-                assertTrue("No item queued after 5 seconds", false);
+            if (secondsWaiting > 15) {
+                assertTrue("No item queued after 15 seconds", false);
             }
             if (story.j.jenkins.getQueue().getItems().length > 0) {
                 break;
