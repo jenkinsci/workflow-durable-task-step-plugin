@@ -394,7 +394,7 @@ public class ExecutorStepTest {
                 assertTrue(b.isBuilding());
                 story.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
                 story.j.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
-                b.doKill(); // TODO allow this to be interrupted politely
+                b.doKill(); // currently cannot be interrupted politely
             }
         });
     }
