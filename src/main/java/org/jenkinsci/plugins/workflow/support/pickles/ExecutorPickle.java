@@ -104,15 +104,15 @@ public class ExecutorPickle extends Pickle {
             @Override protected void printWaitingMessage(TaskListener listener) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
                 if (item == null) { // ???
-                    listener.getLogger().println("Waiting to start " + task.getFullDisplayName());
+                    listener.getLogger().println("Waiting to resume " + task.getFullDisplayName());
                     return;
                 }
                 CauseOfBlockage causeOfBlockage = item.getCauseOfBlockage();
                 if (causeOfBlockage != null) {
-                    listener.getLogger().print("Waiting to start " + task.getFullDisplayName() + ": ");
+                    listener.getLogger().print("Waiting to resume " + task.getFullDisplayName() + ": ");
                     causeOfBlockage.print(listener); // note that in case of Messages.Queue_Unknown for WaitingItem this is not very helpful
                 } else {
-                    listener.getLogger().println("Waiting to start " + task.getFullDisplayName());
+                    listener.getLogger().println("Waiting to resume " + task.getFullDisplayName());
                 }
             }
         };
