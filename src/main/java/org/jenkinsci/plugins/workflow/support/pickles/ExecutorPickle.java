@@ -34,6 +34,8 @@ import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
 import java.util.concurrent.Future;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
@@ -45,6 +47,8 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
  * Typically the {@link SubTask#getAssignedLabel} should be a {@link Node#getSelfLabel} so that the rehydrated executor is in fact on the same node.
  */
 public class ExecutorPickle extends Pickle {
+
+    private static final Logger LOGGER = Logger.getLogger(ExecutorPickle.class.getName());
 
     private final Queue.Task task;
 
@@ -85,6 +89,7 @@ public class ExecutorPickle extends Pickle {
                 Future<Queue.Executable> future = item.getFuture().getStartCondition();
 
                 if (!future.isDone()) {
+                    // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
                     return null;
                 }
 
@@ -115,6 +120,15 @@ public class ExecutorPickle extends Pickle {
                 } else {
                     listener.getLogger().println(message);
                 }
+            }
+            @Override public boolean cancel(boolean mayInterruptIfRunning) {
+                Queue.Item item = Queue.getInstance().getItem(itemID);
+                if (item != null) {
+                    if (!Queue.getInstance().cancel(item)) {
+                        LOGGER.log(Level.WARNING, "failed to cancel {0}", item);
+                    }
+                }
+                return super.cancel(mayInterruptIfRunning);
             }
         };
     }
