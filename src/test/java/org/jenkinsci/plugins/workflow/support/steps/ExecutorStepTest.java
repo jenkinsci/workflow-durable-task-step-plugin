@@ -420,6 +420,9 @@ public class ExecutorStepTest {
                 final WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("node('nonexistent') {}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                while (!b.getLogFile().exists()) { // TODO https://github.com/jenkinsci/jenkins-test-harness/pull/23
+                    Thread.sleep(100);
+                }
                 story.j.waitForMessage("Still waiting to schedule task", b);
                 ACL.impersonate(User.get("admin").impersonate(), new Runnable() {
                     @Override public void run() {
