@@ -24,7 +24,6 @@
 
 package org.jenkinsci.plugins.workflow.support.pickles;
 
-import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import com.google.common.util.concurrent.ListenableFuture;
 import hudson.Extension;
 import hudson.model.Executor;
@@ -34,9 +33,10 @@ import hudson.model.Queue;
 import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
-
 import java.util.concurrent.Future;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.pickles.Pickle;
+import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
@@ -103,16 +103,17 @@ public class ExecutorPickle extends Pickle {
             }
             @Override protected void printWaitingMessage(TaskListener listener) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
+                String message = Messages.ExecutorPickle_waiting_to_resume(task.getFullDisplayName());
                 if (item == null) { // ???
-                    listener.getLogger().println("Waiting to resume " + task.getFullDisplayName());
+                    listener.getLogger().println(message);
                     return;
                 }
                 CauseOfBlockage causeOfBlockage = item.getCauseOfBlockage();
                 if (causeOfBlockage != null) {
-                    listener.getLogger().print("Waiting to resume " + task.getFullDisplayName() + ": ");
+                    listener.getLogger().print(message + ": ");
                     causeOfBlockage.print(listener); // note that in case of Messages.Queue_Unknown for WaitingItem this is not very helpful
                 } else {
-                    listener.getLogger().println("Waiting to resume " + task.getFullDisplayName());
+                    listener.getLogger().println(message);
                 }
             }
         };

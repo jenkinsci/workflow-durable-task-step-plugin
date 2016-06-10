@@ -37,6 +37,7 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
 import hudson.slaves.NodeProperty;
+import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -367,6 +368,33 @@ public class ExecutorStepTest {
                 WorkflowRun b = p.getLastBuild();
                 // TODO JENKINS-27532 sometimes two copies of the WorkflowRun are loaded
                 story.j.assertLogContains("OK ran", story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b)));
+            }
+        });
+    }
+
+    @Issue("JENKINS-26130")
+    @Test public void unloadableExecutorPickle() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave dumbo = story.j.createSlave("dumbo", null, null); // unlike in buildShellScriptAcrossRestart, we *want* this to die after restart
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition(
+                    "node('dumbo') {\n" +
+                    "  semaphore 'wait'\n" +
+                    "}"));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+                dumbo.getComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getUnknown(), "not about to reconnect"));
+            }
+        });
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
+                WorkflowRun b = p.getLastBuild();
+                assertTrue(b.isBuilding());
+                story.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                story.j.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
+                b.doKill(); // TODO allow this to be interrupted politely
             }
         });
     }
