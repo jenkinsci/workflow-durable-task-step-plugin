@@ -30,12 +30,15 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import hudson.util.LogTaskListener;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
@@ -43,6 +46,7 @@ import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -114,13 +118,33 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             return ws;
         }
 
+        private @Nonnull PrintStream logger() {
+            TaskListener l = listener;
+            if (l == null) {
+                StepContext context = getContext();
+                try {
+                    l = context.get(TaskListener.class);
+                    if (l != null) {
+                        LOGGER.log(Level.WARNING, "JENKINS-34021: DurableTaskStep.Execution.listener not restored in {0}", context);
+                    } else {
+                        LOGGER.log(Level.WARNING, "JENKINS-34021: TaskListener not even available upon request in {0}", context);
+                        l = new LogTaskListener(LOGGER, Level.FINE);
+                    }
+                } catch (Exception x) {
+                    LOGGER.log(Level.WARNING, "JENKINS-34021: could not get TaskListener in " + context, x);
+                    l = new LogTaskListener(LOGGER, Level.FINE);
+                }
+            }
+            return l.getLogger();
+        }
+
         @Override public void stop(Throwable cause) throws Exception {
             FilePath workspace = getWorkspace();
             if (workspace != null) {
-                listener.getLogger().println("Sending interrupt signal to process");
+                logger().println("Sending interrupt signal to process");
                 controller.stop(workspace, getContext().get(Launcher.class));
             } else {
-                listener.getLogger().println("Could not connect to " + node + " to send interrupt signal to process");
+                logger().println("Could not connect to " + node + " to send interrupt signal to process");
             }
         }
 
@@ -158,7 +182,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 }
             }, 10, TimeUnit.SECONDS);
             try {
-                if (controller.writeLog(workspace, listener.getLogger())) {
+                if (controller.writeLog(workspace, logger())) {
                     getContext().saveState();
                     recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
                 } else {
@@ -168,7 +192,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 if (exitCode == null) {
                     LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                 } else {
-                    if (controller.writeLog(workspace, listener.getLogger())) {
+                    if (controller.writeLog(workspace, logger())) {
                         LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                     }
                     t.set(null); // do not interrupt cleanup
