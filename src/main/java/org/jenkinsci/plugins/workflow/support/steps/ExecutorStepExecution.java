@@ -18,6 +18,7 @@ import hudson.model.ResourceList;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
+import hudson.model.WorkspaceListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueListener;
 import hudson.model.queue.SubTask;
@@ -510,6 +511,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(p);
                         FilePath workspace = lease.path;
+                        for (WorkspaceListener workspaceListener : WorkspaceListener.all()) {
+                            workspaceListener.beforeUse(r, workspace, listener);
+                        }
                         FlowNode flowNode = context.get(FlowNode.class);
                         flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink

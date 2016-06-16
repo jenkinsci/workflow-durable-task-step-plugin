@@ -24,11 +24,17 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import hudson.FilePath;
+import hudson.model.AbstractBuild;
+import hudson.model.BuildListener;
 import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import hudson.model.User;
+import hudson.model.WorkspaceListener;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
@@ -41,6 +47,7 @@ import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -64,9 +71,6 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -76,6 +80,9 @@ import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
+import org.jvnet.hudson.test.TestExtension;
+
+import static org.junit.Assert.*;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -459,4 +466,30 @@ public class ExecutorStepTest {
         });
     }
 
+    private static class MyWorkspaceListener extends WorkspaceListener {
+        public boolean notified = false;
+
+        @Override
+        public void beforeUse(Run r, FilePath workspace, TaskListener listener) {
+            notified = true;
+        }
+    }
+    @TestExtension("callWorkspaceListener")
+    public final static MyWorkspaceListener workspaceListener = new MyWorkspaceListener();
+
+
+    @Issue("JENKINS-35907")
+    @Test public void callWorkspaceListener() throws Exception {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "callWorkspaceListener");
+                p.setDefinition(new CpsFlowDefinition("node() { sh 'echo hello' }"));
+                p.save();
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForCompletion(b);
+                assertTrue(workspaceListener.notified);
+            }
+        });
+    }
 }

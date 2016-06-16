@@ -62,7 +62,7 @@
         </pluginRepository>
     </pluginRepositories>
     <properties>
-        <jenkins.version>1.642.3</jenkins.version>
+        <jenkins.version>2.10-SNAPSHOT</jenkins.version> <!-- PR #2410 -->
         <jenkins-test-harness.version>2.10</jenkins-test-harness.version> <!-- need https://github.com/jenkinsci/jenkins-test-harness/pull/20 for ExecutorStepTest.unloadableExecutorPickle -->
     </properties>
     <dependencies>
