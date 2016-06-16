@@ -25,8 +25,6 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.FilePath;
-import hudson.model.AbstractBuild;
-import hudson.model.BuildListener;
 import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Queue;
@@ -47,7 +45,6 @@ import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -466,16 +463,13 @@ public class ExecutorStepTest {
         });
     }
 
-    private static class MyWorkspaceListener extends WorkspaceListener {
-        public boolean notified = false;
-
+    @TestExtension("callWorkspaceListener")
+    public final static WorkspaceListener workspaceListener = new WorkspaceListener() {
         @Override
         public void beforeUse(Run r, FilePath workspace, TaskListener listener) {
-            notified = true;
+            listener.getLogger().println("WorkspaceListener has been notified");
         }
-    }
-    @TestExtension("callWorkspaceListener")
-    public final static MyWorkspaceListener workspaceListener = new MyWorkspaceListener();
+    };
 
 
     @Issue("JENKINS-35907")
@@ -484,11 +478,9 @@ public class ExecutorStepTest {
             @Override
             public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "callWorkspaceListener");
-                p.setDefinition(new CpsFlowDefinition("node() { sh 'echo hello' }"));
-                p.save();
-                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                story.j.waitForCompletion(b);
-                assertTrue(workspaceListener.notified);
+                p.setDefinition(new CpsFlowDefinition("node() { echo 'hello' }"));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                story.j.assertLogContains("WorkspaceListener has been notified", b);
             }
         });
     }
