@@ -367,7 +367,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public String getDisplayName() {
             // TODO more generic to check whether FlowExecution.owner.executable is a ModelObject
             Run<?,?> r = runForDisplay();
-            return r != null ? "part of " + r.getFullDisplayName() : "Unknown Pipeline node step";
+            return r != null ? Messages.ExecutorStepExecution_PlaceholderTask_displayName(r.getFullDisplayName()) : Messages.ExecutorStepExecution_PlaceholderTask_displayName_unknown();
         }
 
         @Override public String getName() {

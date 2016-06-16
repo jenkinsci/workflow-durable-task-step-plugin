@@ -87,7 +87,7 @@ public class ShellStepTest extends Assert {
         WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
 
         // at this point the file should be being touched
-        waitForCond(5000, tmp, new Predicate<File>() {
+        waitForCond(15000, tmp, new Predicate<File>() {
             @Override
             public boolean apply(File tmp) {
                 return tmp.exists();
