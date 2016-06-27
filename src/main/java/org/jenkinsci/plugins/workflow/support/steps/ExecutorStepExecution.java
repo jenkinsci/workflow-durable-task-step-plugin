@@ -172,7 +172,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         // Yet another copy of the same logic; perhaps this should be factored into some method returning a union of Queue.Item and PlaceholderExecutable?
         for (Queue.Item item : Queue.getInstance().getItems()) {
             if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
-                return "waiting for " + item.task.getFullDisplayName() + " to be scheduled";
+                return "waiting for " + item.task.getFullDisplayName() + " to be scheduled; blocked: " + item.getWhy();
             }
         }
         Jenkins j = Jenkins.getInstance();
