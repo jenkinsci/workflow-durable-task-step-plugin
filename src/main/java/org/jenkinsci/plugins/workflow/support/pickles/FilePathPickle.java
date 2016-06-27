@@ -51,6 +51,9 @@ public class FilePathPickle extends Pickle {
             protected FilePath tryResolve() {
                 return FilePathUtils.find(slave, path);
             }
+            @Override public String toString() {
+                return "Looking for path named ‘" + path + "’ on computer named ‘" + slave + "’";
+            }
         };
     }
 
