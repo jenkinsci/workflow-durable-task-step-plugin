@@ -168,7 +168,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
     }
 
-    @Override public String toString() {
+    @Override public String getStatus() {
         // Yet another copy of the same logic; perhaps this should be factored into some method returning a union of Queue.Item and PlaceholderExecutable?
         for (Queue.Item item : Queue.getInstance().getItems()) {
             if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {

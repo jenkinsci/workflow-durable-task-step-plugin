@@ -148,7 +148,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             }
         }
 
-        @Override public String toString() {
+        @Override public String getStatus() {
             try {
                 FilePath workspace = getWorkspace();
                 if (workspace != null) {
