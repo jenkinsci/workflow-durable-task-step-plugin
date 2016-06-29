@@ -66,6 +66,9 @@ public class WorkspaceListLeasePickle extends Pickle {
                 FilePath fp = new FilePath(ch, path);
                 return c.getWorkspaceList().acquire(fp);
             }
+            @Override public String toString() {
+                return "Relocking workspace named ‘" + path + "’ on computer named ‘" + slave + "’";
+            }
         };
     }
 

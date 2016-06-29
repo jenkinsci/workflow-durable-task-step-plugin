@@ -54,6 +54,9 @@ public class ComputerPickle extends Pickle {
                 }
                 return j.getComputer(slave);
             }
+            @Override public String toString() {
+                return "Looking for computer named ‘" + slave + "’";
+            }
         };
     }
 

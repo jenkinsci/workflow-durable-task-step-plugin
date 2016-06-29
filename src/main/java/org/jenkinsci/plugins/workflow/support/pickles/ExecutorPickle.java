@@ -130,6 +130,14 @@ public class ExecutorPickle extends Pickle {
                 }
                 return super.cancel(mayInterruptIfRunning);
             }
+            @Override public String toString() {
+                Queue.Item item = Queue.getInstance().getItem(itemID);
+                if (item != null) {
+                    return "Trying to schedule " + task.getFullDisplayName() + "; blockage: " + item.getCauseOfBlockage();
+                } else {
+                    return "Trying to locate queue item #" + itemID;
+                }
+            }
         };
     }
 

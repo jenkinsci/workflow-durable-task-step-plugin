@@ -133,9 +133,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
         // Whether or not either of the above worked (and they would not if for example our item were canceled), make sure we die.
         getContext().onFailure(cause);
-        // TODO also would like to listen for our queue item being canceled directly (Queue.cancel(Item)) and interrupt automatically,
-        // but ScheduleResult.getCreateItem().getFuture().getStartCondition() is not a ListenableFuture so we cannot wait for it to be cancelled without consuming a thread,
-        // and Item.cancel(Queue) is private and cannot be overridden; the only workaround for now is to have a custom QueueListener
     }
 
     @Override public void onResume() {
@@ -169,6 +166,27 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         } catch (Exception x) {
             getContext().onFailure(x);
         }
+    }
+
+    @Override public String getStatus() {
+        // Yet another copy of the same logic; perhaps this should be factored into some method returning a union of Queue.Item and PlaceholderExecutable?
+        for (Queue.Item item : Queue.getInstance().getItems()) {
+            if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
+                return "waiting for " + item.task.getFullDisplayName() + " to be scheduled; blocked: " + item.getWhy();
+            }
+        }
+        Jenkins j = Jenkins.getInstance();
+        if (j != null) {
+            COMPUTERS: for (Computer c : j.getComputers()) {
+                for (Executor e : c.getExecutors()) {
+                    Queue.Executable exec = e.getCurrentExecutable();
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
+                        return "running on " + c.getName();
+                    }
+                }
+            }
+        }
+        return "node block appears to be neither running nor scheduled";
     }
 
     @Extension public static class CancelledItemListener extends QueueListener {
