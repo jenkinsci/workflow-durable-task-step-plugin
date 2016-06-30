@@ -54,9 +54,6 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
                 throw new IllegalStateException(node + " is offline");
             }
             FilePath baseWorkspace = rootPath.child(dir);
-            // TODO acquire would block the CPS VM thread and not survive restarts.
-            // Could force the exact path to be acquired only by setting up a background thread (w/ onResume) to block,
-            // or adding core API to register a callback listener when any existing lease is released.
             lease = computer.getWorkspaceList().allocate(baseWorkspace);
         }
         FilePath workspace = lease.path; // may be baseWorkspace + @2, @3, etc.
