@@ -106,9 +106,6 @@ public class ShellStepTest extends Assert {
         });
 
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
-        /* TODO fails, even though WorkflowRun calls recordCauseOfInterruption:
-        assertNotNull(b.getAction(InterruptedBuildAction.class)); // would also have a UserInterruption if authenticated
-        */
     }
 
     @Test public void launcherDecorator() throws Exception {
