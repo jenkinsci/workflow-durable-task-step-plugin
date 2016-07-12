@@ -9,7 +9,6 @@ import hudson.model.Node;
 import hudson.model.Result;
 import java.io.File;
 import java.io.Serializable;
-import java.util.concurrent.TimeoutException;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -87,12 +86,9 @@ public class ShellStepTest extends Assert {
         WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
 
         // at this point the file should be being touched
-        waitForCond(15000, tmp, new Predicate<File>() {
-            @Override
-            public boolean apply(File tmp) {
-                return tmp.exists();
-            }
-        });
+        while (!tmp.exists()) {
+            Thread.sleep(100);
+        }
 
         b.getExecutor().interrupt();
 
@@ -119,6 +115,7 @@ public class ShellStepTest extends Assert {
     public static class NiceStep extends AbstractStepImpl {
         @DataBoundConstructor public NiceStep() {}
         public static class Execution extends AbstractStepExecutionImpl {
+            private static final long serialVersionUID = 1;
             @Override public boolean start() throws Exception {
                 getContext().newBodyInvoker().
                         withContext(BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), new Decorator())).
@@ -129,6 +126,7 @@ public class ShellStepTest extends Assert {
             @Override public void stop(Throwable cause) throws Exception {}
         }
         private static class Decorator extends LauncherDecorator implements Serializable {
+            private static final long serialVersionUID = 1;
             @Override public Launcher decorate(Launcher launcher, Node node) {
                 return launcher.decorateByPrefix("nice");
             }
@@ -149,19 +147,6 @@ public class ShellStepTest extends Assert {
         }
     }
 
-
-    /**
-     * Waits up to the given timeout until the predicate is satisfied.
-     */
-    private <T> void waitForCond(int timeout, T o, Predicate<T> predicate) throws Exception {
-        long goal = System.currentTimeMillis()+timeout;
-        while (System.currentTimeMillis()<goal) {
-            if (predicate.apply(o))
-                return;
-            Thread.sleep(100);
-        }
-        throw new TimeoutException();
-    }
 
     /**
      * Asserts that the predicate remains true up to the given timeout.

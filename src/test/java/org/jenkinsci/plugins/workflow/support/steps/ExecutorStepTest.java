@@ -366,7 +366,6 @@ public class ExecutorStepTest {
                 story.j.createSlave("special", null);
                 WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
-                // TODO JENKINS-27532 sometimes two copies of the WorkflowRun are loaded
                 story.j.assertLogContains("OK ran", story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b)));
             }
         });
