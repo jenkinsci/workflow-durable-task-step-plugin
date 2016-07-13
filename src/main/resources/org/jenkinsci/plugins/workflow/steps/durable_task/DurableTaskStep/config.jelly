@@ -33,5 +33,8 @@ THE SOFTWARE.
         <f:entry field="encoding" title="${%Encoding of standard output}">
             <f:textbox default="${descriptor.defaultEncoding}"/>
         </f:entry>
+        <f:entry field="returnStatus" title="${%Return exit status}">
+            <f:checkbox/>
+        </f:entry>
     </f:advanced>
 </j:jelly>

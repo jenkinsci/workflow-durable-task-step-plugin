@@ -65,6 +65,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
 
     private boolean returnStdout;
     private String encoding = DurableTaskStepDescriptor.defaultEncoding;
+    private boolean returnStatus;
 
     protected abstract DurableTask task();
 
@@ -84,6 +85,14 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         this.encoding = encoding;
     }
 
+    public boolean isReturnStatus() {
+        return returnStatus;
+    }
+
+    @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
+        this.returnStatus = returnStatus;
+    }
+
     public abstract static class DurableTaskStepDescriptor extends AbstractStepDescriptorImpl {
 
         public static final String defaultEncoding = "UTF-8";
@@ -99,7 +108,14 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 return FormValidation.error(x, "Unrecognized encoding");
             }
             if (!returnStdout && !encoding.equals(DurableTaskStepDescriptor.defaultEncoding)) {
-                return FormValidation.warning("encoding is ignored unless returnStdout is checked");
+                return FormValidation.warning("encoding is ignored unless returnStdout is checked.");
+            }
+            return FormValidation.ok();
+        }
+
+        public FormValidation doCheckReturnStatus(@QueryParameter boolean returnStdout, @QueryParameter boolean returnStatus) {
+            if (returnStdout && returnStatus) {
+                return FormValidation.error("You may not select both returnStdout and returnStatus.");
             }
             return FormValidation.ok();
         }
@@ -128,10 +144,12 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         private String remote;
         private boolean returnStdout; // serialized default is false
         private String encoding; // serialized default is irrelevant
+        private boolean returnStatus; // serialized default is false
 
         @Override public boolean start() throws Exception {
             returnStdout = step.returnStdout;
             encoding = step.encoding;
+            returnStatus = step.returnStatus;
             node = FilePathUtils.getNodeName(ws);
             DurableTask task = step.task();
             if (returnStdout) {
@@ -257,8 +275,8 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                         LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                     }
                     t.set(null); // do not interrupt cleanup
-                    if (exitCode == 0) {
-                        getContext().onSuccess(returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : exitCode);
+                    if (returnStatus || exitCode == 0) {
+                        getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
                     } else {
                         getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                     }
