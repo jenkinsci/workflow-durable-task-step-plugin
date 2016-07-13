@@ -18,6 +18,7 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import org.junit.Assert;
@@ -26,6 +27,7 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -147,6 +149,44 @@ public class ShellStepTest extends Assert {
         }
     }
 
+    @Issue("JENKINS-26133")
+    @Test public void configRoundTrip() throws Exception {
+        ShellStep s = new ShellStep("echo hello");
+        s = new StepConfigTester(j).configRoundTrip(s);
+        assertEquals("echo hello", s.getScript());
+        assertFalse(s.isReturnStdout());
+        assertEquals(DurableTaskStep.DurableTaskStepDescriptor.defaultEncoding, s.getEncoding());
+        assertFalse(s.isReturnStatus());
+        s.setReturnStdout(true);
+        s.setEncoding("ISO-8859-1");
+        s = new StepConfigTester(j).configRoundTrip(s);
+        assertEquals("echo hello", s.getScript());
+        assertTrue(s.isReturnStdout());
+        assertEquals("ISO-8859-1", s.getEncoding());
+        assertFalse(s.isReturnStatus());
+        s.setReturnStdout(false);
+        s.setEncoding(DurableTaskStep.DurableTaskStepDescriptor.defaultEncoding);
+        s.setReturnStatus(true);
+        s = new StepConfigTester(j).configRoundTrip(s);
+        assertEquals("echo hello", s.getScript());
+        assertFalse(s.isReturnStdout());
+        assertEquals(DurableTaskStep.DurableTaskStepDescriptor.defaultEncoding, s.getEncoding());
+        assertTrue(s.isReturnStatus());
+    }
+
+    @Issue("JENKINS-26133")
+    @Test public void returnStdout() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("def msg; node {msg = sh(script: 'echo hello world | tr [a-z] [A-Z]', returnStdout: true).trim()}; echo \"it said ${msg}\""));
+        j.assertLogContains("it said HELLO WORLD", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+
+    @Issue("JENKINS-26133")
+    @Test public void returnStatus() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${sh script: 'true', returnStatus: true} but falsity is ${sh script: 'false', returnStatus: true}\"}"));
+        j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
 
     /**
      * Asserts that the predicate remains true up to the given timeout.

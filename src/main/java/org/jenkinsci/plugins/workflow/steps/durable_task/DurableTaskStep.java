@@ -25,14 +25,17 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import com.google.inject.Inject;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.charset.Charset;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -50,6 +53,8 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
 
 /**
  * Runs an durable task on a slave, such as a shell script.
@@ -58,19 +63,70 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
+    private boolean returnStdout;
+    private String encoding = DurableTaskStepDescriptor.defaultEncoding;
+    private boolean returnStatus;
+
     protected abstract DurableTask task();
 
-    protected abstract static class DurableTaskStepDescriptor extends AbstractStepDescriptorImpl {
+    public boolean isReturnStdout() {
+        return returnStdout;
+    }
+
+    @DataBoundSetter public void setReturnStdout(boolean returnStdout) {
+        this.returnStdout = returnStdout;
+    }
+
+    public String getEncoding() {
+        return encoding;
+    }
+
+    @DataBoundSetter public void setEncoding(String encoding) {
+        this.encoding = encoding;
+    }
+
+    public boolean isReturnStatus() {
+        return returnStatus;
+    }
+
+    @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
+        this.returnStatus = returnStatus;
+    }
+
+    public abstract static class DurableTaskStepDescriptor extends AbstractStepDescriptorImpl {
+
+        public static final String defaultEncoding = "UTF-8";
+
         protected DurableTaskStepDescriptor() {
             super(Execution.class);
         }
+
+        public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
+            try {
+                Charset.forName(encoding);
+            } catch (Exception x) {
+                return FormValidation.error(x, "Unrecognized encoding");
+            }
+            if (!returnStdout && !encoding.equals(DurableTaskStepDescriptor.defaultEncoding)) {
+                return FormValidation.warning("encoding is ignored unless returnStdout is checked.");
+            }
+            return FormValidation.ok();
+        }
+
+        public FormValidation doCheckReturnStatus(@QueryParameter boolean returnStdout, @QueryParameter boolean returnStatus) {
+            if (returnStdout && returnStatus) {
+                return FormValidation.error("You may not select both returnStdout and returnStatus.");
+            }
+            return FormValidation.ok();
+        }
+
     }
 
     /**
      * Represents one task that is believed to still be running.
      */
     @Restricted(NoExternalUse.class)
-    @edu.umd.cs.findbugs.annotations.SuppressWarnings("SE_TRANSIENT_FIELD_NOT_RESTORED") // recurrencePeriod is set in onResume, not deserialization
+    @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
     public static final class Execution extends AbstractStepExecutionImpl implements Runnable {
 
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
@@ -86,10 +142,20 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         private Controller controller;
         private String node;
         private String remote;
+        private boolean returnStdout; // serialized default is false
+        private String encoding; // serialized default is irrelevant
+        private boolean returnStatus; // serialized default is false
 
         @Override public boolean start() throws Exception {
+            returnStdout = step.returnStdout;
+            encoding = step.encoding;
+            returnStatus = step.returnStatus;
             node = FilePathUtils.getNodeName(ws);
-            controller = step.task().launch(env, ws, launcher, listener);
+            DurableTask task = step.task();
+            if (returnStdout) {
+                task.captureOutput();
+            }
+            controller = task.launch(env, ws, launcher, listener);
             this.remote = ws.getRemote();
             setupTimer();
             return false;
@@ -185,7 +251,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 return; // slave not yet ready, wait for another day
             }
             // Do not allow this to take more than 10s for any given task:
-            final AtomicReference<Thread> t = new AtomicReference<Thread>(Thread.currentThread());
+            final AtomicReference<Thread> t = new AtomicReference<>(Thread.currentThread());
             Timer.get().schedule(new Runnable() {
                 @Override public void run() {
                     Thread _t = t.get();
@@ -209,8 +275,8 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                         LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                     }
                     t.set(null); // do not interrupt cleanup
-                    if (exitCode == 0) {
-                        getContext().onSuccess(exitCode);
+                    if (returnStatus || exitCode == 0) {
+                        getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
                     } else {
                         getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                     }
