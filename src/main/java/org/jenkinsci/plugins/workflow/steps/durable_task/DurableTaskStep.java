@@ -278,6 +278,9 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                     if (returnStatus || exitCode == 0) {
                         getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
                     } else {
+                        if (returnStdout) {
+                            listener.getLogger().write(controller.getOutput(workspace, launcher)); // diagnostic
+                        }
                         getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                     }
                     recurrencePeriod = 0;
