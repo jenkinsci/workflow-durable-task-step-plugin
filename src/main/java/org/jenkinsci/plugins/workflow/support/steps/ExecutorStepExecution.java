@@ -7,6 +7,7 @@ import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.Util;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
@@ -507,12 +508,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         EnvVars env = computer.getEnvironment();
                         env.overrideAll(computer.buildEnvironment(listener));
                         env.put(COOKIE_VAR, cookie);
+                        // Cf. CoreEnvironmentContributor:
                         if (exec.getOwner() instanceof MasterComputer) {
                             env.put("NODE_NAME", "master");
                         } else {
                             env.put("NODE_NAME", label);
                         }
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
+                        env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
 
                         synchronized (runningTasks) {
                             runningTasks.put(cookie, new RunningTask());
@@ -528,6 +531,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(p);
                         FilePath workspace = lease.path;
+                        // Cf. AbstractBuild.getEnvironment:
+                        env.put("WORKSPACE", workspace.getRemote());
                         FlowNode flowNode = context.get(FlowNode.class);
                         flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
