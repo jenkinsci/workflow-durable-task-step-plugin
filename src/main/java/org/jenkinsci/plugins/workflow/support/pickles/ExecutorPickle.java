@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import hudson.AbortException;
 import hudson.Extension;
 import hudson.model.Executor;
 import hudson.model.Node;
@@ -91,6 +92,10 @@ public class ExecutorPickle extends Pickle {
                 if (!future.isDone()) {
                     // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
                     return null;
+                }
+
+                if (future.isCancelled()) {
+                    throw new AbortException("Queue item was canceled.");
                 }
 
                 Queue.Executable exec = future.get();
