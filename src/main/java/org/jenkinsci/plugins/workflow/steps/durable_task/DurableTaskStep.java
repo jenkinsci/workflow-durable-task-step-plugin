@@ -208,6 +208,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             FilePath workspace = getWorkspace();
             if (workspace != null) {
                 logger().println("Sending interrupt signal to process");
+                LOGGER.log(Level.FINE, "stopping process", cause);
                 controller.stop(workspace, launcher);
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
