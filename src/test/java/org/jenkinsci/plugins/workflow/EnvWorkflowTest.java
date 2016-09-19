@@ -24,10 +24,13 @@
 
 package org.jenkinsci.plugins.workflow;
 
+import hudson.slaves.DumbSlave;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.Rule;
 import org.junit.Test;
+import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 
 /**
@@ -44,22 +47,23 @@ public class EnvWorkflowTest {
      * @throws Exception
      */
     @Test public void isNodeNameAvailable() throws Exception {
-        r.createSlave("node-test", null, null);
+        r.createSlave("node-test", "unix fast", null);
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
 
         p.setDefinition(new CpsFlowDefinition(
             "node('master') {\n" +
-            "  echo \"My name on master is ${env.NODE_NAME}\"\n" +
+            "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n"
         ));
-        r.assertLogContains("My name on master is master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on master is master using labels master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +
-            "  echo \"My name on a slave is ${env.NODE_NAME}\"\n" +
+            "  echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n"
         ));
-        r.assertLogContains("My name on a slave is node-test", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        // Label.parse returns TreeSet so the result is guaranteed to be sorted:
+        r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
 
@@ -87,4 +91,16 @@ public class EnvWorkflowTest {
         ));
         r.assertLogContains("My number on a slave is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
+
+    @Issue("JENKINS-33511")
+    @Test public void isWorkspaceAvailable() throws Exception {
+        WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('master') {echo(/running in ${env.WORKSPACE}/)}", true));
+        r.assertLogContains("running in " + r.jenkins.getWorkspaceFor(p), r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        DumbSlave remote = r.createSlave("remote", null, null);
+        p.setDefinition(new CpsFlowDefinition("node('remote') {echo(/running in ${env.WORKSPACE}/)}", true));
+        WorkflowRun b2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        r.assertLogContains("running in " + remote.getWorkspaceFor(p), b2);
+    }
+
 }
