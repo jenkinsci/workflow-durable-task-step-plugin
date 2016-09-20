@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.gargoylesoftware.htmlunit.Page;
 import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Queue;
@@ -74,6 +75,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
+import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 
@@ -396,6 +398,41 @@ public class ExecutorStepTest {
                 b.getExecutor().interrupt();
                 story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+            }
+        });
+    }
+
+    @Test public void detailsExported() throws Exception {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('" + s.getNodeName() + "') {\n" +
+                                "    sleep 10\n" +
+                                "}"));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                Thread.sleep(100);
+                JenkinsRule.WebClient wc = story.j.createWebClient();
+                Page page = wc
+                        .goTo("computer/" + s.getNodeName()
+                                        + "/api/xml?depth=2&xpath=//currentExecutable/number/text()",
+                                "text/plain");
+
+                assertEquals("1", page.getWebResponse().getContentAsString());
+                page = wc.goTo("computer/" + s.getNodeName()
+                                + "/api/xml?depth=2&xpath=//currentExecutable/displayName/text()",
+                        "text/plain");
+                assertEquals("part of " + p.getDisplayName() + " #1",
+                        page.getWebResponse().getContentAsString());
+                page = wc.goTo("computer/" + s.getNodeName()
+                                + "/api/xml?depth=2&xpath=//currentExecutable/url/text()",
+                        "text/plain");
+                assertEquals(story.j.getURL().toString() + "job/" + p.getDisplayName() + "/1/",
+                        page.getWebResponse().getContentAsString());
             }
         });
     }
