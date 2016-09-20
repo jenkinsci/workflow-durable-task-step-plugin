@@ -29,6 +29,7 @@ import hudson.FilePath;
 import hudson.Functions;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
+import com.gargoylesoftware.htmlunit.Page;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
@@ -446,6 +447,41 @@ public class ExecutorStepTest {
                 b.getExecutor().interrupt();
                 story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+            }
+        });
+    }
+
+    @Test public void detailsExported() throws Exception {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('" + s.getNodeName() + "') {\n" +
+                                "    sleep 10\n" +
+                                "}"));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                Thread.sleep(100);
+                JenkinsRule.WebClient wc = story.j.createWebClient();
+                Page page = wc
+                        .goTo("computer/" + s.getNodeName()
+                                        + "/api/xml?depth=2&xpath=//currentExecutable/number/text()",
+                                "text/plain");
+
+                assertEquals("1", page.getWebResponse().getContentAsString());
+                page = wc.goTo("computer/" + s.getNodeName()
+                                + "/api/xml?depth=2&xpath=//currentExecutable/displayName/text()",
+                        "text/plain");
+                assertEquals("part of " + p.getDisplayName() + " #1",
+                        page.getWebResponse().getContentAsString());
+                page = wc.goTo("computer/" + s.getNodeName()
+                                + "/api/xml?depth=2&xpath=//currentExecutable/url/text()",
+                        "text/plain");
+                assertEquals(story.j.getURL().toString() + "job/" + p.getDisplayName() + "/1/",
+                        page.getWebResponse().getContentAsString());
             }
         });
     }

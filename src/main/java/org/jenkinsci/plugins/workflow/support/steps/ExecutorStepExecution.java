@@ -75,6 +75,7 @@ import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
@@ -633,7 +634,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Occupies {@link Executor} while workflow uses this slave.
          */
         @ExportedBean
-        private final class PlaceholderExecutable implements ContinuableExecutable {
+        public final class PlaceholderExecutable implements ContinuableExecutable {
 
             @Override public void run() {
                 final TaskListener listener;
@@ -753,6 +754,23 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return PlaceholderTask.this;
             }
 
+            @Exported
+            public int getNumber() {
+                Run<?, ?> r = getParent().runForDisplay();
+                return r != null ? r.getNumber() : -1;
+            }
+
+            @Exported
+            public String getFullDisplayName() {
+                return getParent().getFullDisplayName();
+            }
+
+            @Exported
+            public String getDisplayName() {
+                return getParent().getDisplayName();
+            }
+
+            @Exported
             @Override public long getEstimatedDuration() {
                 return getParent().getEstimatedDuration();
             }
@@ -768,9 +786,18 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return Executor.of(this);
             }
 
-            @Restricted(NoExternalUse.class) // for Jelly
+            @Exported @Restricted(NoExternalUse.class) // for Jelly and toString
             public String getUrl() {
-                return PlaceholderTask.this.getUrl(); // we hope this has a console.jelly
+                Run<?,?> r = runForDisplay();
+                if (r == null) {
+                    return "";
+                }
+                Jenkins j = Jenkins.getInstance();
+                String base = "";
+                if (j != null) {
+                    base = Util.removeTrailingSlash(j.getRootUrl()) + "/";
+                }
+                return base + r.getUrl();
             }
 
             @Override public String toString() {
