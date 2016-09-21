@@ -570,8 +570,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             Executor masterExecutor = r.getExecutor();
                             if (masterExecutor != null) {
                                 masterExecutor.interrupt();
-                            } else { // ?
+                            } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
                                 super.getExecutor().recordCauseOfInterruption(r, listener);
+                                completed(null);
                             }
                         }
                         @Override public boolean blocksRestart() {
