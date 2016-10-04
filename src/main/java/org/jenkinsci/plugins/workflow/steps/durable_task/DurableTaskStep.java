@@ -30,10 +30,13 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.Main;
 import hudson.model.TaskListener;
+import hudson.remoting.VirtualChannel;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.concurrent.TimeUnit;
@@ -43,8 +46,10 @@ import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import jenkins.util.Timer;
+import org.apache.commons.io.IOUtils;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
+import org.jenkinsci.plugins.durabletask.Handler;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
@@ -122,16 +127,21 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
 
     }
 
+    interface ExecutionRemotable {
+        void exited(int code, byte[] output) throws Exception;
+    }
+
     /**
      * Represents one task that is believed to still be running.
      */
     @Restricted(NoExternalUse.class)
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
-    public static final class Execution extends AbstractStepExecutionImpl implements Runnable {
+    public static final class Execution extends AbstractStepExecutionImpl implements Runnable, ExecutionRemotable {
 
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
+        private static final long WATCHING_RECURRENCE_PERIOD = Main.isUnitTest ? /* 5s */5_000: /* 5m */300_000;
 
         @Inject(optional=true) private transient DurableTaskStep step;
         @StepContextParameter private transient FilePath ws;
@@ -145,6 +155,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         private boolean returnStdout; // serialized default is false
         private String encoding; // serialized default is irrelevant
         private boolean returnStatus; // serialized default is false
+        private boolean watching;
 
         @Override public boolean start() throws Exception {
             returnStdout = step.returnStdout;
@@ -157,7 +168,13 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             }
             controller = task.launch(env, ws, launcher, listener);
             this.remote = ws.getRemote();
-            setupTimer();
+            try {
+                controller.watch(ws, new HandlerImpl(this, ws, listener));
+                watching = true;
+            } catch (UnsupportedOperationException x) {
+                LOGGER.log(Level.WARNING, null, x);
+            }
+            setupTimer(watching ? WATCHING_RECURRENCE_PERIOD : MIN_RECURRENCE_PERIOD);
             return false;
         }
 
@@ -168,6 +185,19 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
+                if (watching) {
+                    try {
+                        controller.watch(ws, new HandlerImpl(this, ws, /* TODO logger() should return TaskListener not PrintStream */ listener));
+                        recurrencePeriod = WATCHING_RECURRENCE_PERIOD;
+                    } catch (UnsupportedOperationException x) {
+                        getContext().onFailure(x);
+                    } catch (Exception x) { // as below
+                        LOGGER.log(Level.FINE, node + " is evidently offline now", x);
+                        ws = null;
+                        recurrencePeriod = MIN_RECURRENCE_PERIOD;
+                        return null;
+                    }
+                }
             }
             boolean directory;
             try {
@@ -176,11 +206,13 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof…
                 LOGGER.log(Level.FINE, node + " is evidently offline now", x);
                 ws = null;
+                recurrencePeriod = MIN_RECURRENCE_PERIOD;
                 return null;
             }
             if (!directory) {
                 throw new AbortException("missing workspace " + remote + " on " + node);
             }
+            LOGGER.log(Level.FINE, "{0} seems to be online", node);
             return ws;
         }
 
@@ -249,6 +281,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 return;
             }
             if (workspace == null) {
+                recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
                 return; // slave not yet ready, wait for another day
             }
             // Do not allow this to take more than 10s for any given task:
@@ -262,30 +295,39 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 }
             }, 10, TimeUnit.SECONDS);
             try {
-                if (controller.writeLog(workspace, logger())) {
-                    getContext().saveState();
-                    recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
-                } else {
-                    recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
-                }
-                Integer exitCode = controller.exitStatus(workspace, launcher);
-                if (exitCode == null) {
-                    LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
-                } else {
-                    if (controller.writeLog(workspace, logger())) {
-                        LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
-                    }
-                    t.set(null); // do not interrupt cleanup
-                    if (returnStatus || exitCode == 0) {
-                        getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
+                if (watching) {
+                    Integer exitCode = controller.exitStatus(workspace, launcher);
+                    if (exitCode == null) {
+                        LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                     } else {
-                        if (returnStdout) {
-                            listener.getLogger().write(controller.getOutput(workspace, launcher)); // diagnostic
-                        }
-                        getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                        LOGGER.log(Level.FINE, "exited with {0} in {1} on {2}; expect asynchronous exit soon", new Object[] {exitCode, remote, node});
                     }
-                    recurrencePeriod = 0;
-                    controller.cleanup(workspace);
+                } else { // legacy mode
+                    if (controller.writeLog(workspace, logger())) {
+                        getContext().saveState();
+                        recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
+                    } else {
+                        recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
+                    }
+                    Integer exitCode = controller.exitStatus(workspace, launcher);
+                    if (exitCode == null) {
+                        LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
+                    } else {
+                        if (controller.writeLog(workspace, logger())) {
+                            LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
+                        }
+                        t.set(null); // do not interrupt cleanup
+                        if (returnStatus || exitCode == 0) {
+                            getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
+                        } else {
+                            if (returnStdout) {
+                                listener.getLogger().write(controller.getOutput(workspace, launcher)); // diagnostic
+                            }
+                            getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                        }
+                        recurrencePeriod = 0;
+                        controller.cleanup(workspace);
+                    }
                 }
             } catch (IOException x) {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
@@ -298,17 +340,61 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             }
         }
 
-        @Override public void onResume() {
-            super.onResume();
-            setupTimer();
+        // called remotely from HandlerImpl
+        @Override public void exited(int exitCode, byte[] output) throws Exception {
+            LOGGER.log(Level.FINE, "asynchronous exit notification with code {0} in {1} on {2}", new Object[] {exitCode, remote, node});
+            if (returnStdout && output == null) {
+                getContext().onFailure(new IllegalStateException("expected output but got none"));
+                return;
+            } else if (!returnStdout && output != null) {
+                getContext().onFailure(new IllegalStateException("did not expect output but got some"));
+                return;
+            }
+            recurrencePeriod = 0;
+            if (returnStatus || exitCode == 0) {
+                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output, encoding) : null);
+            } else {
+                if (returnStdout) {
+                    listener.getLogger().write(output); // diagnostic
+                }
+                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+            }
         }
 
-        private void setupTimer() {
-            recurrencePeriod = MIN_RECURRENCE_PERIOD;
+        @Override public void onResume() {
+            super.onResume();
+            ws = null; // find it from scratch please, rewatching as needed
+            setupTimer(MIN_RECURRENCE_PERIOD);
+        }
+
+        private void setupTimer(long initialRecurrencePeriod) {
+            recurrencePeriod = initialRecurrencePeriod;
             Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;
+
+    }
+
+    private static class HandlerImpl extends Handler {
+
+        private static final long serialVersionUID = 1L;
+
+        private final ExecutionRemotable execution;
+        private final TaskListener listener;
+
+        HandlerImpl(Execution execution, FilePath workspace, TaskListener listener) {
+            this.execution = workspace.getChannel().export(ExecutionRemotable.class, execution);
+            this.listener = listener;
+        }
+
+        @Override public void output(InputStream stream) throws Exception {
+            IOUtils.copy(stream, listener.getLogger());
+        }
+
+        @Override public void exited(int code, byte[] output) throws Exception {
+            execution.exited(code, output);
+        }
 
     }
 
