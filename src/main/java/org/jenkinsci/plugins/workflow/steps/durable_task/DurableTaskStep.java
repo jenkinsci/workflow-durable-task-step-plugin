@@ -32,7 +32,6 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Main;
 import hudson.model.TaskListener;
-import hudson.remoting.VirtualChannel;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import java.io.IOException;
@@ -69,6 +68,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
     private boolean returnStdout;
+    // TODO should there be an option to use the native encoding of the machine running the task? Similarly for readFile, writeFile?
     private String encoding = DurableTaskStepDescriptor.defaultEncoding;
     private boolean returnStatus;
 
@@ -242,8 +242,10 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 logger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
                 controller.stop(workspace, launcher);
+                // TODO give it say 10s to exit cleanly and then exit regardless
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
+                // TODO perhaps should exit now
             }
         }
 
@@ -301,6 +303,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                         LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                     } else {
                         LOGGER.log(Level.FINE, "exited with {0} in {1} on {2}; expect asynchronous exit soon", new Object[] {exitCode, remote, node});
+                        // TODO if we get here again and exited has still not been called, assume we lost the notification somehow and end the step
                     }
                 } else { // legacy mode
                     if (controller.writeLog(workspace, logger())) {

@@ -4,21 +4,36 @@ import com.google.common.base.Predicate;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
+import hudson.model.BuildListener;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.remoting.Channel;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
+import jenkins.security.SlaveToMasterCallable;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.job.console.PipelineLogFile;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
+import org.jenkinsci.plugins.workflow.support.actions.LessAbstractTaskListener;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import org.junit.Assert;
@@ -188,6 +203,79 @@ public class ShellStepTest extends Assert {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${sh script: 'true', returnStatus: true} but falsity is ${sh script: 'false', returnStatus: true}\"}"));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+
+    @Issue("JENKINS-38381")
+    @Test public void remoteLogger() throws Exception {
+        j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('master') {sh 'pwd'}; node('remote') {sh 'pwd'; sh 'echo on agent'}", true));
+        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        //new ProcessBuilder("ls", "-la", b.getRootDir().getAbsolutePath()).inheritIO().start().waitFor();
+        j.assertLogContains("+ pwd [master #1]", b);
+        j.assertLogContains("+ pwd [master #1 → remote #", b);
+        j.assertLogContains("on agent [master #1 → remote #", b);
+    }
+    @TestExtension("remoteLogger") public static class LogFile extends PipelineLogFile {
+        @Override protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
+            return new RemotableBuildListener(logFile(b));
+        }
+        @Override protected InputStream logFor(WorkflowRun b) throws IOException {
+            return new FileInputStream(logFile(b));
+        }
+        File logFile(WorkflowRun b) {
+            return new File(b.getRootDir(), "special.log");
+        }
+    }
+    private static class RemotableBuildListener extends LessAbstractTaskListener implements BuildListener {
+        private static final long serialVersionUID = 1;
+        /** counts which instance this is per JVM */
+        private static final AtomicInteger instantiationCounter = new AtomicInteger();
+        /** location of log file streamed to by multiple sources */
+        private final File logFile;
+        /** records allocation & deserialization history; e.g., {@code master #1 → agent #1} */
+        private String id;
+        private transient PrintStream logger;
+        RemotableBuildListener(File logFile) {
+            this.logFile = logFile;
+            id = "master #" + instantiationCounter.incrementAndGet();
+        }
+        @Override public PrintStream getLogger() {
+            if (logger == null) {
+                final OutputStream fos;
+                try {
+                    fos = new FileOutputStream(logFile, true);
+                } catch (FileNotFoundException x) {
+                    throw new AssertionError(x);
+                }
+                logger = new PrintStream(new LineTransformationOutputStream() {
+                    @Override protected void eol(byte[] b, int len) throws IOException {
+                        fos.write(b, 0, len - 1); // all but NL
+                        fos.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
+                        fos.write(b[len - 1]); // NL
+                    }
+                });
+            }
+            return logger;
+        }
+        /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:
+        private Object writeReplace() {
+            Thread.dumpStack();
+            return this;
+        }
+        */
+        private Object readResolve() throws Exception {
+            String name = Channel.current().call(new FindMyOwnName());
+            id += " → " + name + " #" + instantiationCounter.incrementAndGet();
+            return this;
+        }
+        // Awkward, but from the remote side the channel is currently just called `channel`, which is not very informative.
+        // Could be done also by calling Channel.current from writeReplace and stashing the channel name on the master side.
+        private static class FindMyOwnName extends SlaveToMasterCallable<String,RuntimeException> {
+            @Override public String call() {
+                return Channel.current().getName();
+            }
+        }
     }
 
     /**
