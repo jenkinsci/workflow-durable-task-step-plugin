@@ -1,6 +1,7 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import com.google.common.base.Predicate;
+import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
@@ -10,6 +11,10 @@ import hudson.model.BuildListener;
 import hudson.model.Node;
 import hudson.model.Result;
 import hudson.remoting.Channel;
+import hudson.slaves.CommandLauncher;
+import hudson.slaves.DumbSlave;
+import hudson.slaves.NodeProperty;
+import hudson.slaves.RetentionStrategy;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -20,6 +25,7 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 import jenkins.security.SlaveToMasterCallable;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -41,6 +47,7 @@ import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -53,6 +60,7 @@ public class ShellStepTest extends Assert {
     public static BuildWatcher buildWatcher = new BuildWatcher();
 
     @Rule public JenkinsRule j = new JenkinsRule();
+    @Rule public TemporaryFolder tmp = new TemporaryFolder();
 
     /**
      * Failure in the shell script should mark the step as red
@@ -276,6 +284,24 @@ public class ShellStepTest extends Assert {
                 return Channel.current().getName();
             }
         }
+    }
+
+    @Issue("JENKINS-31096")
+    @Test public void encoding() throws Exception {
+        // Like JenkinsRule.createSlave but passing a system encoding:
+        Node remote = new DumbSlave("remote", "", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "",
+            new CommandLauncher("'" + System.getProperty("java.home") + "/bin/java' -Dfile.encoding=ISO-8859-2 -jar '" + new File(j.jenkins.getJnlpJars("slave.jar").getURL().toURI()) + "'"),
+            RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+        j.jenkins.addNode(remote);
+        WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+        FilePath ws;
+        while ((ws = remote.getWorkspaceFor(p)) == null) {
+            Thread.sleep(100);
+        }
+        // `echo -e '\xC8au ty vole!'` works from /bin/bash on Ubuntu but not /bin/sh; anyway nonportable
+        ws.child("message").write("Čau ty vole!\n", "ISO-8859-2");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {sh 'cat message'}", true));
+        j.assertLogContains("Čau ty vole!", j.buildAndAssertSuccess(p));
     }
 
     /**
