@@ -1,5 +1,9 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsScope;
+import com.cloudbees.plugins.credentials.domains.Domain;
+import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
@@ -215,14 +219,30 @@ public class ShellStepTest extends Assert {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        final String credentialsId = "creds";
+        final String username = "bob";
+        final String password = "s3cr3t";
+        UsernamePasswordCredentialsImpl c = new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, credentialsId, "sample", username, password);
+        CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node('master') {sh 'pwd'}; node('remote') {sh 'pwd'; sh 'echo on agent'}", true));
+        p.setDefinition(new CpsFlowDefinition(
+            "node('master') {\n" +
+            "  sh 'pwd'\n" +
+            "}\n" +
+            "node('remote') {\n" +
+            "  sh 'pwd'\n" +
+            "  sh 'echo on agent'\n" +
+            "  withCredentials([[$class: 'UsernamePasswordBinding', variable: 'USERPASS', credentialsId: '" + credentialsId + "']]) {\n" +
+            "    sh 'set +x; echo curl -u $USERPASS http://server/'\n" +
+            "  }\n" +
+            "}", true));
         WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        //new ProcessBuilder("ls", "-la", b.getRootDir().getAbsolutePath()).inheritIO().start().waitFor();
         j.assertLogContains("+ pwd [master #1]", b);
         j.assertLogContains("+ pwd [master #1 → remote #", b);
         j.assertLogContains("on agent [master #1 → remote #", b);
+        j.assertLogNotContains(password, b);
+        j.assertLogContains("curl -u **** http://server/ [master #1 → remote #", b);
     }
     @TestExtension("remoteLogger") public static class LogFile extends PipelineLogFile {
         @Override protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
