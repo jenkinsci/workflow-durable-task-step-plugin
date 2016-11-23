@@ -46,6 +46,7 @@ import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
@@ -151,6 +152,11 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             encoding = step.encoding;
             returnStatus = step.returnStatus;
             node = FilePathUtils.getNodeName(ws);
+            if (step instanceof BatchScriptStep || step instanceof ShellStep)  {
+                FlowNode fn = getContext().get(FlowNode.class);
+                String script = (step instanceof BatchScriptStep) ? ((BatchScriptStep)step).getScript() : ((ShellStep)step).getScript();
+                fn.addAction(new ScriptArgumentAction(script));
+            }
             DurableTask task = step.task();
             if (returnStdout) {
                 task.captureOutput();

@@ -60,6 +60,12 @@ public class ShellStepTest extends Assert {
                 if (sa.getDescriptor().getFunctionName().matches("sh|bat")) {
                     assertSame(BallColor.RED, sa.getIconColor());
                     found = true;
+                    Assert.assertNotNull(sa.getAction(ScriptArgumentAction.class));
+                    if (sa.getDescriptor().getFunctionName().matches("sh")) {
+                        Assert.assertEquals("false", sa.getAction(ScriptArgumentAction.class).getParam());
+                    } else if (sa.getDescriptor().getFunctionName().matches("bat")) {
+                        Assert.assertEquals("whatever", sa.getAction(ScriptArgumentAction.class).getParam());
+                    }
                 }
             }
         }
