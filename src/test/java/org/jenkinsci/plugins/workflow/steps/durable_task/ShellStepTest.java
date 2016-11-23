@@ -62,9 +62,9 @@ public class ShellStepTest extends Assert {
                     found = true;
                     Assert.assertNotNull(sa.getAction(ScriptArgumentAction.class));
                     if (sa.getDescriptor().getFunctionName().matches("sh")) {
-                        Assert.assertEquals("false", sa.getAction(ScriptArgumentAction.class).getParam());
+                        Assert.assertEquals("false", sa.getAction(ScriptArgumentAction.class).getScript());
                     } else if (sa.getDescriptor().getFunctionName().matches("bat")) {
-                        Assert.assertEquals("whatever", sa.getAction(ScriptArgumentAction.class).getParam());
+                        Assert.assertEquals("whatever", sa.getAction(ScriptArgumentAction.class).getScript());
                     }
                 }
             }

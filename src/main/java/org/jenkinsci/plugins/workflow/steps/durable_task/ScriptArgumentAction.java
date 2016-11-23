@@ -9,7 +9,7 @@ import javax.annotation.CheckForNull;
  */
 public class ScriptArgumentAction implements PersistentAction {
     private static final String actionName = "DurableTaskScript";
-    private final String param;
+    private final String script;
 
     @Override
     public String getIconFileName() {
@@ -27,11 +27,11 @@ public class ScriptArgumentAction implements PersistentAction {
     }
 
     @CheckForNull
-    public String getParam() {
-        return this.param;
+    public String getScript() {
+        return this.script;
     }
 
-    public ScriptArgumentAction(String param) {
-        this.param = param;
+    public ScriptArgumentAction(String script) {
+        this.script = script;
     }
 }
