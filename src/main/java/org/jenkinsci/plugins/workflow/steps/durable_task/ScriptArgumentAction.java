@@ -2,6 +2,8 @@ package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import org.jenkinsci.plugins.workflow.actions.PersistentAction;
 
+import javax.annotation.CheckForNull;
+
 /**
  * Stores argument info passed into the script so it can be inspected from the flow graph
  */
@@ -24,6 +26,7 @@ public class ScriptArgumentAction implements PersistentAction {
         return null;
     }
 
+    @CheckForNull
     public String getParam() {
         return this.param;
     }
