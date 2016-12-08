@@ -31,7 +31,6 @@ import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
-import jenkins.security.SlaveToMasterCallable;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -262,11 +261,14 @@ public class ShellStepTest extends Assert {
         /** location of log file streamed to by multiple sources */
         private final File logFile;
         /** records allocation & deserialization history; e.g., {@code master #1 → agent #1} */
-        private String id;
+        private final String id;
         private transient PrintStream logger;
         RemotableBuildListener(File logFile) {
+            this(logFile, "master #" + instantiationCounter.incrementAndGet());
+        }
+        private RemotableBuildListener(File logFile, String id) {
             this.logFile = logFile;
-            id = "master #" + instantiationCounter.incrementAndGet();
+            this.id = id;
         }
         @Override public PrintStream getLogger() {
             if (logger == null) {
@@ -286,23 +288,12 @@ public class ShellStepTest extends Assert {
             }
             return logger;
         }
-        /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:
         private Object writeReplace() {
+            /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:
             Thread.dumpStack();
-            return this;
-        }
-        */
-        private Object readResolve() throws Exception {
-            String name = Channel.current().call(new FindMyOwnName());
-            id += " → " + name + " #" + instantiationCounter.incrementAndGet();
-            return this;
-        }
-        // Awkward, but from the remote side the channel is currently just called `channel`, which is not very informative.
-        // Could be done also by calling Channel.current from writeReplace and stashing the channel name on the master side.
-        private static class FindMyOwnName extends SlaveToMasterCallable<String,RuntimeException> {
-            @Override public String call() {
-                return Channel.current().getName();
-            }
+            */
+            String name = Channel.current().getName();
+            return new RemotableBuildListener(logFile, id + " → " + name + " #" + instantiationCounter.incrementAndGet());
         }
     }
 
