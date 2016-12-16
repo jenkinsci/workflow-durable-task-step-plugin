@@ -68,8 +68,7 @@
     <properties>
         <jenkins.version>1.642.3</jenkins.version>
         <jenkins-test-harness.version>2.17</jenkins-test-harness.version>
-        <hpi-plugin.version>1.121-20161207.210916-1</hpi-plugin.version> <!-- TODO pending https://github.com/jenkinsci/maven-hpi-plugin/pull/46 -->
-        <enforcer.fail>false</enforcer.fail> <!-- TODO ditto -->
+        <hpi-plugin.version>1.121</hpi-plugin.version>
     </properties>
     <dependencies>
         <dependency>
