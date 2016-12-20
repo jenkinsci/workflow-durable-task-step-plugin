@@ -36,7 +36,6 @@ import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -187,7 +186,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 }
                 if (watching) {
                     try {
-                        controller.watch(ws, new HandlerImpl(this, ws, /* TODO logger() should return TaskListener not PrintStream */ listener));
+                        controller.watch(ws, new HandlerImpl(this, ws, listener()));
                         recurrencePeriod = WATCHING_RECURRENCE_PERIOD;
                     } catch (UnsupportedOperationException x) {
                         getContext().onFailure(x);
@@ -216,7 +215,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             return ws;
         }
 
-        private @Nonnull PrintStream logger() {
+        private @Nonnull TaskListener listener() {
             TaskListener l = listener;
             if (l == null) {
                 StepContext context = getContext();
@@ -233,18 +232,18 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                     l = new LogTaskListener(LOGGER, Level.FINE);
                 }
             }
-            return l.getLogger();
+            return l;
         }
 
         @Override public void stop(Throwable cause) throws Exception {
             FilePath workspace = getWorkspace();
             if (workspace != null) {
-                logger().println("Sending interrupt signal to process");
+                listener().getLogger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
                 controller.stop(workspace, launcher);
                 // TODO give it say 10s to exit cleanly and then exit regardless
             } else {
-                logger().println("Could not connect to " + node + " to send interrupt signal to process");
+                listener().getLogger().println("Could not connect to " + node + " to send interrupt signal to process");
                 // TODO perhaps should exit now
             }
         }
@@ -306,7 +305,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                         // TODO if we get here again and exited has still not been called, assume we lost the notification somehow and end the step
                     }
                 } else { // legacy mode
-                    if (controller.writeLog(workspace, logger())) {
+                    if (controller.writeLog(workspace, listener().getLogger())) {
                         getContext().saveState();
                         recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
                     } else {
@@ -316,7 +315,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                     if (exitCode == null) {
                         LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                     } else {
-                        if (controller.writeLog(workspace, logger())) {
+                        if (controller.writeLog(workspace, listener().getLogger())) {
                             LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                         }
                         t.set(null); // do not interrupt cleanup
