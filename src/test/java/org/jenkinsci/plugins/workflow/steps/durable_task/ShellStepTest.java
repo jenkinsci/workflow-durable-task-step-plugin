@@ -20,7 +20,6 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -28,7 +27,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -247,8 +249,8 @@ public class ShellStepTest extends Assert {
         @Override protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
             return new RemotableBuildListener(logFile(b));
         }
-        @Override protected InputStream logFor(WorkflowRun b) throws IOException {
-            return new FileInputStream(logFile(b));
+        @Override protected InputStream logFor(WorkflowRun b, long start) throws IOException {
+            return Channels.newInputStream(FileChannel.open(logFile(b).toPath(), StandardOpenOption.READ).position(start));
         }
         File logFile(WorkflowRun b) {
             return new File(b.getRootDir(), "special.log");

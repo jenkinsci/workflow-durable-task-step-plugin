@@ -84,12 +84,12 @@
         <dependency>
             <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
             <artifactId>workflow-api-plugin</artifactId>
-            <version>99f1c51</version>
+            <version>ea218b9</version>
         </dependency>
         <dependency>
             <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
             <artifactId>workflow-support-plugin</artifactId>
-            <version>cf6f11f</version>
+            <version>284f0dc</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -100,7 +100,7 @@
         <dependency>
             <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
             <artifactId>workflow-job-plugin</artifactId>
-            <version>211bd14</version>
+            <version>2de9add</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -119,7 +119,7 @@
         <dependency>
             <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
             <artifactId>workflow-support-plugin</artifactId>
-            <version>cf6f11f</version>
+            <version>284f0dc</version>
             <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>
