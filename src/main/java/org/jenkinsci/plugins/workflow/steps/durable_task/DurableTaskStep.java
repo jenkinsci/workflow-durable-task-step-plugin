@@ -36,6 +36,7 @@ import hudson.util.LogTaskListener;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -139,6 +140,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         @StepContextParameter private transient Launcher launcher;
         @StepContextParameter private transient TaskListener listener;
         private transient long recurrencePeriod;
+        private transient volatile ScheduledFuture<?> task, stopTask;
         private Controller controller;
         private String node;
         private String remote;
@@ -210,8 +212,9 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                 logger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
                 controller.stop(workspace, launcher);
-                Timer.get().schedule(new Runnable() {
+                stopTask = Timer.get().schedule(new Runnable() {
                     @Override public void run() {
+                        stopTask = null;
                         if (recurrencePeriod > 0) {
                             recurrencePeriod = 0;
                             logger().println("After 10s process did not stop");
@@ -226,25 +229,37 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         }
 
         @Override public String getStatus() {
+            StringBuilder b = new StringBuilder();
             try {
                 FilePath workspace = getWorkspace();
                 if (workspace != null) {
-                    return controller.getDiagnostics(workspace, launcher);
+                    b.append(controller.getDiagnostics(workspace, launcher));
                 } else {
-                    return "waiting to reconnect to " + remote + " on " + node;
+                    b.append("waiting to reconnect to ").append(remote).append(" on ").append(node);
                 }
             } catch (IOException | InterruptedException x) {
-                return "failed to look up workspace: " + x;
+                b.append("failed to look up workspace: ").append(x);
             }
+            b.append("; recurrence period: ").append(recurrencePeriod).append("ms");
+            ScheduledFuture<?> t = task;
+            if (t != null) {
+                b.append("; check task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone());
+            }
+            t = stopTask;
+            if (t != null) {
+                b.append("; stop task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone());
+            }
+            return b.toString();
         }
 
         /** Checks for progress or completion of the external task. */
         @Override public void run() {
+            task = null;
             try {
                 check();
             } finally {
                 if (recurrencePeriod > 0) {
-                    Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+                    task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
                 }
             }
         }
@@ -318,7 +333,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
 
         private void setupTimer() {
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
-            Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+            task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;
