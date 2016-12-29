@@ -33,12 +33,18 @@ import hudson.Launcher;
 import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
+import hudson.util.NamingThreadFactory;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
@@ -173,9 +179,13 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             }
             boolean directory;
             try {
-                directory = ws.isDirectory();
+                directory = applyTimeout(new RemoteCallable<Boolean>() {
+                    @Override public Boolean call() throws IOException, InterruptedException {
+                        return ws.isDirectory();
+                    }
+                }, 10, TimeUnit.SECONDS);
             } catch (Exception x) {
-                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof…
+                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; TimeoutException, InterruptedException if it just takes too long.
                 LOGGER.log(Level.FINE, node + " is evidently offline now", x);
                 ws = null;
                 return null;
@@ -268,7 +278,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             if (recurrencePeriod == 0) { // from stop
                 return;
             }
-            FilePath workspace;
+            final FilePath workspace;
             try {
                 workspace = getWorkspace();
             } catch (AbortException x) {
@@ -279,50 +289,39 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             if (workspace == null) {
                 return; // slave not yet ready, wait for another day
             }
-            // Do not allow this to take more than 10s for any given task:
-            final AtomicReference<Thread> t = new AtomicReference<>(Thread.currentThread());
-            Timer.get().schedule(new Runnable() {
-                @Override public void run() {
-                    Thread _t = t.get();
-                    if (_t != null) {
-                        _t.interrupt();
-                    }
-                }
-            }, 10, TimeUnit.SECONDS);
             try {
-                if (controller.writeLog(workspace, logger())) {
-                    getContext().saveState();
-                    recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
-                } else {
-                    recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
-                }
-                Integer exitCode = controller.exitStatus(workspace, launcher);
-                if (exitCode == null) {
-                    LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
-                } else {
-                    if (controller.writeLog(workspace, logger())) {
-                        LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
-                    }
-                    t.set(null); // do not interrupt cleanup
-                    if (returnStatus || exitCode == 0) {
-                        getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
-                    } else {
-                        if (returnStdout) {
-                            listener.getLogger().write(controller.getOutput(workspace, launcher)); // diagnostic
+                applyTimeout(new RemoteCallable<Void>() {
+                    @Override public Void call() throws IOException, InterruptedException {
+                        if (controller.writeLog(workspace, logger())) {
+                            getContext().saveState();
+                            recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
+                        } else {
+                            recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
                         }
-                        getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                        Integer exitCode = controller.exitStatus(workspace, launcher);
+                        if (exitCode == null) {
+                            LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
+                        } else {
+                            if (controller.writeLog(workspace, logger())) {
+                                LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
+                            }
+                            if (returnStatus || exitCode == 0) {
+                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
+                            } else {
+                                if (returnStdout) {
+                                    listener.getLogger().write(controller.getOutput(workspace, launcher)); // diagnostic
+                                }
+                                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                            }
+                            recurrencePeriod = 0;
+                            controller.cleanup(workspace);
+                        }
+                        return null;
                     }
-                    recurrencePeriod = 0;
-                    controller.cleanup(workspace);
-                }
-            } catch (IOException x) {
+                }, 10, TimeUnit.SECONDS);
+            } catch (Exception x) {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
                 ws = null;
-            } catch (InterruptedException x) {
-                LOGGER.log(Level.FINE, "could not check " + workspace, x);
-                ws = null;
-            } finally {
-                t.set(null); // cancel timer
             }
         }
 
@@ -334,6 +333,40 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         private void setupTimer() {
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
             task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+        }
+
+        // TODO Remoting calls fail to allow you to specify a timeout; probably this should be pushed down into a library:
+        private static final ExecutorService timeoutService = Executors.newCachedThreadPool(new NamingThreadFactory(Executors.defaultThreadFactory(), "Timeouts"));
+        interface RemoteCallable<T> { // TODO impossible to parameterize on multiple exception types
+            T call() throws IOException, InterruptedException;
+        }
+        static <V> V applyTimeout(final RemoteCallable<V> callable, long time, TimeUnit unit) throws IOException, InterruptedException, TimeoutException {
+            Future<V> f = timeoutService.submit(new Callable<V>() {
+                @Override public V call() throws Exception {
+                    try {
+                        return callable.call();
+                    } catch (Exception x) {
+                        throw x;
+                    } catch (Throwable t) {
+                        throw new Exception(t);
+                    }
+                }
+            });
+            try {
+                return f.get(time, unit);
+            } catch (TimeoutException x) {
+                f.cancel(true);
+                throw x;
+            } catch (ExecutionException x) {
+                Throwable t = x.getCause();
+                if (t instanceof IOException) {
+                    throw (IOException) t;
+                } else if (t instanceof InterruptedException) {
+                    throw (InterruptedException) t;
+                } else {
+                    throw new RuntimeException(t);
+                }
+            }
         }
 
         private static final long serialVersionUID = 1L;
