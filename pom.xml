@@ -54,10 +54,6 @@
             <id>repo.jenkins-ci.org</id>
             <url>https://repo.jenkins-ci.org/public/</url>
         </repository>
-        <repository> <!-- TODO as below -->
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
     </repositories>
     <pluginRepositories>
         <pluginRepository>
@@ -68,7 +64,6 @@
     <properties>
         <jenkins.version>1.642.3</jenkins.version>
         <jenkins-test-harness.version>2.17</jenkins-test-harness.version>
-        <hpi-plugin.version>1.121</hpi-plugin.version>
     </properties>
     <dependencies>
         <dependency>
@@ -77,19 +72,19 @@
             <version>2.6</version>
         </dependency>
         <dependency>
-            <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/durable-task-plugin/pull/29 -->
-            <artifactId>durable-task-plugin</artifactId>
-            <version>8f11c53</version>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>durable-task</artifactId>
+            <version>1.13-20170103.203811-3</version> <!-- TODO pending https://github.com/jenkinsci/durable-task-plugin/pull/29 -->
         </dependency>
         <dependency>
-            <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
-            <artifactId>workflow-api-plugin</artifactId>
-            <version>ea218b9</version>
+            <groupId>org.jenkins-ci.plugins.workflow</groupId>
+            <artifactId>workflow-api</artifactId>
+            <version>2.9-20170103.203634-1</version> <!-- TODO pending https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
         </dependency>
         <dependency>
-            <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
-            <artifactId>workflow-support-plugin</artifactId>
-            <version>284f0dc</version>
+            <groupId>org.jenkins-ci.plugins.workflow</groupId>
+            <artifactId>workflow-support</artifactId>
+            <version>2.12-20170103.204017-1</version> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -98,9 +93,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
-            <artifactId>workflow-job-plugin</artifactId>
-            <version>2de9add</version>
+            <groupId>org.jenkins-ci.plugins.workflow</groupId>
+            <artifactId>workflow-job</artifactId>
+            <version>2.10-20170103.204435-1</version> <!-- TODO pending https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -117,9 +112,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.jglick</groupId> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
-            <artifactId>workflow-support-plugin</artifactId>
-            <version>284f0dc</version>
+            <groupId>org.jenkins-ci.plugins.workflow</groupId>
+            <artifactId>workflow-support</artifactId>
+            <version>2.12-20170103.204017-1</version> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
             <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>
