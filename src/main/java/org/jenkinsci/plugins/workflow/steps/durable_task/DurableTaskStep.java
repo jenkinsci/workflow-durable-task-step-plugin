@@ -24,7 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
-import com.google.inject.Inject;
+import com.google.common.collect.ImmutableSet;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
@@ -37,6 +37,7 @@ import hudson.util.NamingThreadFactory;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -53,20 +54,17 @@ import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
+import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
-import org.kohsuke.accmod.Restricted;
-import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
 /**
  * Runs an durable task on a slave, such as a shell script.
  */
-public abstract class DurableTaskStep extends AbstractStepImpl {
+public abstract class DurableTaskStep extends Step {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
@@ -100,13 +98,13 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         this.returnStatus = returnStatus;
     }
 
-    public abstract static class DurableTaskStepDescriptor extends AbstractStepDescriptorImpl {
+    @Override public final StepExecution start(StepContext context) throws Exception {
+        return new Execution(context, this);
+    }
+
+    public abstract static class DurableTaskStepDescriptor extends StepDescriptor {
 
         public static final String defaultEncoding = "UTF-8";
-
-        protected DurableTaskStepDescriptor() {
-            super(Execution.class);
-        }
 
         public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
             try {
@@ -127,24 +125,24 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             return FormValidation.ok();
         }
 
+        @Override public final Set<? extends Class<?>> getRequiredContext() {
+            return ImmutableSet.of(FilePath.class, EnvVars.class, Launcher.class, TaskListener.class);
+        }
+
     }
 
     /**
      * Represents one task that is believed to still be running.
      */
-    @Restricted(NoExternalUse.class)
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
-    public static final class Execution extends AbstractStepExecutionImpl implements Runnable {
+    static final class Execution extends StepExecution implements Runnable {
 
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
 
-        @Inject(optional=true) private transient DurableTaskStep step;
-        @StepContextParameter private transient FilePath ws;
-        @StepContextParameter private transient EnvVars env;
-        @StepContextParameter private transient Launcher launcher;
-        @StepContextParameter private transient TaskListener listener;
+        private transient final DurableTaskStep step;
+        private transient FilePath ws;
         private transient long recurrencePeriod;
         private transient volatile ScheduledFuture<?> task, stopTask;
         private Controller controller;
@@ -154,16 +152,23 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         private String encoding; // serialized default is irrelevant
         private boolean returnStatus; // serialized default is false
 
+        Execution(StepContext context, DurableTaskStep step) {
+            super(context);
+            this.step = step;
+        }
+
         @Override public boolean start() throws Exception {
             returnStdout = step.returnStdout;
             encoding = step.encoding;
             returnStatus = step.returnStatus;
+            StepContext context = getContext();
+            ws = context.get(FilePath.class);
             node = FilePathUtils.getNodeName(ws);
-            DurableTask task = step.task();
+            DurableTask durableTask = step.task();
             if (returnStdout) {
-                task.captureOutput();
+                durableTask.captureOutput();
             }
-            controller = task.launch(env, ws, launcher, listener);
+            controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), context.get(TaskListener.class));
             this.remote = ws.getRemote();
             setupTimer();
             return false;
@@ -197,23 +202,30 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
         }
 
         private @Nonnull PrintStream logger() {
-            TaskListener l = listener;
-            if (l == null) {
-                StepContext context = getContext();
-                try {
-                    l = context.get(TaskListener.class);
-                    if (l != null) {
-                        LOGGER.log(Level.WARNING, "JENKINS-34021: DurableTaskStep.Execution.listener not restored in {0}", context);
-                    } else {
-                        LOGGER.log(Level.WARNING, "JENKINS-34021: TaskListener not even available upon request in {0}", context);
-                        l = new LogTaskListener(LOGGER, Level.FINE);
-                    }
-                } catch (Exception x) {
-                    LOGGER.log(Level.WARNING, "JENKINS-34021: could not get TaskListener in " + context, x);
+            TaskListener l;
+            StepContext context = getContext();
+            try {
+                l = context.get(TaskListener.class);
+                if (l != null) {
+                    LOGGER.log(Level.FINEST, "JENKINS-34021: DurableTaskStep.Execution.listener present in {0}", context);
+                } else {
+                    LOGGER.log(Level.WARNING, "JENKINS-34021: TaskListener not available upon request in {0}", context);
                     l = new LogTaskListener(LOGGER, Level.FINE);
                 }
+            } catch (Exception x) {
+                LOGGER.log(Level.WARNING, "JENKINS-34021: could not get TaskListener in " + context, x);
+                l = new LogTaskListener(LOGGER, Level.FINE);
             }
             return l.getLogger();
+        }
+
+        private @Nonnull Launcher launcher() throws IOException, InterruptedException {
+            StepContext context = getContext();
+            Launcher l = context.get(Launcher.class);
+            if (l == null) {
+                throw new IOException("JENKINS-37486: Launcher not present in " + context);
+            }
+            return l;
         }
 
         @Override public void stop(final Throwable cause) throws Exception {
@@ -221,7 +233,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             if (workspace != null) {
                 logger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
-                controller.stop(workspace, launcher);
+                controller.stop(workspace, launcher());
                 stopTask = Timer.get().schedule(new Runnable() {
                     @Override public void run() {
                         stopTask = null;
@@ -243,7 +255,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             try {
                 FilePath workspace = getWorkspace();
                 if (workspace != null) {
-                    b.append(controller.getDiagnostics(workspace, launcher));
+                    b.append(controller.getDiagnostics(workspace, launcher()));
                 } else {
                     b.append("waiting to reconnect to ").append(remote).append(" on ").append(node);
                 }
@@ -298,7 +310,7 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                         } else {
                             recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
                         }
-                        Integer exitCode = controller.exitStatus(workspace, launcher);
+                        Integer exitCode = controller.exitStatus(workspace, launcher());
                         if (exitCode == null) {
                             LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                         } else {
@@ -306,10 +318,10 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
                                 LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                             }
                             if (returnStatus || exitCode == 0) {
-                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher), encoding) : null);
+                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), encoding) : null);
                             } else {
                                 if (returnStdout) {
-                                    listener.getLogger().write(controller.getOutput(workspace, launcher)); // diagnostic
+                                    logger().write(controller.getOutput(workspace, launcher())); // diagnostic
                                 }
                                 getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                             }
