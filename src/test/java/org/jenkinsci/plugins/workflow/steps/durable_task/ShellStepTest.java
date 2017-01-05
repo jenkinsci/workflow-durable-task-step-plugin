@@ -9,6 +9,7 @@ import hudson.model.Node;
 import hudson.model.Result;
 import java.io.File;
 import java.io.Serializable;
+import static org.hamcrest.Matchers.containsString;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -109,6 +110,8 @@ public class ShellStepTest extends Assert {
     @Test public void launcherDecorator() throws Exception {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}"));
+        Assume.assumeThat("test only works if mvn test is not itself niced", j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
         p.setDefinition(new CpsFlowDefinition("node {nice {sh 'echo niceness=`nice`'}}"));
         j.assertLogContains("niceness=10", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}"));
