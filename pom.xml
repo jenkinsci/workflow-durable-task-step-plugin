@@ -84,7 +84,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-support</artifactId>
-            <version>2.12-20170103.204017-1</version> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
+            <version>2.12-20170106.234441-2</version> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -114,7 +114,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-support</artifactId>
-            <version>2.12-20170103.204017-1</version> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
+            <version>2.12-20170106.234441-2</version> <!-- TODO pending https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
             <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>
