@@ -419,6 +419,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return cookie != null; // in which case this is after a restart and we still claim the executor
         }
 
+        @Override public String toString() {
+            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",context=" + context + '}';
+        }
+
         private static void finish(@CheckForNull final String cookie) {
             if (cookie == null) {
                 return;
