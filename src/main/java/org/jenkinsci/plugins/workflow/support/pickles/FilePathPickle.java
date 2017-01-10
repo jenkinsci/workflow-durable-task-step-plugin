@@ -57,6 +57,10 @@ public class FilePathPickle extends Pickle {
         };
     }
 
+    @Override public String toString() {
+        return "FilePathPickle{" + "slave=" + slave + ", path=" + path + '}';
+    }
+
     @Extension public static final class Factory extends SingleTypedPickleFactory<FilePath> {
         @Override protected Pickle pickle(FilePath object) {
             return new FilePathPickle(object);
