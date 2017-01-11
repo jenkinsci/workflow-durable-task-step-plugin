@@ -24,6 +24,9 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import hudson.FilePath;
+import hudson.init.InitMilestone;
+import hudson.init.Initializer;
 import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Queue;
@@ -41,6 +44,14 @@ import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -52,7 +63,10 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
+import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
+import org.hamcrest.Matchers;
+import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
@@ -62,11 +76,10 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
+import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -76,6 +89,7 @@ import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
+import org.jvnet.hudson.test.recipes.LocalData;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -456,6 +470,105 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("ran node block #49", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
             }
         });
+    }
+
+    @Issue("JENKINS-39134")
+    @LocalData
+    @Test public void serialForm() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
+                WorkflowRun b = p.getBuildByNumber(1);
+                assertThat(patchedFiles, Matchers.containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
+                /* TODO this seems to randomly not include the expected items:
+                assertThat(patchedFields, Matchers.containsInAnyOrder(
+                    // But not FileMonitoringController.controlDir, since this old version is still using location-independent .id.
+                    "private final java.lang.String org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle.path",
+                    "private final java.lang.String org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle.path",
+                    "private java.lang.String org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep$Execution.remote"));
+                */
+                story.j.assertLogContains("simulated later output", story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b)));
+            }
+        });
+    }
+    private static final List<String> patchedFiles = new ArrayList<>();
+    private static final List<String> patchedFields = new ArrayList<>();
+    // TODO @TestExtension("serialForm") ItemListener does not work since we need to run before FlowExecutionList.ItemListenerImpl yet TestExtension does not support ordinal
+    @Initializer(before = InitMilestone.JOB_LOADED) public static void replaceWorkspacePath() throws Exception {
+        final File prj = new File(Jenkins.getInstance().getRootDir(), "jobs/p");
+        final File workspace = new File(prj, "workspace");
+        final String ORIG_WS = "/space/tmp/AbstractStepExecutionImpl-upgrade/jobs/p/workspace";
+        final String newWs = workspace.getAbsolutePath();
+        File controlDir = new File(workspace, ".eb6272d3");
+        if (!controlDir.isDirectory()) {
+            return;
+        }
+        System.err.println("Patching " + controlDir);
+        RiverReader.customResolver = new ObjectResolver() {
+            @Override public Object readResolve(Object replacement) {
+                Class<?> c = replacement.getClass();
+                //System.err.println("replacing " + c.getName());
+                while (c != Object.class) {
+                    for (Field f : c.getDeclaredFields()) {
+                        if (f.getType() == String.class) {
+                            try {
+                                f.setAccessible(true);
+                                Object v = f.get(replacement);
+                                if (ORIG_WS.equals(v)) {
+                                    //System.err.println("patching " + f);
+                                    f.set(replacement, newWs);
+                                    patchedFields.add(f.toString());
+                                } else if (newWs.equals(v)) {
+                                    //System.err.println(f + " was already patched, somehow?");
+                                } else {
+                                    //System.err.println("some other value " + v + " for " + f);
+                                }
+                            } catch (Exception x) {
+                                x.printStackTrace();
+                            }
+                        }
+                    }
+                    c = c.getSuperclass();
+                }
+                return replacement;
+            }
+            @Override public Object writeReplace(Object original) {
+                throw new IllegalStateException();
+            }
+        };
+        Files.walkFileTree(prj.toPath(), new SimpleFileVisitor<Path>() {
+            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                File f = file.toFile();
+                String name = f.getName();
+                if (name.equals("program.dat")) {
+                    /* TODO could not get this to work; stream appeared corrupted:
+                    patchedFiles.add(name);
+                    String origContent = FileUtils.readFileToString(f, StandardCharsets.ISO_8859_1);
+                    String toReplace = String.valueOf((char) Protocol.ID_STRING_SMALL) + String.valueOf((char) ORIG_WS.length()) + ORIG_WS;
+                    int newLen = newWs.length();
+                    String replacement = String.valueOf((char) Protocol.ID_STRING_MEDIUM) +
+                                         String.valueOf((char) (newLen & 0xff00) >> 8) +
+                                         String.valueOf((char) newLen & 0xff) +
+                                         newWs; // TODO breaks if not ASCII
+                    String replacedContent = origContent.replace(toReplace, replacement);
+                    assertNotEquals("failed to replace ‘" + toReplace + "’", replacedContent, origContent);
+                    FileUtils.writeStringToFile(f, replacedContent, StandardCharsets.ISO_8859_1);
+                    */
+                } else {
+                    String origContent = FileUtils.readFileToString(f, StandardCharsets.ISO_8859_1);
+                    String replacedContent = origContent.replace(ORIG_WS, newWs);
+                    if (!replacedContent.equals(origContent)) {
+                        patchedFiles.add(name);
+                        FileUtils.writeStringToFile(f, replacedContent, StandardCharsets.ISO_8859_1);
+                    }
+                }
+                return super.visitFile(file, attrs);
+            }
+        });
+        FilePath controlDirFP = new FilePath(controlDir);
+        controlDirFP.child("jenkins-result.txt").write("0", null);
+        FilePath log = controlDirFP.child("jenkins-log.txt");
+        log.write(log.readToString() + "simulated later output\n", null);
     }
 
 }

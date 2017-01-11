@@ -54,6 +54,7 @@ import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
@@ -135,7 +136,7 @@ public abstract class DurableTaskStep extends Step {
      * Represents one task that is believed to still be running.
      */
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
-    static final class Execution extends StepExecution implements Runnable {
+    static final class Execution extends AbstractStepExecutionImpl implements Runnable {
 
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
@@ -338,7 +339,6 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void onResume() {
-            super.onResume();
             setupTimer();
         }
 
