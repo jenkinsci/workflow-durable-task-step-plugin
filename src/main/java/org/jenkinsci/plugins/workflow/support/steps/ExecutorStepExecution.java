@@ -420,7 +420,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public String toString() {
-            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",context=" + context + '}';
+            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",context=" + context + ",cookie=" + cookie +  '}';
         }
 
         private static void finish(@CheckForNull final String cookie) {
@@ -609,13 +609,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return Executor.of(this);
             }
 
-            @Restricted(NoExternalUse.class) // for Jelly and toString
+            @Restricted(NoExternalUse.class) // for Jelly
             public String getUrl() {
                 return PlaceholderTask.this.getUrl(); // we hope this has a console.jelly
             }
 
             @Override public String toString() {
-                return "PlaceholderExecutable:" + getUrl() + ":" + cookie;
+                return "PlaceholderExecutable:" + PlaceholderTask.this;
             }
 
             private static final long serialVersionUID = 1L;
