@@ -249,12 +249,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         /**
-         *  Gives {@link StepContext} instance
+         * Gives {@link FlowNode}, waiting to be executed  in build {@link Queue}.
          *
-         * @return StepContext instance
+         * @return FlowNode instance, could be null.
          */
-        public @Nonnull StepContext getContext() {
-            return context;
+        public @CheckForNull FlowNode getNode() throws IOException, InterruptedException {
+            return context.get(FlowNode.class);
         }
 
         @Override public Queue.Executable createExecutable() throws IOException {
