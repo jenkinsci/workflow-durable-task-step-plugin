@@ -41,6 +41,7 @@ import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
@@ -245,6 +246,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
             return this;
+        }
+
+        /**
+         *  Gives {@link StepContext} instance
+         *
+         * @return StepContext instance
+         */
+        public @Nonnull StepContext getContext() {
+            return context;
         }
 
         @Override public Queue.Executable createExecutable() throws IOException {
