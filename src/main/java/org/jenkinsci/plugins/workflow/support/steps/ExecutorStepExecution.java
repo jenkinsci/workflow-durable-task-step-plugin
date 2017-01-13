@@ -41,6 +41,7 @@ import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
@@ -245,6 +246,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
             return this;
+        }
+
+        /**
+         * Gives {@link FlowNode}, waiting to be executed  in build {@link Queue}.
+         *
+         * @return FlowNode instance, could be null.
+         */
+        public @CheckForNull FlowNode getNode() throws IOException, InterruptedException {
+            return context.get(FlowNode.class);
         }
 
         @Override public Queue.Executable createExecutable() throws IOException {
