@@ -174,6 +174,13 @@ public class ShellStepTest extends Assert {
         }
     }
 
+    @Issue("JENKINS-40734")
+    @Test public void envWithShellChar() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {withEnv(['MONEY=big$$money']) {sh 'echo \"MONEY=$MONEY\"'}}", true));
+        j.assertLogContains("MONEY=big$$money", j.buildAndAssertSuccess(p));
+    }
+
     @Issue("JENKINS-26133")
     @Test public void configRoundTrip() throws Exception {
         ShellStep s = new ShellStep("echo hello");
