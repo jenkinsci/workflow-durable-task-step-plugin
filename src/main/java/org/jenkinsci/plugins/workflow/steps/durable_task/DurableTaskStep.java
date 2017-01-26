@@ -216,6 +216,8 @@ public abstract class DurableTaskStep extends Step {
             } catch (Exception x) {
                 LOGGER.log(Level.WARNING, "JENKINS-34021: could not get TaskListener in " + context, x);
                 l = new LogTaskListener(LOGGER, Level.FINE);
+                recurrencePeriod = 0;
+                getContext().onFailure(x);
             }
             return l.getLogger();
         }
@@ -247,6 +249,7 @@ public abstract class DurableTaskStep extends Step {
                 }, 10, TimeUnit.SECONDS);
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
+                recurrencePeriod = 0;
                 getContext().onFailure(cause);
             }
         }
