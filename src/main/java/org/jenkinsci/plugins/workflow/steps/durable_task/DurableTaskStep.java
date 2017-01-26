@@ -99,7 +99,7 @@ public abstract class DurableTaskStep extends Step {
         this.returnStatus = returnStatus;
     }
 
-    @Override public final StepExecution start(StepContext context) throws Exception {
+    @Override public StepExecution start(StepContext context) throws Exception {
         return new Execution(context, this);
     }
 
