@@ -5,8 +5,12 @@ import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
 import hudson.model.BallColor;
+import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.slaves.DumbSlave;
+import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.tasks.Shell;
 import java.io.File;
 import java.io.Serializable;
 import static org.hamcrest.Matchers.containsString;
@@ -105,6 +109,24 @@ public class ShellStepTest extends Assert {
         });
 
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+    }
+
+    @Issue("JENKINS-41339")
+    @Test public void nodePaths() throws Exception {
+        DumbSlave slave = j.createSlave("slave", null, null);
+        FreeStyleProject f = j.createFreeStyleProject("f"); // the control
+        f.setAssignedNode(slave);
+        f.getBuildersList().add(new Shell("echo PATH=$PATH"));
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('slave') {sh 'echo PATH=$PATH'}", true));
+        // First check: syntax recommended in /help/system-config/nodeEnvironmentVariables.html.
+        slave.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("PATH+ACME", "/opt/acme/bin")));
+        j.assertLogContains(":/opt/acme/bin:/", j.buildAndAssertSuccess(f)); // JRE also gets prepended
+        j.assertLogContains("PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
+        // Second check: recursive expansion.
+        slave.getNodeProperties().replace(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("PATH", "/opt/acme/bin:$PATH")));
+        j.assertLogContains(":/opt/acme/bin:/", j.buildAndAssertSuccess(f));
+        j.assertLogContains("PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
     }
 
     @Test public void launcherDecorator() throws Exception {
