@@ -67,7 +67,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         body = getContext().newBodyInvoker()
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
-                        new ExpanderImpl("WORKSPACE", workspace.getRemote())),
+                        new ExpanderImpl(workspace.getRemote())),
                     workspace)
                 .withCallback(new Callback(lease))
                 .start();
@@ -77,9 +77,9 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
     private static final class ExpanderImpl extends EnvironmentExpander {
         private static final long serialVersionUID = 1;
         private final Map<String,String> override;
-        private ExpanderImpl(String var, String value) {
+        private ExpanderImpl(String path) {
             this.override = new HashMap<>();
-            this.override.put(var, value);
+            this.override.put("WORKSPACE", path);
         }
         @Override public void expand(EnvVars env) throws IOException, InterruptedException {
             env.overrideAll(override);
