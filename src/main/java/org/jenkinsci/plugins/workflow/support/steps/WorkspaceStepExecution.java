@@ -76,13 +76,12 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
 
     private static final class ExpanderImpl extends EnvironmentExpander {
         private static final long serialVersionUID = 1;
-        private final Map<String,String> override;
+        private final String path;
         private ExpanderImpl(String path) {
-            this.override = new HashMap<>();
-            this.override.put("WORKSPACE", path);
+            this.path = path;
         }
         @Override public void expand(EnvVars env) throws IOException, InterruptedException {
-            env.overrideAll(override);
+            env.override("WORKSPACE", path);
         }
     }
 
