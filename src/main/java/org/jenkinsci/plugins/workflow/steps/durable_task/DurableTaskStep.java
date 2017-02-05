@@ -33,19 +33,12 @@ import hudson.Launcher;
 import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
-import hudson.util.NamingThreadFactory;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
@@ -59,6 +52,7 @@ import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -184,16 +178,13 @@ public abstract class DurableTaskStep extends Step {
                 }
             }
             boolean directory;
-            try {
-                directory = applyTimeout(new RemoteCallable<Boolean>() {
-                    @Override public Boolean call() throws IOException, InterruptedException {
-                        return ws.isDirectory();
-                    }
-                }, 10, TimeUnit.SECONDS);
+            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
+                directory = ws.isDirectory();
             } catch (Exception x) {
-                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; TimeoutException, InterruptedException if it just takes too long.
+                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
                 LOGGER.log(Level.FINE, node + " is evidently offline now", x);
                 ws = null;
+                logger().println("Cannot contact " + node + ": " + x); // TODO should we throttle messages of this type; e.g., exponentially slow them down?
                 return null;
             }
             if (!directory) {
@@ -236,7 +227,6 @@ public abstract class DurableTaskStep extends Step {
             if (workspace != null) {
                 logger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
-                controller.stop(workspace, launcher());
                 stopTask = Timer.get().schedule(new Runnable() {
                     @Override public void run() {
                         stopTask = null;
@@ -247,6 +237,7 @@ public abstract class DurableTaskStep extends Step {
                         }
                     }
                 }, 10, TimeUnit.SECONDS);
+                controller.stop(workspace, launcher());
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
                 recurrencePeriod = 0;
@@ -305,9 +296,7 @@ public abstract class DurableTaskStep extends Step {
             if (workspace == null) {
                 return; // slave not yet ready, wait for another day
             }
-            try {
-                applyTimeout(new RemoteCallable<Void>() {
-                    @Override public Void call() throws IOException, InterruptedException {
+            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
                         if (controller.writeLog(workspace, logger())) {
                             getContext().saveState();
                             recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
@@ -332,12 +321,10 @@ public abstract class DurableTaskStep extends Step {
                             recurrencePeriod = 0;
                             controller.cleanup(workspace);
                         }
-                        return null;
-                    }
-                }, 10, TimeUnit.SECONDS);
             } catch (Exception x) {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
                 ws = null;
+                logger().println("Cannot contact " + node + ": " + x); // TODO as above
             }
         }
 
@@ -348,40 +335,6 @@ public abstract class DurableTaskStep extends Step {
         private void setupTimer() {
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
             task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
-        }
-
-        // TODO Remoting calls fail to allow you to specify a timeout; probably this should be pushed down into a library:
-        private static final ExecutorService timeoutService = Executors.newCachedThreadPool(new NamingThreadFactory(Executors.defaultThreadFactory(), "Timeouts"));
-        interface RemoteCallable<T> { // TODO impossible to parameterize on multiple exception types
-            T call() throws IOException, InterruptedException;
-        }
-        static <V> V applyTimeout(final RemoteCallable<V> callable, long time, TimeUnit unit) throws IOException, InterruptedException, TimeoutException {
-            Future<V> f = timeoutService.submit(new Callable<V>() {
-                @Override public V call() throws Exception {
-                    try {
-                        return callable.call();
-                    } catch (Exception x) {
-                        throw x;
-                    } catch (Throwable t) {
-                        throw new Exception(t);
-                    }
-                }
-            });
-            try {
-                return f.get(time, unit);
-            } catch (TimeoutException x) {
-                f.cancel(true);
-                throw x;
-            } catch (ExecutionException x) {
-                Throwable t = x.getCause();
-                if (t instanceof IOException) {
-                    throw (IOException) t;
-                } else if (t instanceof InterruptedException) {
-                    throw (InterruptedException) t;
-                } else {
-                    throw new RuntimeException(t);
-                }
-            }
         }
 
         private static final long serialVersionUID = 1L;
