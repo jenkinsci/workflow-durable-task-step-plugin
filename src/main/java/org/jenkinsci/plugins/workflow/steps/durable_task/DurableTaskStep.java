@@ -281,6 +281,7 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
+        @SuppressFBWarnings(value="REC_CATCH_EXCEPTION", justification="silly rule")
         private void check() {
             if (recurrencePeriod == 0) { // from stop
                 return;
