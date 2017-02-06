@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.util.concurrent.FutureCallback;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
@@ -72,6 +73,7 @@ public abstract class DurableTaskStep extends Step {
     private boolean returnStdout;
     private String encoding = DurableTaskStepDescriptor.defaultEncoding;
     private boolean returnStatus;
+    private boolean background;
 
     protected abstract DurableTask task();
 
@@ -99,6 +101,14 @@ public abstract class DurableTaskStep extends Step {
         this.returnStatus = returnStatus;
     }
 
+    public boolean isBackground() {
+        return background;
+    }
+
+    @DataBoundSetter public void setBackground(boolean background) {
+        this.background = background;
+    }
+
     @Override public StepExecution start(StepContext context) throws Exception {
         return new Execution(context, this);
     }
@@ -119,9 +129,9 @@ public abstract class DurableTaskStep extends Step {
             return FormValidation.ok();
         }
 
-        public FormValidation doCheckReturnStatus(@QueryParameter boolean returnStdout, @QueryParameter boolean returnStatus) {
-            if (returnStdout && returnStatus) {
-                return FormValidation.error("You may not select both returnStdout and returnStatus.");
+        public FormValidation doCheckReturnStatus(@QueryParameter boolean returnStdout, @QueryParameter boolean returnStatus, @QueryParameter boolean background) {
+            if ((returnStdout?1:0)+(returnStatus?1:0)+(background?1:0)>1) {
+                return FormValidation.error("You can only select one of returnStdout, returnStatus, or background.");
             }
             return FormValidation.ok();
         }
@@ -152,6 +162,14 @@ public abstract class DurableTaskStep extends Step {
         private boolean returnStdout; // serialized default is false
         private String encoding; // serialized default is irrelevant
         private boolean returnStatus; // serialized default is false
+        private boolean background; // serialized default is false
+
+        /**
+         * In this class, the completion of the async task should be sent here,
+         * instead of {@code getContext()} like normal step is, in order for
+         * us to support background task execution. See {@link DurableTaskStep#background}
+         */
+        private FutureCallbackProxy<Object> callback = new FutureCallbackProxy<>();
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -161,8 +179,11 @@ public abstract class DurableTaskStep extends Step {
         @Override public boolean start() throws Exception {
             returnStdout = step.returnStdout;
             encoding = step.encoding;
-            returnStatus = step.returnStatus;
+            returnStatus = step.returnStatus || step.background;
+            background = step.background;
             StepContext context = getContext();
+            if (!background)    // unless run in background, the completion of the task means completion of this step
+                callback.addCallback(context);
             ws = context.get(FilePath.class);
             node = FilePathUtils.getNodeName(ws);
             DurableTask durableTask = step.task();
@@ -172,7 +193,12 @@ public abstract class DurableTaskStep extends Step {
             controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), context.get(TaskListener.class));
             this.remote = ws.getRemote();
             setupTimer();
-            return false;
+            if (background) {
+                context.onSuccess(new BackgroundTask(this));
+                return true;
+            } else {
+                return false;
+            }
         }
 
         private @CheckForNull FilePath getWorkspace() throws AbortException {
@@ -217,7 +243,7 @@ public abstract class DurableTaskStep extends Step {
                 LOGGER.log(Level.WARNING, "JENKINS-34021: could not get TaskListener in " + context, x);
                 l = new LogTaskListener(LOGGER, Level.FINE);
                 recurrencePeriod = 0;
-                getContext().onFailure(x);
+                callback.onFailure(x);
             }
             return l.getLogger();
         }
@@ -243,14 +269,14 @@ public abstract class DurableTaskStep extends Step {
                         if (recurrencePeriod > 0) {
                             recurrencePeriod = 0;
                             logger().println("After 10s process did not stop");
-                            getContext().onFailure(cause);
+                            callback.onFailure(cause);
                         }
                     }
                 }, 10, TimeUnit.SECONDS);
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
                 recurrencePeriod = 0;
-                getContext().onFailure(cause);
+                callback.onFailure(cause);
             }
         }
 
@@ -290,7 +316,14 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
-        private void check() {
+        /**
+         * Registers a callback that gets called when the task is completed.
+         */
+        /*package*/ synchronized void addCompletionHandler(FutureCallback<Object> callback) {
+            this.callback.addCallback(callback);
+        }
+
+        private synchronized void check() {
             if (recurrencePeriod == 0) { // from stop
                 return;
             }
@@ -299,7 +332,7 @@ public abstract class DurableTaskStep extends Step {
                 workspace = getWorkspace();
             } catch (AbortException x) {
                 recurrencePeriod = 0;
-                getContext().onFailure(x);
+                callback.onFailure(x);
                 return;
             }
             if (workspace == null) {
@@ -321,13 +354,13 @@ public abstract class DurableTaskStep extends Step {
                             if (controller.writeLog(workspace, logger())) {
                                 LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                             }
-                            if (returnStatus || exitCode == 0) {
-                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), encoding) : null);
+                            if (background || returnStatus || exitCode == 0) {
+                                callback.onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), encoding) : null);
                             } else {
                                 if (returnStdout) {
                                     logger().write(controller.getOutput(workspace, launcher())); // diagnostic
                                 }
-                                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                                callback.onFailure(new AbortException("script returned exit code " + exitCode));
                             }
                             recurrencePeriod = 0;
                             controller.cleanup(workspace);
@@ -342,6 +375,11 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void onResume() {
+            if (callback==null) {
+                callback = new FutureCallbackProxy<>();
+                if (!background)
+                    callback.addCallback(getContext());
+            }
             setupTimer();
         }
 

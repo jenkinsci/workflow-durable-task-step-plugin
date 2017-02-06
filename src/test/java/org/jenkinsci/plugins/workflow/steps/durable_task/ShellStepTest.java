@@ -222,6 +222,28 @@ public class ShellStepTest extends Assert {
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
+    @Test
+    public void backgroundTask() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node { " +
+                "def x = sh(script:'echo hello world',background:true);" +
+                "def e = backgroundDurableTaskJoin(x);" +
+                "echo('output='+e);" +
+            "}"));
+        j.assertLogContains("output=0", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+
+    @Test
+    public void backgroundTaskKill() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node { " +
+                "def x = sh(script:'sleep 60',background:true);" +
+                "x.kill()"+
+                // TODO: how do I prove that it actually killed the process?
+            "}"));
+        j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+    }
+
     /**
      * Asserts that the predicate remains true up to the given timeout.
      */
