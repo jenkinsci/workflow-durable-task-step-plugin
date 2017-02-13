@@ -64,6 +64,14 @@ public class EnvWorkflowTest {
         ));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
         r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+
+        p.setDefinition(new CpsFlowDefinition( // JENKINS-41446 ensure variable still available in a ws step
+            "node('node-test') {\n ws('workspace/foo') {" +
+            "    echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
+            "  }\n}\n"
+        ));
+        // Label.parse returns TreeSet so the result is guaranteed to be sorted:
+        r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
 
@@ -101,6 +109,9 @@ public class EnvWorkflowTest {
         p.setDefinition(new CpsFlowDefinition("node('remote') {echo(/running in ${env.WORKSPACE}/)}", true));
         WorkflowRun b2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
         r.assertLogContains("running in " + remote.getWorkspaceFor(p), b2);
+        p.setDefinition(new CpsFlowDefinition("node('remote') {ws('workspace/foo') {echo(/running in ${env.WORKSPACE}, really ?/)}}", true)); // JENKINS-41446
+        WorkflowRun b3 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        r.assertLogContains("/workspace/foo, really ?" , b3); // '/workspace/foo' is in the log, testing with ', really' to ensure we catch the environment variable
     }
 
 }
