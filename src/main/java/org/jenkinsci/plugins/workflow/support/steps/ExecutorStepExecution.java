@@ -260,6 +260,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return new PlaceholderExecutable();
         }
 
+        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Label getAssignedLabel() {
             if (label == null) {
                 return null;
@@ -274,6 +275,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Node getLastBuiltOn() {
             if (label == null) {
                 return null;
@@ -584,7 +586,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             if (masterExecutor != null) {
                                 masterExecutor.interrupt();
                             } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                super.getExecutor().recordCauseOfInterruption(r, listener);
+                                Executor thisExecutor = super.getExecutor();
+                                if (thisExecutor != null) {
+                                    thisExecutor.recordCauseOfInterruption(r, listener);
+                                }
                                 completed(null);
                             }
                         }
