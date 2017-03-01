@@ -10,6 +10,7 @@ import hudson.model.Node;
 import hudson.model.Result;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import java.io.File;
 import java.io.Serializable;
@@ -26,7 +27,7 @@ import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
-import org.junit.Assert;
+import static org.junit.Assert.*;
 import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
@@ -37,7 +38,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
 
-public class ShellStepTest extends Assert {
+public class ShellStepTest {
 
     @ClassRule
     public static BuildWatcher buildWatcher = new BuildWatcher();
@@ -116,17 +117,17 @@ public class ShellStepTest extends Assert {
         DumbSlave slave = j.createSlave("slave", null, null);
         FreeStyleProject f = j.createFreeStyleProject("f"); // the control
         f.setAssignedNode(slave);
-        f.getBuildersList().add(new Shell("echo PATH=$PATH"));
+        f.getBuildersList().add(Functions.isWindows() ? new BatchFile("echo Path=%Path%") : new Shell("echo PATH=$PATH"));
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node('slave') {sh 'echo PATH=$PATH'}", true));
+        p.setDefinition(new CpsFlowDefinition("node('slave') {isUnix() ? sh('echo PATH=$PATH') : bat('echo Path=%Path%')}", true));
         // First check: syntax recommended in /help/system-config/nodeEnvironmentVariables.html.
-        slave.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("PATH+ACME", "/opt/acme/bin")));
-        j.assertLogContains(":/opt/acme/bin:/", j.buildAndAssertSuccess(f)); // JRE also gets prepended
-        j.assertLogContains("PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
+        slave.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("PATH+ACME", Functions.isWindows() ? "C:\\acme\\bin" : "/opt/acme/bin")));
+        j.assertLogContains(Functions.isWindows() ? ";C:\\acme\\bin;" : ":/opt/acme/bin:/", j.buildAndAssertSuccess(f)); // JRE also gets prepended
+        j.assertLogContains(Functions.isWindows() ? "Path=C:\\acme\\bin;" : "PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
         // Second check: recursive expansion.
-        slave.getNodeProperties().replace(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("PATH", "/opt/acme/bin:$PATH")));
-        j.assertLogContains(":/opt/acme/bin:/", j.buildAndAssertSuccess(f));
-        j.assertLogContains("PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
+        slave.getNodeProperties().replace(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("PATH", Functions.isWindows() ? "C:\\acme\\bin;$PATH" : "/opt/acme/bin:$PATH")));
+        j.assertLogContains(Functions.isWindows() ? ";C:\\acme\\bin;" : ":/opt/acme/bin:/", j.buildAndAssertSuccess(f));
+        j.assertLogContains(Functions.isWindows() ? "Path=C:\\acme\\bin;" : "PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
     }
 
     @Test public void launcherDecorator() throws Exception {
@@ -177,7 +178,7 @@ public class ShellStepTest extends Assert {
     @Issue("JENKINS-40734")
     @Test public void envWithShellChar() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node {withEnv(['MONEY=big$$money']) {sh 'echo \"MONEY=$MONEY\"'}}", true));
+        p.setDefinition(new CpsFlowDefinition("node {withEnv(['MONEY=big$$money']) {isUnix() ? sh('echo \"MONEY=$MONEY\"') : bat('echo \"MONEY=%MONEY%\"')}}", true));
         j.assertLogContains("MONEY=big$$money", j.buildAndAssertSuccess(p));
     }
 
@@ -208,6 +209,7 @@ public class ShellStepTest extends Assert {
 
     @Issue("JENKINS-26133")
     @Test public void returnStdout() throws Exception {
+        Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/tr").canExecute());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("def msg; node {msg = sh(script: 'echo hello world | tr [a-z] [A-Z]', returnStdout: true).trim()}; echo \"it said ${msg}\""));
         j.assertLogContains("it said HELLO WORLD", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
@@ -218,7 +220,7 @@ public class ShellStepTest extends Assert {
     @Issue("JENKINS-26133")
     @Test public void returnStatus() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${sh script: 'true', returnStatus: true} but falsity is ${sh script: 'false', returnStatus: true}\"}"));
+        p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
