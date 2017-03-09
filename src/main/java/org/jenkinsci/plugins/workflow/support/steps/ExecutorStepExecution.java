@@ -48,6 +48,8 @@ import jenkins.model.queue.AsynchronousExecution;
 import jenkins.util.Timer;
 import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
+import org.acegisecurity.context.SecurityContext;
+import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
@@ -381,7 +383,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                return Run.fromExternalizableId(runId);
+                SecurityContext orig = ACL.impersonate(ACL.SYSTEM);
+                try {
+                    return Run.fromExternalizableId(runId);
+                } finally {
+                    SecurityContextHolder.setContext(orig);
+                }
             }
             return r;
         }
