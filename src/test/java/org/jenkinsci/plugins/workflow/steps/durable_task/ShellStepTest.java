@@ -14,8 +14,11 @@ import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import java.io.File;
 import java.io.Serializable;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import static org.hamcrest.Matchers.containsString;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -35,6 +38,7 @@ import org.junit.Test;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
 
@@ -44,6 +48,8 @@ public class ShellStepTest {
     public static BuildWatcher buildWatcher = new BuildWatcher();
 
     @Rule public JenkinsRule j = new JenkinsRule();
+
+    @Rule public LoggerRule logging = new LoggerRule();
 
     /**
      * Failure in the shell script should mark the step as red
@@ -222,6 +228,21 @@ public class ShellStepTest {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+
+    @Issue("JENKINS-34021")
+    @Test public void deadStep() throws Exception {
+        logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep infinity') : bat('ping 127.0.0.1 > nul')}} catch (e) {sleep 1; throw e}", true));
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+        j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
+        b.doTerm();
+        j.waitForCompletion(b);
+        j.assertBuildStatus(Result.ABORTED, b);
+        for (LogRecord record : logging.getRecords()) {
+            assertNull(record.getThrown());
+        }
     }
 
     /**
