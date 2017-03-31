@@ -109,9 +109,9 @@ public class EnvWorkflowTest {
         p.setDefinition(new CpsFlowDefinition("node('remote') {echo(/running in ${env.WORKSPACE}/)}", true));
         WorkflowRun b2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
         r.assertLogContains("running in " + remote.getWorkspaceFor(p), b2);
-        p.setDefinition(new CpsFlowDefinition("node('remote') {ws('workspace/foo') {echo(/running in ${env.WORKSPACE}, really ?/)}}", true)); // JENKINS-41446
+        p.setDefinition(new CpsFlowDefinition("node('remote') {ws('workspace/foo') {echo(/running in ${env.WORKSPACE}/)}}", true)); // JENKINS-41446
         WorkflowRun b3 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        r.assertLogContains("/workspace/foo, really ?" , b3); // '/workspace/foo' is in the log, testing with ', really' to ensure we catch the environment variable
+        r.assertLogContains("running in " + remote.getRootPath().child("workspace/foo"), b3);
     }
 
 }
