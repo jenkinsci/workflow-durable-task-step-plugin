@@ -221,6 +221,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
 
         private final StepContext context;
+        /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
         /** Shortcut for {@link #run}. */
         private String runId;
@@ -436,7 +437,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public String toString() {
-            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",context=" + context + ",cookie=" + cookie +  '}';
+            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie +  '}';
         }
 
         private static void finish(@CheckForNull final String cookie) {
