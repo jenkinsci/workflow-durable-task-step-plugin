@@ -59,7 +59,7 @@ import java.util.Set;
  *     }
  * </pre>
  */
-public final class ExecutorStep extends AbstractStepImpl implements Serializable {
+public class ExecutorStep extends AbstractStepImpl implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
