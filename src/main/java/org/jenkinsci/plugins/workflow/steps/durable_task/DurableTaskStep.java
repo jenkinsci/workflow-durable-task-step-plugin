@@ -140,6 +140,7 @@ public abstract class DurableTaskStep extends Step {
         private transient FilePath ws;
         private transient long recurrencePeriod;
         private transient volatile ScheduledFuture<?> task, stopTask;
+        private transient boolean printedCannotContactMessage;
         private Controller controller;
         private String node;
         private String remote;
@@ -184,7 +185,10 @@ public abstract class DurableTaskStep extends Step {
                 // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
                 LOGGER.log(Level.FINE, node + " is evidently offline now", x);
                 ws = null;
-                logger().println("Cannot contact " + node + ": " + x); // TODO should we throttle messages of this type; e.g., exponentially slow them down?
+                if (!printedCannotContactMessage) {
+                    logger().println("Cannot contact " + node + ": " + x);
+                    printedCannotContactMessage = true;
+                }
                 return null;
             }
             if (!directory) {
@@ -324,7 +328,10 @@ public abstract class DurableTaskStep extends Step {
             } catch (Exception x) {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
                 ws = null;
-                logger().println("Cannot contact " + node + ": " + x); // TODO as above
+                if (!printedCannotContactMessage) {
+                    logger().println("Cannot contact " + node + ": " + x);
+                    printedCannotContactMessage = true;
+                }
             }
         }
 
