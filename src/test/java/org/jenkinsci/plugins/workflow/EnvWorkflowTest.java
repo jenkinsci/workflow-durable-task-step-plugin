@@ -74,6 +74,30 @@ public class EnvWorkflowTest {
         r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
+    /**
+     * Verifies if NODE_HOME environment variable is available on a slave node and on master.
+     *
+     * @throws Exception
+     */
+    @Test public void isNodeHomeAvailable() throws Exception {
+        DumbSlave remote = r.createSlave("node-test", null, null);
+        WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
+
+        p.setDefinition(new CpsFlowDefinition(
+                "node('master') {\n" +
+                        "  echo \"My home on master is ${env.NODE_HOME}\"\n" +
+                        "}\n"
+        ));
+        // Need to use JENKINS_HOME here for verification.
+        r.assertLogContains("My home on master is " + r.getInstance().getRootDir().getPath(), r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+
+        p.setDefinition(new CpsFlowDefinition(
+                "node('node-test') {\n" +
+                        "  echo \"My home on a slave is ${env.NODE_HOME}\"\n" +
+                        "}\n"
+        ));
+        r.assertLogContains("My home on a slave is " + remote.getRemoteFS(), r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+}
 
     /**
      * Verifies if EXECUTOR_NUMBER environment variable is available on a slave node and on master.
