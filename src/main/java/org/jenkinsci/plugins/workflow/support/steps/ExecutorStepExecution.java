@@ -48,6 +48,8 @@ import jenkins.model.queue.AsynchronousExecution;
 import jenkins.util.Timer;
 import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
+import org.acegisecurity.context.SecurityContext;
+import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
@@ -219,6 +221,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
 
         private final StepContext context;
+        /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
         /** Shortcut for {@link #run}. */
         private String runId;
@@ -260,6 +263,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return new PlaceholderExecutable();
         }
 
+        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Label getAssignedLabel() {
             if (label == null) {
                 return null;
@@ -274,6 +278,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Node getLastBuiltOn() {
             if (label == null) {
                 return null;
@@ -381,7 +386,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                return Run.fromExternalizableId(runId);
+                SecurityContext orig = ACL.impersonate(ACL.SYSTEM);
+                try {
+                    return Run.fromExternalizableId(runId);
+                } finally {
+                    SecurityContextHolder.setContext(orig);
+                }
             }
             return r;
         }
@@ -429,7 +439,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public String toString() {
-            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",context=" + context + ",cookie=" + cookie +  '}';
+            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie +  '}';
         }
 
         private static void finish(@CheckForNull final String cookie) {
@@ -584,7 +594,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             if (masterExecutor != null) {
                                 masterExecutor.interrupt();
                             } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                super.getExecutor().recordCauseOfInterruption(r, listener);
+                                Executor thisExecutor = super.getExecutor();
+                                if (thisExecutor != null) {
+                                    thisExecutor.recordCauseOfInterruption(r, listener);
+                                }
                                 completed(null);
                             }
                         }

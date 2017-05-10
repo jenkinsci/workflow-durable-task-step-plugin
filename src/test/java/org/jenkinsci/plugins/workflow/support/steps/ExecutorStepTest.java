@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.FilePath;
+import hudson.Functions;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
 import hudson.model.Computer;
@@ -57,11 +58,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import jenkins.model.Jenkins;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
@@ -80,6 +81,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
 import static org.junit.Assert.*;
+import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -87,6 +89,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
+import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
@@ -114,11 +117,9 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('" + s.getNodeName() + "') {\n" +
-                    "    sh('echo before=`basename $PWD`')\n" +
-                    "    sh('echo ONSLAVE=$ONSLAVE')\n" +
+                    "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
                     "    semaphore 'wait'\n" +
-                    "    sh('echo after=$PWD')\n" +
-                    "}"));
+                    "}", true));
 
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
@@ -131,7 +132,6 @@ public class ExecutorStepTest {
                 SemaphoreStep.success("wait/1", null);
                 story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
 
-                story.j.assertLogContains("before=demo", b);
                 story.j.assertLogContains("ONSLAVE=true", b);
 
                 FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
@@ -190,6 +190,7 @@ public class ExecutorStepTest {
     }
 
     @Test public void buildShellScriptAcrossRestart() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
@@ -211,7 +212,7 @@ public class ExecutorStepTest {
                     "node('dumbo') {\n" +
                     "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
                     "    echo 'OK, done'\n" +
-                    "}"));
+                    "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 while (!f2.isFile()) {
                     Thread.sleep(100);
@@ -242,6 +243,7 @@ public class ExecutorStepTest {
     }
 
     @Test public void buildShellScriptAcrossDisconnect() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
@@ -261,7 +263,7 @@ public class ExecutorStepTest {
                     "node('dumbo') {\n" +
                     "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
                     "    echo 'OK, done'\n" +
-                    "}"));
+                    "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 while (!f2.isFile()) {
                     Thread.sleep(100);
@@ -291,22 +293,18 @@ public class ExecutorStepTest {
     }
 
     @Test public void buildShellScriptQuick() throws Exception {
-        final AtomicReference<String> dir = new AtomicReference<String>();
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                dir.set(s.getRemoteFS() + "/workspace/" + p.getFullName());
                 p.setDefinition(new CpsFlowDefinition(
                     "node('" + s.getNodeName() + "') {\n" +
-                    "    sh('pwd; echo ONSLAVE=$ONSLAVE')\n" +
-                    "}"));
+                    "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
+                    "}", true));
 
                 WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-
-                story.j.assertLogContains(dir.get(), b);
                 story.j.assertLogContains("ONSLAVE=true", b);
             }
         });
@@ -321,14 +319,14 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                         "node('slave') {\n" + // this locks the WS
-                        "    sh('echo default=`basename $PWD`')\n" +
+                        "    echo(/default=${pwd()}/)\n" +
                         "    ws {\n" + // and this locks a second one
-                        "        sh('echo before=`basename $PWD`')\n" +
+                        "        echo(/before=${pwd()}/)\n" +
                         "        semaphore 'wait'\n" +
-                        "        sh('echo after=`basename $PWD`')\n" +
+                        "        echo(/after=${pwd()}/)\n" +
                         "    }\n" +
                         "}"
-                ));
+                , true));
                 p.save();
                 WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b1);
@@ -339,6 +337,12 @@ public class ExecutorStepTest {
             }
         });
         story.addStep(new Statement() {
+            void assertLogMatches(WorkflowRun build, String regexp) throws IOException { // TODO add to JenkinsRule
+                String log = JenkinsRule.getLog(build);
+                if (!Pattern.compile(regexp, Pattern.MULTILINE).matcher(log).find()) { // assertMatches present in some utility extension to JUnit/Hamcrest but not in our test CP
+                    fail(build + " log does not match /" + regexp + "/: " + log);
+                }
+            }
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
@@ -349,18 +353,17 @@ public class ExecutorStepTest {
                 story.j.waitUntilNoActivity();
                 story.j.assertBuildStatusSuccess(b1);
                 story.j.assertBuildStatusSuccess(b2);
-                // TODO once got ‘InvalidClassException: cannot bind non-proxy descriptor to a proxy class’ inside BourneShellScript.doLaunch
-                story.j.assertLogContains("default=demo", b1);
-                story.j.assertLogContains("before=demo@2", b1);
-                story.j.assertLogContains("after=demo@2", b1);
-                story.j.assertLogContains("default=demo@3", b2);
-                story.j.assertLogContains("before=demo@4", b2);
-                story.j.assertLogContains("after=demo@4", b2);
+                assertLogMatches(b1, "^default=.+demo$");
+                assertLogMatches(b1, "^before=.+demo@2$");
+                assertLogMatches(b1, "^after=.+demo@2$");
+                assertLogMatches(b2, "^default=.+demo@3$");
+                assertLogMatches(b2, "^before=.+demo@4$");
+                assertLogMatches(b2, "^after=.+demo@4$");
                 SemaphoreStep.success("wait/3", null);
                 WorkflowRun b3 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                story.j.assertLogContains("default=demo", b3);
-                story.j.assertLogContains("before=demo@2", b3);
-                story.j.assertLogContains("after=demo@2", b3);
+                assertLogMatches(b3, "^default=.+demo$");
+                assertLogMatches(b3, "^before=.+demo@2$");
+                assertLogMatches(b3, "^after=.+demo@2$");
             }
         });
     }

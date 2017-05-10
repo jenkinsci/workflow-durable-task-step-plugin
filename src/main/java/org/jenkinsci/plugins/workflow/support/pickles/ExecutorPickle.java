@@ -66,6 +66,7 @@ public class ExecutorPickle extends Pickle {
         if (task instanceof Queue.TransientTask) {
             throw new IllegalArgumentException("cannot save a TransientTask");
         }
+        LOGGER.log(Level.FINE, "saving {0}", task);
     }
 
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
@@ -81,16 +82,19 @@ public class ExecutorPickle extends Pickle {
                         throw new IllegalStateException("queue refused " + task);
                     }
                     itemID = item.getId();
+                    LOGGER.log(Level.FINE, "{0} scheduled {1}", new Object[] {ExecutorPickle.this, item});
                 } else {
                     item = Queue.getInstance().getItem(itemID);
                     if (item == null) {
                         throw new IllegalStateException("queue lost item #" + itemID);
                     }
+                    LOGGER.log(Level.FINE, "found {0}", item);
                 }
                 Future<Queue.Executable> future = item.getFuture().getStartCondition();
 
                 if (!future.isDone()) {
                     // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
+                    LOGGER.log(Level.FINER, "{0} not yet started", item);
                     return null;
                 }
 
@@ -101,6 +105,7 @@ public class ExecutorPickle extends Pickle {
                 Queue.Executable exec = future.get();
                 Executor e = Executor.of(exec);
                 if (e != null) {
+                    LOGGER.log(Level.FINE, "from {0} found {1}", new Object[] {item, e});
                     return e;
                 }
 
@@ -129,9 +134,13 @@ public class ExecutorPickle extends Pickle {
             @Override public boolean cancel(boolean mayInterruptIfRunning) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
                 if (item != null) {
-                    if (!Queue.getInstance().cancel(item)) {
+                    if (Queue.getInstance().cancel(item)) {
+                        LOGGER.log(Level.FINE, "canceled {0}", item);
+                    } else {
                         LOGGER.log(Level.WARNING, "failed to cancel {0}", item);
                     }
+                } else {
+                    LOGGER.log(Level.FINE, "no such item {0} to cancel", itemID);
                 }
                 return super.cancel(mayInterruptIfRunning);
             }
