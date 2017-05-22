@@ -58,7 +58,7 @@ public class PowershellScriptStep extends DurableTaskStep {
         }
 
         @Override public String getFunctionName() {
-            return "ps";
+            return "powershell";
         }
 
     }
