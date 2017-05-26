@@ -238,7 +238,7 @@ public class ShellStepTest {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep infinity') : bat('ping 127.0.0.1 > nul')}} catch (e) {sleep 1; throw e}", true));
-        WorkflowRun b = p.scheduleBuild2(0).waitForStart();     
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         b.doTerm();
         j.waitForCompletion(b);
