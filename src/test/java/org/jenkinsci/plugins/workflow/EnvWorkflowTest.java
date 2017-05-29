@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow;
 
+import hudson.EnvVars;
 import hudson.slaves.DumbSlave;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -75,9 +76,10 @@ public class EnvWorkflowTest {
     }
 
     /**
-     * Verifies if NODE_HOME environment variable is available on a slave node and on master.
+     * Verifies if NODE_HOME environment variable is available on an agent and on the master.
      *
-     * @throws Exception
+     * @throws Exception An Exception may occur from creating an Agent @see {@link org.jvnet.hudson.test.JenkinsRule#createSlave(String, String, EnvVars)}}
+     * or from creating a project @see {@link jenkins.model.Jenkins#createProject(Class, String)}
      */
     @Test public void isNodeHomeAvailable() throws Exception {
         DumbSlave remote = r.createSlave("node-test", null, null);
