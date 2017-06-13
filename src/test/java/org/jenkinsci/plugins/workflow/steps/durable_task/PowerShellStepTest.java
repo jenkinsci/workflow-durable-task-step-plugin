@@ -1,5 +1,3 @@
-package org.jenkinsci.plugins.workflow.steps.durable_task;
-
 /*
  * The MIT License
  *
@@ -23,6 +21,8 @@ package org.jenkinsci.plugins.workflow.steps.durable_task;
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+ 
+package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import org.junit.Rule;
 import org.junit.Test;
