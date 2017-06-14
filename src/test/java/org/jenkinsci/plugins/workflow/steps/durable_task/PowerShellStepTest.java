@@ -26,20 +26,44 @@ package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import org.junit.Rule;
 import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.Before;
+import hudson.model.Result;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.junit.Assume;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
-import hudson.model.Result;
+import java.util.*;
+import hudson.Functions;
 
 public class PowerShellStepTest {
 
     @Rule public JenkinsRule j = new JenkinsRule();
 
-    @Test public void smokeTest() throws Exception {
-        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "powershellSmokeTest");
-        p.setDefinition(new CpsFlowDefinition("node {powershell 'Write-Output \"truth is 0 but falsity is 1\"'}"));
-        j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    // Ensure that powershell exists and is at least version 3
+    @Before public void ensurePowerShellSufficientVersion() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "pretest");
+        p.setDefinition(new CpsFlowDefinition(Functions.isWindows() ?
+        "node { bat('powershell.exe -ExecutionPolicy Bypass -NonInteractive -Command \"if ($PSVersionTable.PSVersion.Major -ge 3) {exit 0} else {exit 1}\"') }" :
+        "node { sh('powershell -NonInteractive -Command \"if ($PSVersionTable.PSVersion.Major -ge 3) {exit 0} else {exit 1}\"') }"));
+        WorkflowRun b = p.scheduleBuild2(0).get();
+        Result r = b.getResult();
+        Assume.assumeTrue("This test should only run if the pretest workflow job succeeded", r == Result.SUCCESS);
     }
+
+    // Test that a powershell step producing particular output indeed has a log containing that output
+    @Test public void testOutput() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "foo");
+        p.setDefinition(new CpsFlowDefinition("node {powershell 'Write-Output \"a moon full of stars and astral cars\"'}"));
+        j.assertLogContains("a moon full of stars and astral cars", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+    
+    // Test that a powershell step that fails indeed causes the underlying build to fail
+    @Test public void testFailure() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "bar");
+        p.setDefinition(new CpsFlowDefinition("node {powershell 'throw \"error\"'}"));
+        j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0));
+    }
+
 }
 
