@@ -1,6 +1,7 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import com.google.common.base.Predicate;
+import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
@@ -14,6 +15,8 @@ import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import java.io.File;
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import static org.hamcrest.Matchers.containsString;
@@ -244,6 +247,18 @@ public class ShellStepTest {
             assertNull(record.getThrown());
         }
     }
+    
+    @Issue("JENKINS-44521")
+    @Test public void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
+        DumbSlave slave = j.createSlave("slave", null, null);
+        
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('slave') {isUnix() ? sh('echo INJECTED=$INJECTED') : bat('echo INJECTED=%INJECTED%')}", true));
+        WorkflowRun run = j.buildAndAssertSuccess(p);
+        
+        j.assertLogContains("INJECTED=MYVAR-" + slave.getNodeName(), run);
+        
+    }
 
     /**
      * Asserts that the predicate remains true up to the given timeout.
@@ -255,6 +270,18 @@ public class ShellStepTest {
                 throw new AssertionError(predicate);
             Thread.sleep(100);
         }
+    }
+    
+    @TestExtension(value = "shouldInvokeLauncherDecoratorForShellStep")
+    public static final class MyNodeLauncherDecorator extends LauncherDecorator {
+
+        @Override
+        public Launcher decorate(Launcher lnchr, Node node) {
+            // Just inject the environment variable
+            Map<String, String> env = new HashMap<>();
+            env.put("INJECTED", "MYVAR-" + node.getNodeName());
+            return lnchr.decorateByEnv(new EnvVars(env));
+        }  
     }
 }
 
