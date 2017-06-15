@@ -212,7 +212,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Nullable Launcher launcher;
     }
 
-    private static final String COOKIE_VAR = "JENKINS_SERVER_COOKIE";
+    private static final String COOKIE_VAR = "JENKINS_NODE_COOKIE";
 
     @ExportedBean
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {

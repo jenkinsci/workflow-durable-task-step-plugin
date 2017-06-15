@@ -148,6 +148,45 @@ public class ExecutorStepTest {
         });
     }
 
+    /**
+     * Executes a shell script build on a slave and ensures the processes are
+     * killed at the end of the run
+     *
+     * This ensures that the context variable overrides are working as expected, and
+     * that they are persisted and resurrected.
+     */
+    @Test public void buildShellScriptWithPersistentProcesses() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                File f1 = new File(story.j.jenkins.getRootDir(), "test.txt");
+                String fullPathToTestFile = f1.getAbsolutePath();
+                // Escape any \ in the source so that the script is valid
+                fullPathToTestFile = fullPathToTestFile.replace("\\", "\\\\");
+                // Ensure deleted
+                f1.delete();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                // We use sleep on Unix.  On Windows, timeout would
+                // be the equivalent, but it uses input redirection which is
+                // not supported.  So instead use ping.
+                p.setDefinition(new CpsFlowDefinition(
+                    "node('" + s.getNodeName() + "') {\n" +
+                    "    isUnix() ? sh('(sleep 5; touch " + fullPathToTestFile + ") &') : bat('start /B cmd.exe /C \"ping localhost -n 5 && copy NUL " + fullPathToTestFile + "\"')\n" +
+                    "}", true));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                // Wait until the build completes.
+                story.j.waitForCompletion(b);
+                // Then wait additionally for 10 seconds to make sure that the sleep
+                // steps would have exited
+                Thread.sleep(10000);
+                // Then check for existence of the file
+                assertFalse(f1.exists());
+            }
+        });
+    }
+
     @Test public void buildShellScriptOnSlaveWithDifferentResumePoint() throws Exception {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
