@@ -61,8 +61,8 @@ public class PowerShellStepTest {
     // Test that a powershell step that fails indeed causes the underlying build to fail
     @Test public void testFailure() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "bar");
-        p.setDefinition(new CpsFlowDefinition("node {powershell 'throw \"error\"'}"));
-        j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0));
+        p.setDefinition(new CpsFlowDefinition("node {powershell 'throw \"bogus error\"'}"));
+        j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
 
 }
