@@ -66,6 +66,7 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
+import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -440,7 +441,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return null;
             }
             FlowNode executorStepNode;
-            try {
+            try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
                 executorStepNode = context.get(FlowNode.class);
             } catch (Exception x) {
                 LOGGER.log(Level.FINE, null, x);
