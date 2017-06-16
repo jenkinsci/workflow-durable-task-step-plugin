@@ -420,7 +420,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runDisplayName);
                 }
             } else {
-                return Messages.ExecutorStepExecution_PlaceholderTask_displayName_unknown();
+                return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runId);
             }
         }
 
