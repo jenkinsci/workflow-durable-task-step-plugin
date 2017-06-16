@@ -35,7 +35,6 @@ import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
-import hudson.model.queue.SubTask;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
@@ -520,24 +519,36 @@ public class ExecutorStepTest {
     @Test public void enclosingLabel() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
-                story.j.jenkins.setNumExecutors(1);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
-                // TODO test new node blocks inside later stages; parallel
-                p.setDefinition(new CpsFlowDefinition("stage('one') {node {semaphore 'one'; stage('two') {semaphore 'two'}}}", true));
+                p.setDefinition(new CpsFlowDefinition("stage('one') {node {semaphore 'one'; stage('two') {semaphore 'two'}}}; stage('three') {node {semaphore 'three'}; parallel a: {node {semaphore 'a'}}, b: {node {semaphore 'b'}}}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
-                List<Executor> executors = story.j.jenkins.toComputer().getExecutors();
-                assertEquals(1, executors.size());
-                SubTask task = executors.get(0).getCurrentExecutable().getParent();
-                assertEquals(ExecutorStepExecution.PlaceholderTask.class, task.getClass());
-                ExecutorStepExecution.PlaceholderTask ptask = (ExecutorStepExecution.PlaceholderTask) task;
-                assertEquals("one", ptask.getEnclosingLabel());
-                assertEquals("one", ptask.getEnclosingLabel());
+                assertEquals(Collections.singletonList("one"), currentLabels());
+                assertEquals(Collections.singletonList("one"), currentLabels());
                 SemaphoreStep.success("one/1", null);
                 SemaphoreStep.waitForStart("two/1", b);
-                assertEquals("two", ptask.getEnclosingLabel());
+                assertEquals(Collections.singletonList("two"), currentLabels());
                 SemaphoreStep.success("two/1", null);
+                SemaphoreStep.waitForStart("three/1", b);
+                assertEquals(Collections.singletonList("three"), currentLabels());
+                SemaphoreStep.success("three/1", null);
+                SemaphoreStep.waitForStart("a/1", b);
+                SemaphoreStep.waitForStart("b/1", b);
+                assertEquals(Arrays.asList("Branch: a", "Branch: b"), currentLabels());
+                SemaphoreStep.success("a/1", null);
+                SemaphoreStep.success("b/1", null);
                 story.j.waitForCompletion(b);
+            }
+            List<String> currentLabels() throws Exception {
+                List<String> r = new ArrayList<>();
+                for (Executor executor : story.j.jenkins.toComputer().getExecutors()) {
+                    Queue.Executable executable = executor.getCurrentExecutable();
+                    if (executable != null) {
+                        r.add(((ExecutorStepExecution.PlaceholderTask) executable.getParent()).getEnclosingLabel());
+                    }
+                }
+                Collections.sort(r);
+                return r;
             }
         });
     }
