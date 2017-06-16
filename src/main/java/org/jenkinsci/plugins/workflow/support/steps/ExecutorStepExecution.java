@@ -55,6 +55,7 @@ import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
@@ -448,9 +449,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 while (it.hasNext()) {
                     FlowNode n = it.next();
                     if (label == null) {
-                        LabelAction a = n.getAction(LabelAction.class);
-                        if (a != null) {
-                            label = a.getDisplayName();
+                        ThreadNameAction tna = n.getAction(ThreadNameAction.class);
+                        if (tna != null) {
+                            label = tna.getThreadName();
+                        } else {
+                            LabelAction a = n.getAction(LabelAction.class);
+                            if (a != null) {
+                                label = a.getDisplayName();
+                            }
                         }
                         if (match && label != null) {
                             return label;

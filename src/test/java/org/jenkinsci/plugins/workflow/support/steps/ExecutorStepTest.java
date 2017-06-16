@@ -534,7 +534,7 @@ public class ExecutorStepTest {
                 SemaphoreStep.success("three/1", null);
                 SemaphoreStep.waitForStart("a/1", b);
                 SemaphoreStep.waitForStart("b/1", b);
-                assertEquals(Arrays.asList("Branch: a", "Branch: b"), currentLabels());
+                assertEquals(Arrays.asList("a", "b"), currentLabels());
                 SemaphoreStep.success("a/1", null);
                 SemaphoreStep.success("b/1", null);
                 story.j.waitForCompletion(b);
