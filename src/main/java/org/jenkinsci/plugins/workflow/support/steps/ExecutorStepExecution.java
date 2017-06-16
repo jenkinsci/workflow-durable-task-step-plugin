@@ -718,6 +718,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
             private static final long serialVersionUID = 1L;
         }
+
+        private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
     }
 
     private static final long serialVersionUID = 1L;
