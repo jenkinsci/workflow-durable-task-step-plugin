@@ -436,6 +436,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private transient String lastEnclosingLabel;
         @Restricted(NoExternalUse.class) // for Jelly
         public @CheckForNull String getEnclosingLabel() {
+            if (!context.isReady()) {
+                return null;
+            }
             FlowNode executorStepNode;
             try {
                 executorStepNode = context.get(FlowNode.class);
