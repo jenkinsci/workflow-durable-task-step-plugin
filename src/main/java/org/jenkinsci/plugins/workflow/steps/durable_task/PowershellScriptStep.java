@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright (c) 2013-2014, CloudBees, Inc.
+ * Copyright 2017 Gabriel Loewen
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,25 +24,22 @@
 
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
-import hudson.EnvVars;
 import hudson.Extension;
-import hudson.model.TaskListener;
-import org.jenkinsci.plugins.durabletask.BourneShellScript;
 import org.jenkinsci.plugins.durabletask.DurableTask;
-import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.durabletask.PowershellScript;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 /**
- * Runs a Bourne shell script asynchronously on a slave.
+ * Asynchronous batch script execution.
  */
-public final class ShellStep extends DurableTaskStep {
+public class PowershellScriptStep extends DurableTaskStep {
 
     private final String script;
 
-    @DataBoundConstructor public ShellStep(String script) {
-        if (script==null)
+    @DataBoundConstructor public PowershellScriptStep(String script) {
+        if (script == null) {
             throw new IllegalArgumentException();
+        }
         this.script = script;
     }
 
@@ -51,25 +48,17 @@ public final class ShellStep extends DurableTaskStep {
     }
 
     @Override protected DurableTask task() {
-        return new BourneShellScript(script);
-    }
-
-    @Override public StepExecution start(StepContext context) throws Exception {
-        String path = context.get(EnvVars.class).get("PATH");
-        if (path != null && path.contains("$PATH")) {
-            context.get(TaskListener.class).getLogger().println("Warning: JENKINS-41339 probably bogus PATH=" + path + "; perhaps you meant to use ‘PATH+EXTRA=/something/bin’?");
-        }
-        return super.start(context);
+        return new PowershellScript(script);
     }
 
     @Extension public static final class DescriptorImpl extends DurableTaskStepDescriptor {
 
         @Override public String getDisplayName() {
-            return "Shell Script";
+            return "PowerShell Script";
         }
 
         @Override public String getFunctionName() {
-            return "sh";
+            return "powershell";
         }
 
     }

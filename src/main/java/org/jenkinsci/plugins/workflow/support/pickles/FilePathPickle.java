@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import hudson.Extension;
 import hudson.FilePath;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 
 /**
@@ -44,13 +45,20 @@ public class FilePathPickle extends Pickle {
     }
 
     @Override
-    public ListenableFuture<FilePath> rehydrate() {
+    public ListenableFuture<FilePath> rehydrate(FlowExecutionOwner owner) {
         return new TryRepeatedly<FilePath>(1) {
             @Override
             protected FilePath tryResolve() {
                 return FilePathUtils.find(slave, path);
             }
+            @Override public String toString() {
+                return "Looking for path named ‘" + path + "’ on computer named ‘" + slave + "’";
+            }
         };
+    }
+
+    @Override public String toString() {
+        return "FilePathPickle{" + "slave=" + slave + ", path=" + path + '}';
     }
 
     @Extension public static final class Factory extends SingleTypedPickleFactory<FilePath> {

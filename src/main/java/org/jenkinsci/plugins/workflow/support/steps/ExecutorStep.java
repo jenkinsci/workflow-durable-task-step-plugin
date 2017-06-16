@@ -37,6 +37,7 @@ import hudson.model.Executor;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.util.FormValidation;
+import java.io.Serializable;
 import javax.annotation.CheckForNull;
 import jenkins.model.Jenkins;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -58,7 +59,9 @@ import java.util.Set;
  *     }
  * </pre>
  */
-public final class ExecutorStep extends AbstractStepImpl {
+public final class ExecutorStep extends AbstractStepImpl implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private final @CheckForNull String label;
 

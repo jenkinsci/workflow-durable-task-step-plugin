@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Computer;
@@ -32,6 +33,7 @@ import hudson.remoting.VirtualChannel;
 import hudson.slaves.WorkspaceList;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 
 public class WorkspaceListLeasePickle extends Pickle {
@@ -45,8 +47,9 @@ public class WorkspaceListLeasePickle extends Pickle {
         path = lease.path.getRemote();
     }
 
-    @Override public ListenableFuture<?> rehydrate() {
+    @Override public ListenableFuture<?> rehydrate(FlowExecutionOwner owner) {
         return new TryRepeatedly<WorkspaceList.Lease>(1) {
+            @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
             @Override protected WorkspaceList.Lease tryResolve() throws InterruptedException {
                 Jenkins j = Jenkins.getInstance();
                 if (j == null) {
@@ -63,7 +66,17 @@ public class WorkspaceListLeasePickle extends Pickle {
                     return null;
                 }
                 FilePath fp = new FilePath(ch, path);
-                return c.getWorkspaceList().acquire(fp);
+                // Since there is no equivalent to Lock.tryLock for WorkspaceList (.record would work but throws AssertionError and swaps the holder):
+                WorkspaceList.Lease lease = c.getWorkspaceList().allocate(fp);
+                if (lease.path.equals(fp)) {
+                    return lease;
+                } else { // @2 or other variant, not what we expected to be able to lock without contention
+                    lease.release();
+                    throw new IllegalStateException("JENKINS-37121: something already locked " + fp);
+                }
+            }
+            @Override public String toString() {
+                return "Relocking workspace named ‘" + path + "’ on computer named ‘" + slave + "’";
             }
         };
     }

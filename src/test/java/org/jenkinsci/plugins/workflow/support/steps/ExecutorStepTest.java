@@ -24,10 +24,15 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import hudson.FilePath;
+import hudson.Functions;
+import hudson.init.InitMilestone;
+import hudson.init.Initializer;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.model.queue.SubTask;
@@ -38,21 +43,33 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
 import hudson.slaves.NodeProperty;
+import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import jenkins.model.Jenkins;
+import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
+import org.hamcrest.Matchers;
+import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
@@ -61,11 +78,12 @@ import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
+import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
+import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
+import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -73,8 +91,10 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
+import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
+import org.jvnet.hudson.test.recipes.LocalData;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -99,11 +119,9 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('" + s.getNodeName() + "') {\n" +
-                    "    sh('echo before=`basename $PWD`')\n" +
-                    "    sh('echo ONSLAVE=$ONSLAVE')\n" +
+                    "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
                     "    semaphore 'wait'\n" +
-                    "    sh('echo after=$PWD')\n" +
-                    "}"));
+                    "}", true));
 
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
@@ -116,7 +134,6 @@ public class ExecutorStepTest {
                 SemaphoreStep.success("wait/1", null);
                 story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
 
-                story.j.assertLogContains("before=demo", b);
                 story.j.assertLogContains("ONSLAVE=true", b);
 
                 FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
@@ -129,6 +146,45 @@ public class ExecutorStepTest {
                 }
                 assertEquals(1, actions.size());
                 assertEquals(new HashSet<LabelAtom>(Arrays.asList(LabelAtom.get("remote"), LabelAtom.get("quick"))), actions.get(0).getLabels());
+            }
+        });
+    }
+
+    /**
+     * Executes a shell script build on a slave and ensures the processes are
+     * killed at the end of the run
+     *
+     * This ensures that the context variable overrides are working as expected, and
+     * that they are persisted and resurrected.
+     */
+    @Test public void buildShellScriptWithPersistentProcesses() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                File f1 = new File(story.j.jenkins.getRootDir(), "test.txt");
+                String fullPathToTestFile = f1.getAbsolutePath();
+                // Escape any \ in the source so that the script is valid
+                fullPathToTestFile = fullPathToTestFile.replace("\\", "\\\\");
+                // Ensure deleted
+                f1.delete();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                // We use sleep on Unix.  On Windows, timeout would
+                // be the equivalent, but it uses input redirection which is
+                // not supported.  So instead use ping.
+                p.setDefinition(new CpsFlowDefinition(
+                    "node('" + s.getNodeName() + "') {\n" +
+                    "    isUnix() ? sh('(sleep 5; touch " + fullPathToTestFile + ") &') : bat('start /B cmd.exe /C \"ping localhost -n 5 && copy NUL " + fullPathToTestFile + "\"')\n" +
+                    "}", true));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                // Wait until the build completes.
+                story.j.waitForCompletion(b);
+                // Then wait additionally for 10 seconds to make sure that the sleep
+                // steps would have exited
+                Thread.sleep(10000);
+                // Then check for existence of the file
+                assertFalse(f1.exists());
             }
         });
     }
@@ -175,6 +231,7 @@ public class ExecutorStepTest {
     }
 
     @Test public void buildShellScriptAcrossRestart() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
@@ -196,7 +253,7 @@ public class ExecutorStepTest {
                     "node('dumbo') {\n" +
                     "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
                     "    echo 'OK, done'\n" +
-                    "}"));
+                    "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 while (!f2.isFile()) {
                     Thread.sleep(100);
@@ -227,6 +284,7 @@ public class ExecutorStepTest {
     }
 
     @Test public void buildShellScriptAcrossDisconnect() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
@@ -246,7 +304,7 @@ public class ExecutorStepTest {
                     "node('dumbo') {\n" +
                     "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
                     "    echo 'OK, done'\n" +
-                    "}"));
+                    "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 while (!f2.isFile()) {
                     Thread.sleep(100);
@@ -276,22 +334,18 @@ public class ExecutorStepTest {
     }
 
     @Test public void buildShellScriptQuick() throws Exception {
-        final AtomicReference<String> dir = new AtomicReference<String>();
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                dir.set(s.getRemoteFS() + "/workspace/" + p.getFullName());
                 p.setDefinition(new CpsFlowDefinition(
                     "node('" + s.getNodeName() + "') {\n" +
-                    "    sh('pwd; echo ONSLAVE=$ONSLAVE')\n" +
-                    "}"));
+                    "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
+                    "}", true));
 
                 WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-
-                story.j.assertLogContains(dir.get(), b);
                 story.j.assertLogContains("ONSLAVE=true", b);
             }
         });
@@ -306,14 +360,14 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                         "node('slave') {\n" + // this locks the WS
-                        "    sh('echo default=`basename $PWD`')\n" +
+                        "    echo(/default=${pwd()}/)\n" +
                         "    ws {\n" + // and this locks a second one
-                        "        sh('echo before=`basename $PWD`')\n" +
+                        "        echo(/before=${pwd()}/)\n" +
                         "        semaphore 'wait'\n" +
-                        "        sh('echo after=`basename $PWD`')\n" +
+                        "        echo(/after=${pwd()}/)\n" +
                         "    }\n" +
                         "}"
-                ));
+                , true));
                 p.save();
                 WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b1);
@@ -324,6 +378,12 @@ public class ExecutorStepTest {
             }
         });
         story.addStep(new Statement() {
+            void assertLogMatches(WorkflowRun build, String regexp) throws IOException { // TODO add to JenkinsRule
+                String log = JenkinsRule.getLog(build);
+                if (!Pattern.compile(regexp, Pattern.MULTILINE).matcher(log).find()) { // assertMatches present in some utility extension to JUnit/Hamcrest but not in our test CP
+                    fail(build + " log does not match /" + regexp + "/: " + log);
+                }
+            }
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
@@ -334,18 +394,17 @@ public class ExecutorStepTest {
                 story.j.waitUntilNoActivity();
                 story.j.assertBuildStatusSuccess(b1);
                 story.j.assertBuildStatusSuccess(b2);
-                // TODO once got ‘InvalidClassException: cannot bind non-proxy descriptor to a proxy class’ inside BourneShellScript.doLaunch
-                story.j.assertLogContains("default=demo", b1);
-                story.j.assertLogContains("before=demo@2", b1);
-                story.j.assertLogContains("after=demo@2", b1);
-                story.j.assertLogContains("default=demo@3", b2);
-                story.j.assertLogContains("before=demo@4", b2);
-                story.j.assertLogContains("after=demo@4", b2);
+                assertLogMatches(b1, "^default=.+demo$");
+                assertLogMatches(b1, "^before=.+demo@2$");
+                assertLogMatches(b1, "^after=.+demo@2$");
+                assertLogMatches(b2, "^default=.+demo@3$");
+                assertLogMatches(b2, "^before=.+demo@4$");
+                assertLogMatches(b2, "^after=.+demo@4$");
                 SemaphoreStep.success("wait/3", null);
                 WorkflowRun b3 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                story.j.assertLogContains("default=demo", b3);
-                story.j.assertLogContains("before=demo@2", b3);
-                story.j.assertLogContains("after=demo@2", b3);
+                assertLogMatches(b3, "^default=.+demo$");
+                assertLogMatches(b3, "^before=.+demo@2$");
+                assertLogMatches(b3, "^after=.+demo@2$");
             }
         });
     }
@@ -365,8 +424,36 @@ public class ExecutorStepTest {
                 story.j.createSlave("special", null);
                 WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
-                // TODO JENKINS-27532 sometimes two copies of the WorkflowRun are loaded
                 story.j.assertLogContains("OK ran", story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b)));
+            }
+        });
+    }
+
+    @Issue("JENKINS-26130")
+    @Test public void unloadableExecutorPickle() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave dumbo = story.j.createSlave("dumbo", null, null); // unlike in buildShellScriptAcrossRestart, we *want* this to die after restart
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition(
+                    "node('dumbo') {\n" +
+                    "  semaphore 'wait'\n" +
+                    "}"));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+                dumbo.getComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getUnknown(), "not about to reconnect"));
+            }
+        });
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
+                WorkflowRun b = p.getLastBuild();
+                assertTrue(b.isBuilding());
+                story.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                story.j.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
+                b.getExecutor().interrupt();
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
+                assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
             }
         });
     }
@@ -400,15 +487,20 @@ public class ExecutorStepTest {
                         assertEquals(p, items[0].task.getOwnerTask());
                     }
                 });
-                /* TODO uncomment when on 1.639+, or 1.625.3 if JENKINS-31649 is backported:
                 ACL.impersonate(User.get("devel").impersonate(), new Runnable() {
                     @Override public void run() {
                         Queue.Item[] items = Queue.getInstance().getItems();
                         assertEquals(0, items.length); // fails in 1.609.2
                     }
                 });
-                */
                 // TODO this would be a good time to add a third user with READ but no CANCEL permission and check behavior
+                // Also try canceling the task and verify that the step aborts promptly:
+                Queue.Item[] items = Queue.getInstance().getItems();
+                assertEquals(1, items.length);
+                assertEquals(p, items[0].task.getOwnerTask());
+                assertTrue(Queue.getInstance().cancel(items[0]));
+                story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
+                story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
             }
         });
     }
@@ -429,10 +521,9 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 story.j.jenkins.setNumExecutors(1);
-                WorkflowJob ds = story.j.jenkins.createProject(WorkflowJob.class, "ds");
-                ds.setDefinition(new CpsFlowDefinition("semaphore 'ds'", true));
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("stage 'one'; node {semaphore 'one'; stage 'two'; semaphore 'two'; build 'ds'; semaphore 'two-b'}"));
+                // TODO test new node blocks inside later stages; parallel
+                p.setDefinition(new CpsFlowDefinition("stage('one') {node {semaphore 'one'; stage('two') {semaphore 'two'}}}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
                 List<Executor> executors = story.j.jenkins.toComputer().getExecutors();
@@ -446,16 +537,108 @@ public class ExecutorStepTest {
                 SemaphoreStep.waitForStart("two/1", b);
                 assertEquals("two", ptask.getEnclosingLabel());
                 SemaphoreStep.success("two/1", null);
-                SemaphoreStep.waitForStart("ds/1", null);
-                assertEquals(org.jenkinsci.plugins.workflow.support.steps.build.Messages.BuildTriggerStepExecution_building_("ds"), ptask.getEnclosingLabel());
-                SemaphoreStep.success("ds/1", null);
-                SemaphoreStep.waitForStart("two-b/1", null);
-                assertEquals("two", ptask.getEnclosingLabel());
-                assertEquals("two", ptask.getEnclosingLabel());
-                SemaphoreStep.success("two-b/1", null);
                 story.j.waitForCompletion(b);
             }
         });
+    }
+
+    @Issue("JENKINS-39134")
+    @LocalData
+    @Test public void serialForm() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
+                WorkflowRun b = p.getBuildByNumber(1);
+                assertThat(patchedFiles, Matchers.containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
+                /* TODO this seems to randomly not include the expected items:
+                assertThat(patchedFields, Matchers.containsInAnyOrder(
+                    // But not FileMonitoringController.controlDir, since this old version is still using location-independent .id.
+                    "private final java.lang.String org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle.path",
+                    "private final java.lang.String org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle.path",
+                    "private java.lang.String org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep$Execution.remote"));
+                */
+                story.j.assertLogContains("simulated later output", story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b)));
+            }
+        });
+    }
+    private static final List<String> patchedFiles = new ArrayList<>();
+    private static final List<String> patchedFields = new ArrayList<>();
+    // TODO @TestExtension("serialForm") ItemListener does not work since we need to run before FlowExecutionList.ItemListenerImpl yet TestExtension does not support ordinal
+    @Initializer(before = InitMilestone.JOB_LOADED) public static void replaceWorkspacePath() throws Exception {
+        final File prj = new File(Jenkins.getInstance().getRootDir(), "jobs/p");
+        final File workspace = new File(prj, "workspace");
+        final String ORIG_WS = "/space/tmp/AbstractStepExecutionImpl-upgrade/jobs/p/workspace";
+        final String newWs = workspace.getAbsolutePath();
+        File controlDir = new File(workspace, ".eb6272d3");
+        if (!controlDir.isDirectory()) {
+            return;
+        }
+        System.err.println("Patching " + controlDir);
+        RiverReader.customResolver = new ObjectResolver() {
+            @Override public Object readResolve(Object replacement) {
+                Class<?> c = replacement.getClass();
+                //System.err.println("replacing " + c.getName());
+                while (c != Object.class) {
+                    for (Field f : c.getDeclaredFields()) {
+                        if (f.getType() == String.class) {
+                            try {
+                                f.setAccessible(true);
+                                Object v = f.get(replacement);
+                                if (ORIG_WS.equals(v)) {
+                                    //System.err.println("patching " + f);
+                                    f.set(replacement, newWs);
+                                    patchedFields.add(f.toString());
+                                } else if (newWs.equals(v)) {
+                                    //System.err.println(f + " was already patched, somehow?");
+                                } else {
+                                    //System.err.println("some other value " + v + " for " + f);
+                                }
+                            } catch (Exception x) {
+                                x.printStackTrace();
+                            }
+                        }
+                    }
+                    c = c.getSuperclass();
+                }
+                return replacement;
+            }
+            @Override public Object writeReplace(Object original) {
+                throw new IllegalStateException();
+            }
+        };
+        Files.walkFileTree(prj.toPath(), new SimpleFileVisitor<Path>() {
+            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                File f = file.toFile();
+                String name = f.getName();
+                if (name.equals("program.dat")) {
+                    /* TODO could not get this to work; stream appeared corrupted:
+                    patchedFiles.add(name);
+                    String origContent = FileUtils.readFileToString(f, StandardCharsets.ISO_8859_1);
+                    String toReplace = String.valueOf((char) Protocol.ID_STRING_SMALL) + String.valueOf((char) ORIG_WS.length()) + ORIG_WS;
+                    int newLen = newWs.length();
+                    String replacement = String.valueOf((char) Protocol.ID_STRING_MEDIUM) +
+                                         String.valueOf((char) (newLen & 0xff00) >> 8) +
+                                         String.valueOf((char) newLen & 0xff) +
+                                         newWs; // TODO breaks if not ASCII
+                    String replacedContent = origContent.replace(toReplace, replacement);
+                    assertNotEquals("failed to replace ‘" + toReplace + "’", replacedContent, origContent);
+                    FileUtils.writeStringToFile(f, replacedContent, StandardCharsets.ISO_8859_1);
+                    */
+                } else {
+                    String origContent = FileUtils.readFileToString(f, StandardCharsets.ISO_8859_1);
+                    String replacedContent = origContent.replace(ORIG_WS, newWs);
+                    if (!replacedContent.equals(origContent)) {
+                        patchedFiles.add(name);
+                        FileUtils.writeStringToFile(f, replacedContent, StandardCharsets.ISO_8859_1);
+                    }
+                }
+                return super.visitFile(file, attrs);
+            }
+        });
+        FilePath controlDirFP = new FilePath(controlDir);
+        controlDirFP.child("jenkins-result.txt").write("0", null);
+        FilePath log = controlDirFP.child("jenkins-log.txt");
+        log.write(log.readToString() + "simulated later output\n", null);
     }
 
 }

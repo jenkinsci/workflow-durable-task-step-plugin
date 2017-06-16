@@ -24,78 +24,147 @@
 
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
-import com.google.inject.Inject;
+import com.google.common.collect.ImmutableSet;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.model.Computer;
 import hudson.model.TaskListener;
-import jenkins.model.Jenkins;
+import hudson.util.FormValidation;
+import hudson.util.LogTaskListener;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.Charset;
+import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
+import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
-import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
-import org.kohsuke.accmod.Restricted;
-import org.kohsuke.accmod.restrictions.NoExternalUse;
-
-import javax.annotation.CheckForNull;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.jenkinsci.plugins.workflow.steps.Step;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
 
 /**
  * Runs an durable task on a slave, such as a shell script.
  */
-public abstract class DurableTaskStep extends AbstractStepImpl {
+public abstract class DurableTaskStep extends Step {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
+    private boolean returnStdout;
+    private String encoding = DurableTaskStepDescriptor.defaultEncoding;
+    private boolean returnStatus;
+
     protected abstract DurableTask task();
 
-    protected abstract static class DurableTaskStepDescriptor extends AbstractStepDescriptorImpl {
-        protected DurableTaskStepDescriptor() {
-            super(Execution.class);
+    public boolean isReturnStdout() {
+        return returnStdout;
+    }
+
+    @DataBoundSetter public void setReturnStdout(boolean returnStdout) {
+        this.returnStdout = returnStdout;
+    }
+
+    public String getEncoding() {
+        return encoding;
+    }
+
+    @DataBoundSetter public void setEncoding(String encoding) {
+        this.encoding = encoding;
+    }
+
+    public boolean isReturnStatus() {
+        return returnStatus;
+    }
+
+    @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
+        this.returnStatus = returnStatus;
+    }
+
+    @Override public StepExecution start(StepContext context) throws Exception {
+        return new Execution(context, this);
+    }
+
+    public abstract static class DurableTaskStepDescriptor extends StepDescriptor {
+
+        public static final String defaultEncoding = "UTF-8";
+
+        public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
+            try {
+                Charset.forName(encoding);
+            } catch (Exception x) {
+                return FormValidation.error(x, "Unrecognized encoding");
+            }
+            if (!returnStdout && !encoding.equals(DurableTaskStepDescriptor.defaultEncoding)) {
+                return FormValidation.warning("encoding is ignored unless returnStdout is checked.");
+            }
+            return FormValidation.ok();
         }
+
+        public FormValidation doCheckReturnStatus(@QueryParameter boolean returnStdout, @QueryParameter boolean returnStatus) {
+            if (returnStdout && returnStatus) {
+                return FormValidation.error("You may not select both returnStdout and returnStatus.");
+            }
+            return FormValidation.ok();
+        }
+
+        @Override public final Set<? extends Class<?>> getRequiredContext() {
+            return ImmutableSet.of(FilePath.class, EnvVars.class, Launcher.class, TaskListener.class);
+        }
+
     }
 
     /**
      * Represents one task that is believed to still be running.
      */
-    @Restricted(NoExternalUse.class)
-    @edu.umd.cs.findbugs.annotations.SuppressWarnings("SE_TRANSIENT_FIELD_NOT_RESTORED") // recurrencePeriod is set in onResume, not deserialization
-    public static final class Execution extends AbstractStepExecutionImpl implements Runnable {
+    @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
+    static final class Execution extends AbstractStepExecutionImpl implements Runnable {
 
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
 
-        @Inject(optional=true) private transient DurableTaskStep step;
-        @StepContextParameter private transient FilePath ws;
-        @StepContextParameter private transient EnvVars env;
-        @StepContextParameter private transient Launcher launcher;
-        @StepContextParameter private transient TaskListener listener;
+        private transient final DurableTaskStep step;
+        private transient FilePath ws;
         private transient long recurrencePeriod;
+        private transient volatile ScheduledFuture<?> task, stopTask;
+        private transient boolean printedCannotContactMessage;
         private Controller controller;
         private String node;
         private String remote;
+        private boolean returnStdout; // serialized default is false
+        private String encoding; // serialized default is irrelevant
+        private boolean returnStatus; // serialized default is false
+
+        Execution(StepContext context, DurableTaskStep step) {
+            super(context);
+            this.step = step;
+        }
 
         @Override public boolean start() throws Exception {
-            for (Computer c : Jenkins.getActiveInstance().getComputers()) {
-                if (c.getChannel() == ws.getChannel()) {
-                    node = c.getName();
-                    break;
-                }
+            returnStdout = step.returnStdout;
+            encoding = step.encoding;
+            returnStatus = step.returnStatus;
+            StepContext context = getContext();
+            ws = context.get(FilePath.class);
+            node = FilePathUtils.getNodeName(ws);
+            DurableTask durableTask = step.task();
+            if (returnStdout) {
+                durableTask.captureOutput();
             }
-            if (node == null) {
-                throw new IllegalStateException("no known node for " + ws);
-            }
-            controller = step.task().launch(env, ws, launcher, listener);
+            controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), context.get(TaskListener.class));
             this.remote = ws.getRemote();
             setupTimer();
             return false;
@@ -103,29 +172,23 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
 
         private @CheckForNull FilePath getWorkspace() throws AbortException {
             if (ws == null) {
-                Jenkins j = Jenkins.getInstance();
-                if (j == null) {
-                    LOGGER.fine("Jenkins is not running");
+                ws = FilePathUtils.find(node, remote);
+                if (ws == null) {
+                    LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
-                Computer c = j.getComputer(node);
-                if (c == null) {
-                    LOGGER.log(Level.FINE, "no such computer {0}", node);
-                    return null;
-                }
-                if (c.isOffline()) {
-                    LOGGER.log(Level.FINE, "{0} is offline", node);
-                    return null;
-                }
-                ws = new FilePath(c.getChannel(), remote);
             }
             boolean directory;
-            try {
+            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
                 directory = ws.isDirectory();
             } catch (Exception x) {
-                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof…
+                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
                 LOGGER.log(Level.FINE, node + " is evidently offline now", x);
                 ws = null;
+                if (!printedCannotContactMessage) {
+                    logger().println("Cannot contact " + node + ": " + x);
+                    printedCannotContactMessage = true;
+                }
                 return null;
             }
             if (!directory) {
@@ -134,29 +197,99 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             return ws;
         }
 
-        @Override public void stop(Throwable cause) throws Exception {
+        private @Nonnull PrintStream logger() {
+            TaskListener l;
+            StepContext context = getContext();
+            try {
+                l = context.get(TaskListener.class);
+                if (l != null) {
+                    LOGGER.log(Level.FINEST, "JENKINS-34021: DurableTaskStep.Execution.listener present in {0}", context);
+                } else {
+                    LOGGER.log(Level.WARNING, "JENKINS-34021: TaskListener not available upon request in {0}", context);
+                    l = new LogTaskListener(LOGGER, Level.FINE);
+                }
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, "JENKINS-34021: could not get TaskListener in " + context, x);
+                l = new LogTaskListener(LOGGER, Level.FINE);
+                recurrencePeriod = 0;
+            }
+            return l.getLogger();
+        }
+
+        private @Nonnull Launcher launcher() throws IOException, InterruptedException {
+            StepContext context = getContext();
+            Launcher l = context.get(Launcher.class);
+            if (l == null) {
+                throw new IOException("JENKINS-37486: Launcher not present in " + context);
+            }
+            return l;
+        }
+
+        @Override public void stop(final Throwable cause) throws Exception {
             FilePath workspace = getWorkspace();
             if (workspace != null) {
-                listener.getLogger().println("Sending interrupt signal to process");
-                controller.stop(workspace, getContext().get(Launcher.class));
+                logger().println("Sending interrupt signal to process");
+                LOGGER.log(Level.FINE, "stopping process", cause);
+                stopTask = Timer.get().schedule(new Runnable() {
+                    @Override public void run() {
+                        stopTask = null;
+                        if (recurrencePeriod > 0) {
+                            recurrencePeriod = 0;
+                            logger().println("After 10s process did not stop");
+                            getContext().onFailure(cause);
+                        }
+                    }
+                }, 10, TimeUnit.SECONDS);
+                controller.stop(workspace, launcher());
             } else {
-                listener.getLogger().println("Could not connect to " + node + " to send interrupt signal to process");
+                logger().println("Could not connect to " + node + " to send interrupt signal to process");
+                recurrencePeriod = 0;
+                getContext().onFailure(cause);
             }
+        }
+
+        @Override public String getStatus() {
+            StringBuilder b = new StringBuilder();
+            try {
+                FilePath workspace = getWorkspace();
+                if (workspace != null) {
+                    b.append(controller.getDiagnostics(workspace, launcher()));
+                } else {
+                    b.append("waiting to reconnect to ").append(remote).append(" on ").append(node);
+                }
+            } catch (IOException | InterruptedException x) {
+                b.append("failed to look up workspace: ").append(x);
+            }
+            b.append("; recurrence period: ").append(recurrencePeriod).append("ms");
+            ScheduledFuture<?> t = task;
+            if (t != null) {
+                b.append("; check task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone());
+            }
+            t = stopTask;
+            if (t != null) {
+                b.append("; stop task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone());
+            }
+            return b.toString();
         }
 
         /** Checks for progress or completion of the external task. */
         @Override public void run() {
+            task = null;
             try {
                 check();
             } finally {
                 if (recurrencePeriod > 0) {
-                    Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+                    task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
                 }
             }
         }
 
+        @SuppressFBWarnings(value="REC_CATCH_EXCEPTION", justification="silly rule")
         private void check() {
-            FilePath workspace;
+            if (recurrencePeriod == 0) { // from stop
+                return;
+            }
+            final FilePath workspace;
             try {
                 workspace = getWorkspace();
             } catch (AbortException x) {
@@ -167,58 +300,48 @@ public abstract class DurableTaskStep extends AbstractStepImpl {
             if (workspace == null) {
                 return; // slave not yet ready, wait for another day
             }
-            // Do not allow this to take more than 10s for any given task:
-            final AtomicReference<Thread> t = new AtomicReference<Thread>(Thread.currentThread());
-            Timer.get().schedule(new Runnable() {
-                @Override public void run() {
-                    Thread _t = t.get();
-                    if (_t != null) {
-                        _t.interrupt();
-                    }
-                }
-            }, 10, TimeUnit.SECONDS);
-            try {
-                if (controller.writeLog(workspace, listener.getLogger())) {
-                    getContext().saveState();
-                    recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
-                } else {
-                    recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
-                }
-                Integer exitCode = controller.exitStatus(workspace, launcher);
-                if (exitCode == null) {
-                    LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
-                } else {
-                    if (controller.writeLog(workspace, listener.getLogger())) {
-                        LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
-                    }
-                    t.set(null); // do not interrupt cleanup
-                    if (exitCode == 0) {
-                        getContext().onSuccess(exitCode);
-                    } else {
-                        getContext().onFailure(new AbortException("script returned exit code " + exitCode));
-                    }
-                    recurrencePeriod = 0;
-                    controller.cleanup(workspace);
-                }
-            } catch (IOException x) {
+            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
+                        if (controller.writeLog(workspace, logger())) {
+                            getContext().saveState();
+                            recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
+                        } else {
+                            recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
+                        }
+                        Integer exitCode = controller.exitStatus(workspace, launcher());
+                        if (exitCode == null) {
+                            LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
+                        } else {
+                            if (controller.writeLog(workspace, logger())) {
+                                LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
+                            }
+                            if (returnStatus || exitCode == 0) {
+                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), encoding) : null);
+                            } else {
+                                if (returnStdout) {
+                                    logger().write(controller.getOutput(workspace, launcher())); // diagnostic
+                                }
+                                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                            }
+                            recurrencePeriod = 0;
+                            controller.cleanup(workspace);
+                        }
+            } catch (Exception x) {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
                 ws = null;
-            } catch (InterruptedException x) {
-                LOGGER.log(Level.FINE, "could not check " + workspace, x);
-                ws = null;
-            } finally {
-                t.set(null); // cancel timer
+                if (!printedCannotContactMessage) {
+                    logger().println("Cannot contact " + node + ": " + x);
+                    printedCannotContactMessage = true;
+                }
             }
         }
 
         @Override public void onResume() {
-            super.onResume();
             setupTimer();
         }
 
         private void setupTimer() {
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
-            Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+            task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;
