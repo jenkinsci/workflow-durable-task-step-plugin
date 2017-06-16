@@ -410,7 +410,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public String getDisplayName() {
             // TODO more generic to check whether FlowExecution.owner.executable is a ModelObject
             Run<?,?> r = runForDisplay();
-            return r != null ? Messages.ExecutorStepExecution_PlaceholderTask_displayName(r.getFullDisplayName()) : Messages.ExecutorStepExecution_PlaceholderTask_displayName_unknown();
+            if (r != null) {
+                String runDisplayName = r.getFullDisplayName();
+                String label = getEnclosingLabel();
+                if (label != null) {
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(runDisplayName, label);
+                } else {
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runDisplayName);
+                }
+            } else {
+                return Messages.ExecutorStepExecution_PlaceholderTask_displayName_unknown();
+            }
         }
 
         @Override public String getName() {
@@ -425,8 +435,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private transient int lastCheckedHashCode;
         private transient String lastEnclosingLabel;
         @Restricted(NoExternalUse.class) // for Jelly
-        public @CheckForNull String getEnclosingLabel() throws Exception {
-            FlowNode executorStepNode = context.get(FlowNode.class);
+        public @CheckForNull String getEnclosingLabel() {
+            FlowNode executorStepNode;
+            try {
+                executorStepNode = context.get(FlowNode.class);
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, null, x);
+                return null;
+            }
             if (executorStepNode == null) {
                 return null;
             }

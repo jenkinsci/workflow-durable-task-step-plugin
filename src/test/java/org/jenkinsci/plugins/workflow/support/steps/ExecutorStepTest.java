@@ -33,6 +33,7 @@ import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
@@ -516,35 +517,38 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-26132")
-    @Test public void enclosingLabel() {
+    @Test public void taskDisplayName() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("stage('one') {node {semaphore 'one'; stage('two') {semaphore 'two'}}}; stage('three') {node {semaphore 'three'}; parallel a: {node {semaphore 'a'}}, b: {node {semaphore 'b'}}}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
-                assertEquals(Collections.singletonList("one"), currentLabels());
-                assertEquals(Collections.singletonList("one"), currentLabels());
+                assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
+                assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
                 SemaphoreStep.success("one/1", null);
                 SemaphoreStep.waitForStart("two/1", b);
-                assertEquals(Collections.singletonList("two"), currentLabels());
+                assertEquals(Collections.singletonList(n(b, "two")), currentLabels());
                 SemaphoreStep.success("two/1", null);
                 SemaphoreStep.waitForStart("three/1", b);
-                assertEquals(Collections.singletonList("three"), currentLabels());
+                assertEquals(Collections.singletonList(n(b, "three")), currentLabels());
                 SemaphoreStep.success("three/1", null);
                 SemaphoreStep.waitForStart("a/1", b);
                 SemaphoreStep.waitForStart("b/1", b);
-                assertEquals(Arrays.asList("a", "b"), currentLabels());
+                assertEquals(Arrays.asList(n(b, "a"), n(b, "b")), currentLabels());
                 SemaphoreStep.success("a/1", null);
                 SemaphoreStep.success("b/1", null);
                 story.j.waitForCompletion(b);
             }
-            List<String> currentLabels() throws Exception {
+            String n(Run<?, ?> b, String label) {
+                return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(b.getFullDisplayName(), label);
+            }
+            List<String> currentLabels() {
                 List<String> r = new ArrayList<>();
                 for (Executor executor : story.j.jenkins.toComputer().getExecutors()) {
                     Queue.Executable executable = executor.getCurrentExecutable();
                     if (executable != null) {
-                        r.add(((ExecutorStepExecution.PlaceholderTask) executable.getParent()).getEnclosingLabel());
+                        r.add(executable.getParent().getDisplayName());
                     }
                 }
                 Collections.sort(r);
