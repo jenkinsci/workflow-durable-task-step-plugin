@@ -85,10 +85,25 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override
     public boolean start() throws Exception {
         final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel(), run);
-        if (Queue.getInstance().schedule2(task, 0).getCreateItem() == null) {
+        Queue.Item taskInQueue = Queue.getInstance().schedule2(task, 0).getCreateItem();
+        if (taskInQueue == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
+        String initialWhyBlocked = taskInQueue.getWhy();
+        if (initialWhyBlocked == null) {
+            // Reuse the general
+            initialWhyBlocked = hudson.model.Messages.Queue_Unknown();
+        }
+
+        ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
+        if (taskAction == null) {
+            // Populate the initial version of the ExecutorTaskInfoAction.
+            flowNode.addAction(new ExecutorTaskInfoAction(initialWhyBlocked, flowNode));
+        } else {
+            taskAction.setWhyBlocked(initialWhyBlocked);
+        }
+
         Timer.get().schedule(new Runnable() {
             @Override public void run() {
                 Queue.Item item = Queue.getInstance().getItem(task);
@@ -104,6 +119,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     String why = item.getWhy();
                     if (why != null) {
                         logger.println(why);
+                        ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
+                        if (taskAction == null) {
+                            taskAction = new ExecutorTaskInfoAction(why, flowNode);
+                            flowNode.addAction(taskAction);
+                        }
+                        if (!why.equals(taskAction.getWhyBlocked())) {
+                            taskAction.setWhyBlocked(why);
+                            // TODO: Someone tell me (abayer) if that's enough or if I need to do a flowNode.replaceAction call too.
+                        }
                     }
                 }
             }
@@ -117,6 +141,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             // if we are still in the queue waiting to be scheduled, just retract that
             if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
                 Queue.getInstance().cancel(item);
+                ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
+                if (taskAction == null) {
+                    taskAction = new ExecutorTaskInfoAction(flowNode);
+                    flowNode.addAction(taskAction);
+                }
+                taskAction.cancelTask();
                 break;
             }
         }
@@ -197,7 +227,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public void onLeft(Queue.LeftItem li) {
             if (li.isCancelled()) {
                 if (li.task instanceof PlaceholderTask) {
-                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                    PlaceholderTask p = (PlaceholderTask)li.task;
+                    p.context.onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                    try {
+                        FlowNode n = p.getNode();
+                        if (n != null) {
+                            ExecutorTaskInfoAction t = n.getAction(ExecutorTaskInfoAction.class);
+                            if (t == null) {
+                                t = new ExecutorTaskInfoAction(n);
+                            }
+                            if (t.isQueued()) {
+                                t.cancelTask();
+                            }
+                        }
+                    } catch (IOException | InterruptedException e) {
+                        LOGGER.log(WARNING, null, e);
+                    }
                 }
             }
         }
@@ -557,7 +602,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         // Cf. AbstractBuild.getEnvironment:
                         env.put("WORKSPACE", workspace.getRemote());
                         FlowNode flowNode = context.get(FlowNode.class);
-                        flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
+                        if (flowNode != null) {
+                            flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
+                            ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
+                            if (taskAction == null) {
+                                taskAction = new ExecutorTaskInfoAction(flowNode);
+                                flowNode.addAction(taskAction);
+                            }
+                            taskAction.setAgent(workspace);
+                        }
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
