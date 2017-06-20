@@ -1,8 +1,6 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import hudson.FilePath;
 import hudson.model.InvisibleAction;
-import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.actions.FlowNodeAction;
 import org.jenkinsci.plugins.workflow.actions.PersistentAction;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
@@ -19,8 +17,8 @@ import javax.annotation.Nonnull;
 public class ExecutorTaskInfoAction extends InvisibleAction implements FlowNodeAction, PersistentAction {
     private static final long serialVersionUID = 1;
 
-    private String agent;
     private String whyBlocked;
+    private boolean launched;
     // Initialized at -1 for "not started yet".
     private long whenStartedOrCanceled = -1L;
 
@@ -44,16 +42,11 @@ public class ExecutorTaskInfoAction extends InvisibleAction implements FlowNodeA
         this.parent = parent;
     }
 
-    void setAgent(@Nonnull FilePath workspace) {
+    void setLaunched() {
         // Because we're not blocked any more at this point!
         this.whyBlocked = null;
         this.whenStartedOrCanceled = System.currentTimeMillis();
-        this.agent = FilePathUtils.getNodeName(workspace);
-    }
-
-    @CheckForNull
-    public String getAgent() {
-        return agent;
+        this.launched = true;
     }
 
     void setWhyBlocked(@Nonnull String whyBlocked) {
@@ -78,11 +71,11 @@ public class ExecutorTaskInfoAction extends InvisibleAction implements FlowNodeA
         return whyBlocked != null && whenStartedOrCanceled == -1;
     }
 
-    public boolean isRunning() {
-        return agent != null;
+    public boolean isLaunched() {
+        return launched;
     }
 
     public boolean isCanceled() {
-        return agent == null && whyBlocked == null && whenStartedOrCanceled > -1;
+        return !launched && whyBlocked == null && whenStartedOrCanceled > -1;
     }
 }

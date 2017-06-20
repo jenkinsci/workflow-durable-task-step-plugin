@@ -76,7 +76,6 @@ import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
-import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
@@ -523,11 +522,10 @@ public class ExecutorStepTest {
                 ExecutorTaskInfoAction action = executorStartNode.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action);
                 assertNotNull(action.getWhyBlocked());
-                assertNull(action.getAgent());
                 assertEquals(-1L, action.getWhenStartedOrCanceled());
                 assertTrue(action.isQueued());
                 assertFalse(action.isCanceled());
-                assertFalse(action.isRunning());
+                assertFalse(action.isLaunched());
 
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
@@ -540,11 +538,10 @@ public class ExecutorStepTest {
                 ExecutorTaskInfoAction action2 = executorStartNode2.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action2);
                 assertNull(action2.getWhyBlocked());
-                assertNull(action2.getAgent());
                 assertNotEquals(-1L, action2.getWhenStartedOrCanceled());
                 assertFalse(action2.isQueued());
                 assertTrue(action2.isCanceled());
-                assertFalse(action2.isRunning());
+                assertFalse(action2.isLaunched());
 
                 // Re-run to make sure we actually get an agent and the action is set properly.
                 story.j.createSlave("special", "special", null);
@@ -556,11 +553,10 @@ public class ExecutorStepTest {
                 ExecutorTaskInfoAction action3 = executorStartNode3.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action3);
                 assertNull(action3.getWhyBlocked());
-                assertEquals("special", action3.getAgent());
                 assertNotEquals(-1L, action3.getWhenStartedOrCanceled());
                 assertFalse(action3.isQueued());
                 assertFalse(action3.isCanceled());
-                assertTrue(action3.isRunning());
+                assertTrue(action3.isLaunched());
 
             }
         });

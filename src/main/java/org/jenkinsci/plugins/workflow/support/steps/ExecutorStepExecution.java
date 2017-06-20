@@ -126,7 +126,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         if (!why.equals(taskAction.getWhyBlocked())) {
                             taskAction.setWhyBlocked(why);
-                            // TODO: Someone tell me (abayer) if that's enough or if I need to do a flowNode.replaceAction call too.
                         }
                     }
                 }
@@ -609,7 +608,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 taskAction = new ExecutorTaskInfoAction(flowNode);
                                 flowNode.addAction(taskAction);
                             }
-                            taskAction.setAgent(workspace);
+                            taskAction.setLaunched();
                         }
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
                         context.newBodyInvoker()
