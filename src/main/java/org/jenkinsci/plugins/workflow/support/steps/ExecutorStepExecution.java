@@ -235,6 +235,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             ExecutorTaskInfoAction t = n.getAction(ExecutorTaskInfoAction.class);
                             if (t == null) {
                                 t = new ExecutorTaskInfoAction(n);
+                                n.addAction(t);
                             }
                             if (t.isQueued()) {
                                 t.cancelTask();
