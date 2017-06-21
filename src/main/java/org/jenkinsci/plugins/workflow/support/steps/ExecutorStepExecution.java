@@ -100,7 +100,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
         if (taskAction == null) {
             // Populate the initial version of the ExecutorTaskInfoAction.
-            flowNode.addAction(new ExecutorTaskInfoAction(initialWhyBlocked, flowNode));
+            flowNode.addAction(new ExecutorTaskInfoAction(initialWhyBlocked));
         } else {
             taskAction.setWhyBlocked(initialWhyBlocked);
         }
@@ -122,7 +122,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         logger.println(why);
                         ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
                         if (taskAction == null) {
-                            taskAction = new ExecutorTaskInfoAction(why, flowNode);
+                            taskAction = new ExecutorTaskInfoAction(why);
                             flowNode.addAction(taskAction);
                         }
                         if (!why.equals(taskAction.getWhyBlocked())) {
@@ -143,7 +143,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 Queue.getInstance().cancel(item);
                 ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
                 if (taskAction == null) {
-                    taskAction = new ExecutorTaskInfoAction(flowNode);
+                    taskAction = new ExecutorTaskInfoAction();
                     flowNode.addAction(taskAction);
                 }
                 taskAction.cancelTask();
@@ -234,7 +234,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         if (n != null) {
                             ExecutorTaskInfoAction t = n.getAction(ExecutorTaskInfoAction.class);
                             if (t == null) {
-                                t = new ExecutorTaskInfoAction(n);
+                                t = new ExecutorTaskInfoAction();
                                 n.addAction(t);
                             }
                             if (t.isQueued()) {
@@ -607,7 +607,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                             ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
                             if (taskAction == null) {
-                                taskAction = new ExecutorTaskInfoAction(flowNode);
+                                taskAction = new ExecutorTaskInfoAction();
                                 flowNode.addAction(taskAction);
                             }
                             taskAction.setLaunched();

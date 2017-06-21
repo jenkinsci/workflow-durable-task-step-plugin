@@ -523,9 +523,9 @@ public class ExecutorStepTest {
                 ExecutorTaskInfoAction action = executorStartNode.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action);
                 assertNotNull(action.getWhyBlocked());
-                assertEquals(-1L, action.getWhenStartedOrCanceled());
+                assertEquals(-1L, action.getWhenStartedOrCancelled());
                 assertTrue(action.isQueued());
-                assertFalse(action.isCanceled());
+                assertFalse(action.isCancelled());
                 assertFalse(action.isLaunched());
 
                 Queue.Item[] items = Queue.getInstance().getItems();
@@ -539,9 +539,9 @@ public class ExecutorStepTest {
                 ExecutorTaskInfoAction action2 = executorStartNode2.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action2);
                 assertNull(action2.getWhyBlocked());
-                assertNotEquals(-1L, action2.getWhenStartedOrCanceled());
+                assertNotEquals(-1L, action2.getWhenStartedOrCancelled());
                 assertFalse(action2.isQueued());
-                assertTrue(action2.isCanceled());
+                assertTrue(action2.isCancelled());
                 assertFalse(action2.isLaunched());
 
                 // Re-run to make sure we actually get an agent and the action is set properly.
@@ -554,9 +554,9 @@ public class ExecutorStepTest {
                 ExecutorTaskInfoAction action3 = executorStartNode3.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action3);
                 assertNull(action3.getWhyBlocked());
-                assertNotEquals(-1L, action3.getWhenStartedOrCanceled());
+                assertNotEquals(-1L, action3.getWhenStartedOrCancelled());
                 assertFalse(action3.isQueued());
-                assertFalse(action3.isCanceled());
+                assertFalse(action3.isCancelled());
                 assertTrue(action3.isLaunched());
 
             }
