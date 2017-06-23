@@ -413,9 +413,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             Run<?,?> r = runForDisplay();
             if (r != null) {
                 String runDisplayName = r.getFullDisplayName();
-                String label = getEnclosingLabel();
-                if (label != null) {
-                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(runDisplayName, label);
+                String enclosingLabel = getEnclosingLabel();
+                if (enclosingLabel != null) {
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(runDisplayName, enclosingLabel);
                 } else {
                     return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runDisplayName);
                 }
