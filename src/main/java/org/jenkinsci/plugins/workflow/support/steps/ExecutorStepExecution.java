@@ -469,11 +469,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 while (it.hasNext()) {
                     FlowNode n = it.next();
                     if (label == null) {
-                        ThreadNameAction tna = n.getAction(ThreadNameAction.class);
+                        ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {
                             label = tna.getThreadName();
                         } else {
-                            LabelAction a = n.getAction(LabelAction.class);
+                            LabelAction a = n.getPersistentAction(LabelAction.class);
                             if (a != null) {
                                 label = a.getDisplayName();
                             }
