@@ -521,7 +521,29 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("stage('one') {node {semaphore 'one'; stage('two') {semaphore 'two'}}}; stage('three') {node {semaphore 'three'}; parallel a: {node {semaphore 'a'}}, b: {node {semaphore 'b'}}}", true));
+                p.setDefinition(new CpsFlowDefinition(
+                    "stage('one') {\n" +
+                    "  node {\n" +
+                    "    semaphore 'one'\n" +
+                    "    stage('two') {\n" +
+                    "      semaphore 'two'\n" +
+                    "    }\n" +
+                    "  }\n" +
+                    "}\n" +
+                    "stage('three') {\n" +
+                    "  node {\n" +
+                    "    semaphore 'three'\n" +
+                    "  }\n" +
+                    "  parallel a: {\n" +
+                    "    node {\n" +
+                    "      semaphore 'a'\n" +
+                    "    }\n" +
+                    "  }, b: {\n" +
+                    "    node {\n" +
+                    "      semaphore 'b'\n" +
+                    "    }\n" +
+                    "  }\n" +
+                    "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
                 assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
