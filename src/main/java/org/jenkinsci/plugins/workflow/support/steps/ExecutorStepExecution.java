@@ -463,28 +463,28 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             for (FlowNode runningNode : heads) {
                 // See if this step is inside our node {} block, and track the associated label.
                 boolean match = false;
-                String label = null;
+                String enclosingLabel = null;
                 Iterator<FlowNode> it = FlowScanningUtils.fetchEnclosingBlocks(runningNode);
                 int count = 0;
                 while (it.hasNext()) {
                     FlowNode n = it.next();
-                    if (label == null) {
+                    if (enclosingLabel == null) {
                         ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {
-                            label = tna.getThreadName();
+                            enclosingLabel = tna.getThreadName();
                         } else {
                             LabelAction a = n.getPersistentAction(LabelAction.class);
                             if (a != null) {
-                                label = a.getDisplayName();
+                                enclosingLabel = a.getDisplayName();
                             }
                         }
-                        if (match && label != null) {
-                            return label;
+                        if (match && enclosingLabel != null) {
+                            return enclosingLabel;
                         }
                     }
                     if (n.equals(executorStepNode)) {
-                        if (label != null) {
-                            return label;
+                        if (enclosingLabel != null) {
+                            return enclosingLabel;
                         }
                         match = true;
                     }
