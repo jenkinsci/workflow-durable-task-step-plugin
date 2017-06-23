@@ -250,7 +250,7 @@ public abstract class DurableTaskStep extends Step {
 
         @Override public String getStatus() {
             StringBuilder b = new StringBuilder();
-            try {
+            try (Timeout timeout = Timeout.limit(2, TimeUnit.SECONDS)) { // CpsThreadDump applies a 3s timeout anyway
                 FilePath workspace = getWorkspace();
                 if (workspace != null) {
                     b.append(controller.getDiagnostics(workspace, launcher()));
@@ -258,7 +258,7 @@ public abstract class DurableTaskStep extends Step {
                     b.append("waiting to reconnect to ").append(remote).append(" on ").append(node);
                 }
             } catch (IOException | InterruptedException x) {
-                b.append("failed to look up workspace: ").append(x);
+                b.append("failed to look up workspace ").append(remote).append(" on ").append(node).append(": ").append(x);
             }
             b.append("; recurrence period: ").append(recurrencePeriod).append("ms");
             ScheduledFuture<?> t = task;
