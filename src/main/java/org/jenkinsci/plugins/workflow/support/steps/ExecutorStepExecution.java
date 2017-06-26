@@ -34,6 +34,8 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -52,15 +54,19 @@ import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
+import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
+import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -405,7 +411,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public String getDisplayName() {
             // TODO more generic to check whether FlowExecution.owner.executable is a ModelObject
             Run<?,?> r = runForDisplay();
-            return r != null ? Messages.ExecutorStepExecution_PlaceholderTask_displayName(r.getFullDisplayName()) : Messages.ExecutorStepExecution_PlaceholderTask_displayName_unknown();
+            if (r != null) {
+                String runDisplayName = r.getFullDisplayName();
+                String enclosingLabel = getEnclosingLabel();
+                if (enclosingLabel != null) {
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(runDisplayName, enclosingLabel);
+                } else {
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runDisplayName);
+                }
+            } else {
+                return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runId);
+            }
         }
 
         @Override public String getName() {
@@ -414,6 +430,70 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public String getFullDisplayName() {
             return getDisplayName();
+        }
+
+        /** hash code of list of heads */
+        private transient int lastCheckedHashCode;
+        private transient String lastEnclosingLabel;
+        @Restricted(NoExternalUse.class) // for Jelly
+        public @CheckForNull String getEnclosingLabel() {
+            if (!context.isReady()) {
+                return null;
+            }
+            FlowNode executorStepNode;
+            try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
+                executorStepNode = context.get(FlowNode.class);
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, null, x);
+                return null;
+            }
+            if (executorStepNode == null) {
+                return null;
+            }
+            List<FlowNode> heads = executorStepNode.getExecution().getCurrentHeads();
+            int headsHash = heads.hashCode(); // deterministic based on IDs of those heads
+            if (headsHash == lastCheckedHashCode) {
+                return lastEnclosingLabel;
+            } else {
+                lastCheckedHashCode = headsHash;
+                return lastEnclosingLabel = computeEnclosingLabel(executorStepNode, heads);
+            }
+        }
+        private String computeEnclosingLabel(FlowNode executorStepNode, List<FlowNode> heads) {
+            for (FlowNode runningNode : heads) {
+                // See if this step is inside our node {} block, and track the associated label.
+                boolean match = false;
+                String enclosingLabel = null;
+                Iterator<FlowNode> it = FlowScanningUtils.fetchEnclosingBlocks(runningNode);
+                int count = 0;
+                while (it.hasNext()) {
+                    FlowNode n = it.next();
+                    if (enclosingLabel == null) {
+                        ThreadNameAction tna = n.getAction(ThreadNameAction.class); // TODO use getPersistentAction when unrestricted
+                        if (tna != null) {
+                            enclosingLabel = tna.getThreadName();
+                        } else {
+                            LabelAction a = n.getAction(LabelAction.class); // TODO ditto
+                            if (a != null) {
+                                enclosingLabel = a.getDisplayName();
+                            }
+                        }
+                        if (match && enclosingLabel != null) {
+                            return enclosingLabel;
+                        }
+                    }
+                    if (n.equals(executorStepNode)) {
+                        if (enclosingLabel != null) {
+                            return enclosingLabel;
+                        }
+                        match = true;
+                    }
+                    if (count++ > 100) {
+                        break; // not important enough to bother
+                    }
+                }
+            }
+            return null;
         }
 
         @Override public long getEstimatedDuration() {
@@ -642,6 +722,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
             private static final long serialVersionUID = 1L;
         }
+
+        private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
     }
 
     private static final long serialVersionUID = 1L;
