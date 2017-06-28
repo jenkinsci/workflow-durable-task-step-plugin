@@ -30,9 +30,11 @@ import hudson.Functions;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
 import hudson.model.Computer;
+import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
@@ -581,6 +583,69 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}"));
                 story.j.assertLogContains("ran node block #49", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+            }
+        });
+    }
+
+    @Issue("JENKINS-26132")
+    @Test public void taskDisplayName() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition(
+                    "stage('one') {\n" +
+                    "  node {\n" +
+                    "    semaphore 'one'\n" +
+                    "    stage('two') {\n" +
+                    "      semaphore 'two'\n" +
+                    "    }\n" +
+                    "  }\n" +
+                    "}\n" +
+                    "stage('three') {\n" +
+                    "  node {\n" +
+                    "    semaphore 'three'\n" +
+                    "  }\n" +
+                    "  parallel a: {\n" +
+                    "    node {\n" +
+                    "      semaphore 'a'\n" +
+                    "    }\n" +
+                    "  }, b: {\n" +
+                    "    node {\n" +
+                    "      semaphore 'b'\n" +
+                    "    }\n" +
+                    "  }\n" +
+                    "}", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("one/1", b);
+                assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
+                assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
+                SemaphoreStep.success("one/1", null);
+                SemaphoreStep.waitForStart("two/1", b);
+                assertEquals(Collections.singletonList(n(b, "two")), currentLabels());
+                SemaphoreStep.success("two/1", null);
+                SemaphoreStep.waitForStart("three/1", b);
+                assertEquals(Collections.singletonList(n(b, "three")), currentLabels());
+                SemaphoreStep.success("three/1", null);
+                SemaphoreStep.waitForStart("a/1", b);
+                SemaphoreStep.waitForStart("b/1", b);
+                assertEquals(Arrays.asList(n(b, "a"), n(b, "b")), currentLabels());
+                SemaphoreStep.success("a/1", null);
+                SemaphoreStep.success("b/1", null);
+                story.j.waitForCompletion(b);
+            }
+            String n(Run<?, ?> b, String label) {
+                return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(b.getFullDisplayName(), label);
+            }
+            List<String> currentLabels() {
+                List<String> r = new ArrayList<>();
+                for (Executor executor : story.j.jenkins.toComputer().getExecutors()) {
+                    Queue.Executable executable = executor.getCurrentExecutable();
+                    if (executable != null) {
+                        r.add(executable.getParent().getDisplayName());
+                    }
+                }
+                Collections.sort(r);
+                return r;
             }
         });
     }
