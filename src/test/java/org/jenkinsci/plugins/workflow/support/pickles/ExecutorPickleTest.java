@@ -67,8 +67,8 @@ public class ExecutorPickleTest {
             @Override public void evaluate() throws Throwable {
                 SemaphoreStep.success("wait/1", null);
                 WorkflowRun b = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-                r.j.waitForMessage(hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(), b);
-                r.j.assertLogContains(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                // first prints on 2.35-: hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(); 2.36+: hudson.model.Messages.Node_LabelMissing("Jenkins", "slave0")
+                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);
