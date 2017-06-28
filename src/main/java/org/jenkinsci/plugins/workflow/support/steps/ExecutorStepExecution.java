@@ -91,11 +91,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
-        String initialWhyBlocked = taskInQueue.getWhy();
-        if (initialWhyBlocked == null) {
-            // Reuse the general
-            initialWhyBlocked = hudson.model.Messages.Queue_Unknown();
-        }
+
+        // TODO: We may want a more specific/accurate initial message here. It'll be updated in 15 seconds, but still...
+        String initialWhyBlocked = hudson.model.Messages.Queue_WaitingForNextAvailableExecutor();
 
         ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
         if (taskAction == null) {

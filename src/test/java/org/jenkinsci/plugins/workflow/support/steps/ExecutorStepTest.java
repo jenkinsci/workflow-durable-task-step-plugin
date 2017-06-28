@@ -516,13 +516,14 @@ public class ExecutorStepTest {
                 final WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("node('special') {}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                story.j.waitForMessage("Still waiting to schedule task", b);
+                story.j.waitForMessage("[Pipeline] node", b);
 
                 FlowNode executorStartNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithTaskInfoPredicate());
                 assertNotNull(executorStartNode);
                 ExecutorTaskInfoAction action = executorStartNode.getAction(ExecutorTaskInfoAction.class);
                 assertNotNull(action);
                 assertNotNull(action.getWhyBlocked());
+                assertEquals(hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(), action.getWhyBlocked());
                 assertEquals(-1L, action.getWhenStartedOrCancelled());
                 assertTrue(action.isQueued());
                 assertFalse(action.isCancelled());
