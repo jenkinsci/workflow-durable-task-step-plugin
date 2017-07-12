@@ -54,8 +54,8 @@ import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
-import org.jenkinsci.plugins.workflow.actions.ExecutorTaskInfoAction;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.actions.TaskInfoAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
@@ -92,22 +92,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override
     public boolean start() throws Exception {
         final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel(), run);
-        Queue.Item taskInQueue = Queue.getInstance().schedule2(task, 0).getCreateItem();
-        if (taskInQueue == null) {
+        if (Queue.getInstance().schedule2(task, 0).getCreateItem() == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
-
-        // TODO: We may want a more specific/accurate initial message here. It'll be updated in 15 seconds, but still...
-        String initialWhyBlocked = hudson.model.Messages.Queue_WaitingForNextAvailableExecutor();
-
-        ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
-        if (taskAction == null) {
-            // Populate the initial version of the ExecutorTaskInfoAction.
-            flowNode.addAction(new ExecutorTaskInfoAction(initialWhyBlocked));
-        } else {
-            taskAction.setWhyBlocked(initialWhyBlocked);
-        }
+        flowNode.addAction(new TaskInfoActionImpl(getContext().hashCode()));
 
         Timer.get().schedule(new Runnable() {
             @Override public void run() {
@@ -124,14 +113,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     String why = item.getWhy();
                     if (why != null) {
                         logger.println(why);
-                        ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
-                        if (taskAction == null) {
-                            taskAction = new ExecutorTaskInfoAction(why);
-                            flowNode.addAction(taskAction);
-                        }
-                        if (!why.equals(taskAction.getWhyBlocked())) {
-                            taskAction.setWhyBlocked(why);
-                        }
                     }
                 }
             }
@@ -145,12 +126,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             // if we are still in the queue waiting to be scheduled, just retract that
             if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
                 Queue.getInstance().cancel(item);
-                ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
-                if (taskAction == null) {
-                    taskAction = new ExecutorTaskInfoAction();
-                    flowNode.addAction(taskAction);
-                }
-                taskAction.cancelTask();
                 break;
             }
         }
@@ -233,21 +208,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (li.task instanceof PlaceholderTask) {
                     PlaceholderTask p = (PlaceholderTask)li.task;
                     p.context.onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
-                    try {
-                        FlowNode n = p.getNode();
-                        if (n != null) {
-                            ExecutorTaskInfoAction t = n.getAction(ExecutorTaskInfoAction.class);
-                            if (t == null) {
-                                t = new ExecutorTaskInfoAction();
-                                n.addAction(t);
-                            }
-                            if (t.isQueued()) {
-                                t.cancelTask();
-                            }
-                        }
-                    } catch (IOException | InterruptedException e) {
-                        LOGGER.log(WARNING, null, e);
-                    }
                 }
             }
         }
@@ -683,12 +643,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         FlowNode flowNode = context.get(FlowNode.class);
                         if (flowNode != null) {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
-                            ExecutorTaskInfoAction taskAction = flowNode.getAction(ExecutorTaskInfoAction.class);
-                            if (taskAction == null) {
-                                taskAction = new ExecutorTaskInfoAction();
-                                flowNode.addAction(taskAction);
-                            }
-                            taskAction.setLaunched();
                         }
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
                         context.newBodyInvoker()
@@ -776,6 +730,24 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
+    }
+
+    private static final class TaskInfoActionImpl extends TaskInfoAction {
+        TaskInfoActionImpl(int taskContextHashcode) {
+            super(taskContextHashcode);
+        }
+
+        @Override
+        @CheckForNull
+        protected Queue.Item itemInQueue() {
+            for (Queue.Item item : Queue.getInstance().getItems()) {
+                if (item.task instanceof PlaceholderTask &&
+                        ((PlaceholderTask) item.task).context.hashCode() == taskContextHashcode) {
+                    return item;
+                }
+            }
+            return null;
+        }
     }
 
     private static final long serialVersionUID = 1L;

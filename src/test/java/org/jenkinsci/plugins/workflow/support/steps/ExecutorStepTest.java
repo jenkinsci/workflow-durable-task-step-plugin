@@ -71,7 +71,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import org.hamcrest.Matchers;
 import org.jboss.marshalling.ObjectResolver;
-import org.jenkinsci.plugins.workflow.actions.ExecutorTaskInfoAction;
+import org.jenkinsci.plugins.workflow.actions.TaskInfoAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
@@ -512,7 +512,7 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-44981")
-    @Test public void executorTaskInfoAction() {
+    @Test public void taskInfoAction() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 final WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -522,14 +522,11 @@ public class ExecutorStepTest {
 
                 FlowNode executorStartNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithTaskInfoPredicate());
                 assertNotNull(executorStartNode);
-                ExecutorTaskInfoAction action = executorStartNode.getAction(ExecutorTaskInfoAction.class);
-                assertNotNull(action);
-                assertNotNull(action.getWhyBlocked());
-                assertEquals(hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(), action.getWhyBlocked());
-                assertEquals(-1L, action.getWhenStartedOrCancelled());
-                assertTrue(action.isQueued());
-                assertFalse(action.isCancelled());
-                assertFalse(action.isLaunched());
+
+                assertNotNull(executorStartNode.getActions(TaskInfoAction.class));
+                assertEquals(hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(),
+                        TaskInfoAction.getWhyBlockedForNode(executorStartNode));
+                assertEquals(TaskInfoAction.QueueState.QUEUED, TaskInfoAction.getNodeState(executorStartNode));
 
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
@@ -539,13 +536,9 @@ public class ExecutorStepTest {
                 story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
 
                 FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithTaskInfoPredicate());
-                ExecutorTaskInfoAction action2 = executorStartNode2.getAction(ExecutorTaskInfoAction.class);
-                assertNotNull(action2);
-                assertNull(action2.getWhyBlocked());
-                assertNotEquals(-1L, action2.getWhenStartedOrCancelled());
-                assertFalse(action2.isQueued());
-                assertTrue(action2.isCancelled());
-                assertFalse(action2.isLaunched());
+                assertNotNull(executorStartNode2);
+                assertEquals(TaskInfoAction.QueueState.CANCELLED, TaskInfoAction.getNodeState(executorStartNode2));
+                assertNull(TaskInfoAction.getWhyBlockedForNode(executorStartNode2));
 
                 // Re-run to make sure we actually get an agent and the action is set properly.
                 story.j.createSlave("special", "special", null);
@@ -554,14 +547,12 @@ public class ExecutorStepTest {
 
                 FlowNode executorStartNode3 = new DepthFirstScanner().findFirstMatch(b2.getExecution(), new ExecutorStepWithTaskInfoPredicate());
                 assertNotNull(executorStartNode3);
-                ExecutorTaskInfoAction action3 = executorStartNode3.getAction(ExecutorTaskInfoAction.class);
-                assertNotNull(action3);
-                assertNull(action3.getWhyBlocked());
-                assertNotEquals(-1L, action3.getWhenStartedOrCancelled());
-                assertFalse(action3.isQueued());
-                assertFalse(action3.isCancelled());
-                assertTrue(action3.isLaunched());
+                assertEquals(TaskInfoAction.QueueState.LAUNCHED, TaskInfoAction.getNodeState(executorStartNode3));
+                assertNull(TaskInfoAction.getWhyBlockedForNode(executorStartNode3));
 
+                FlowNode notExecutorNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NotExecutorStepPredicate());
+                assertNotNull(notExecutorNode);
+                assertEquals(TaskInfoAction.QueueState.UNKNOWN, TaskInfoAction.getNodeState(notExecutorNode));
             }
         });
     }
@@ -572,7 +563,15 @@ public class ExecutorStepTest {
             return input != null &&
                     input instanceof StepStartNode &&
                     ((StepStartNode) input).getDescriptor() == ExecutorStep.DescriptorImpl.byFunctionName("node") &&
-                    input.getAction(ExecutorTaskInfoAction.class) != null;
+                    input.getAction(TaskInfoAction.class) != null;
+        }
+    }
+
+    private static final class NotExecutorStepPredicate implements Predicate<FlowNode> {
+        @Override
+        public boolean apply(@Nullable FlowNode input) {
+            return input != null &&
+                    input.getAction(TaskInfoAction.class) == null;
         }
     }
 
