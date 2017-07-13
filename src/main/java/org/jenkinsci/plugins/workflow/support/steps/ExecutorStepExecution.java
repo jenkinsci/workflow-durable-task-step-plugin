@@ -643,6 +643,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         FlowNode flowNode = context.get(FlowNode.class);
                         if (flowNode != null) {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
+                            TaskInfoAction taskInfoAction = flowNode.getAction(TaskInfoAction.class);
+                            if (taskInfoAction != null) {
+                                flowNode.getActions().remove(taskInfoAction);
+                            }
                         }
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
                         context.newBodyInvoker()
