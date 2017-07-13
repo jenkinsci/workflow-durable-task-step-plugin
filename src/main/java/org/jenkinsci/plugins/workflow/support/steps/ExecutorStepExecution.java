@@ -737,8 +737,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     private static final class TaskInfoActionImpl extends TaskInfoAction {
+        /**
+         * Used to identify the {@link org.jenkinsci.plugins.workflow.steps.StepContext} in the task, so that
+         * its status can be identified.
+         */
+        private int taskContextHashcode;
+
         TaskInfoActionImpl(int taskContextHashcode) {
-            super(taskContextHashcode);
+            this.taskContextHashcode = taskContextHashcode;
         }
 
         @Override
