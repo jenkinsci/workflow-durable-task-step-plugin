@@ -96,7 +96,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
-        flowNode.addAction(new TaskInfoActionImpl(getContext().hashCode()));
+        flowNode.addAction(new TaskInfoActionImpl(task.queueCookie));
 
         Timer.get().schedule(new Runnable() {
             @Override public void run() {
@@ -244,10 +244,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          */
         private String cookie;
 
+        /**
+         * Unique cookie set when the task is queued. Used for status lookups.
+         */
+        private final String queueCookie;
+
         PlaceholderTask(StepContext context, String label, Run<?,?> run) {
             this.context = context;
             this.label = label;
             runId = run.getExternalizableId();
+            queueCookie = UUID.randomUUID().toString();
         }
 
         private Object readResolve() {
@@ -734,13 +740,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     private static final class TaskInfoActionImpl extends TaskInfoAction {
         /**
-         * Used to identify the {@link org.jenkinsci.plugins.workflow.steps.StepContext} in the task, so that
-         * its status can be identified.
+         * Used to identify the task in the queue, so that its status can be identified.
          */
-        private int taskContextHashcode;
+        private String taskQueueCookie;
 
-        TaskInfoActionImpl(int taskContextHashcode) {
-            this.taskContextHashcode = taskContextHashcode;
+        TaskInfoActionImpl(String taskQueueCookie) {
+            this.taskQueueCookie = taskQueueCookie;
         }
 
         @Override
@@ -748,7 +753,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         protected Queue.Item itemInQueue() {
             for (Queue.Item item : Queue.getInstance().getItems()) {
                 if (item.task instanceof PlaceholderTask &&
-                        ((PlaceholderTask) item.task).context.hashCode() == taskContextHashcode) {
+                        ((PlaceholderTask) item.task).queueCookie.equals(taskQueueCookie)) {
                     return item;
                 }
             }
