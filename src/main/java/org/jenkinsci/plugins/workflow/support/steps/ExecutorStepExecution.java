@@ -55,7 +55,7 @@ import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
-import org.jenkinsci.plugins.workflow.actions.TaskInfoAction;
+import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
@@ -92,11 +92,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override
     public boolean start() throws Exception {
         final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel(), run);
-        if (Queue.getInstance().schedule2(task, 0).getCreateItem() == null) {
+        Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
+        if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
-        flowNode.addAction(new TaskInfoActionImpl(task.queueCookie));
+        flowNode.addAction(new QueueItemActionImpl(waitingItem.getId()));
 
         Timer.get().schedule(new Runnable() {
             @Override public void run() {
@@ -206,9 +207,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public void onLeft(Queue.LeftItem li) {
             if (li.isCancelled()) {
                 if (li.task instanceof PlaceholderTask) {
-                    PlaceholderTask p = (PlaceholderTask)li.task;
-                    p.context.onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
-                }
+                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));                }
             }
         }
 
@@ -738,26 +737,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
     }
 
-    private static final class TaskInfoActionImpl extends TaskInfoAction {
+    private static final class QueueItemActionImpl extends QueueItemAction {
         /**
          * Used to identify the task in the queue, so that its status can be identified.
          */
-        private String taskQueueCookie;
+        private long id;
 
-        TaskInfoActionImpl(String taskQueueCookie) {
-            this.taskQueueCookie = taskQueueCookie;
+        QueueItemActionImpl(long id) {
+            this.id = id;
         }
 
         @Override
         @CheckForNull
-        protected Queue.Item itemInQueue() {
-            for (Queue.Item item : Queue.getInstance().getItems()) {
-                if (item.task instanceof PlaceholderTask &&
-                        ((PlaceholderTask) item.task).queueCookie.equals(taskQueueCookie)) {
-                    return item;
-                }
-            }
-            return null;
+        public Queue.Item itemInQueue() {
+            return Queue.getInstance().getItem(id);
         }
     }
 
