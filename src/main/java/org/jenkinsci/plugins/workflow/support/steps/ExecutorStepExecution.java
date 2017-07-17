@@ -207,7 +207,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public void onLeft(Queue.LeftItem li) {
             if (li.isCancelled()) {
                 if (li.task instanceof PlaceholderTask) {
-                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));                }
+                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                }
             }
         }
 
@@ -242,11 +243,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * and allows {@link Launcher#kill} to work.
          */
         private String cookie;
-
-        /**
-         * Unique cookie set when the task is queued. Used for status lookups.
-         */
-        private final String queueCookie;
 
         PlaceholderTask(StepContext context, String label, Run<?,?> run) {
             this.context = context;
