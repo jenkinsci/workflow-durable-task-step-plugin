@@ -248,7 +248,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             this.context = context;
             this.label = label;
             runId = run.getExternalizableId();
-            queueCookie = UUID.randomUUID().toString();
         }
 
         private Object readResolve() {
