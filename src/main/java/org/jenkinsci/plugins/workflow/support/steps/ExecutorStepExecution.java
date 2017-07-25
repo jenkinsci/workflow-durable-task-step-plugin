@@ -55,6 +55,7 @@ import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
@@ -91,10 +92,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override
     public boolean start() throws Exception {
         final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel(), run);
-        if (Queue.getInstance().schedule2(task, 0).getCreateItem() == null) {
+        Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
+        if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
+        flowNode.addAction(new QueueItemActionImpl(waitingItem.getId()));
+
         Timer.get().schedule(new Runnable() {
             @Override public void run() {
                 Queue.Item item = Queue.getInstance().getItem(task);
@@ -637,7 +641,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         // Cf. AbstractBuild.getEnvironment:
                         env.put("WORKSPACE", workspace.getRemote());
                         FlowNode flowNode = context.get(FlowNode.class);
-                        flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
+                        if (flowNode != null) {
+                            flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
+                        }
                         listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
@@ -724,6 +730,23 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
+    }
+
+    private static final class QueueItemActionImpl extends QueueItemAction {
+        /**
+         * Used to identify the task in the queue, so that its status can be identified.
+         */
+        private long id;
+
+        QueueItemActionImpl(long id) {
+            this.id = id;
+        }
+
+        @Override
+        @CheckForNull
+        public Queue.Item itemInQueue() {
+            return Queue.getInstance().getItem(id);
+        }
     }
 
     private static final long serialVersionUID = 1L;

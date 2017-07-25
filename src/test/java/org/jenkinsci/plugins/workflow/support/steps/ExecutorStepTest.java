@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.init.InitMilestone;
@@ -70,11 +71,14 @@ import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import org.hamcrest.Matchers;
 import org.jboss.marshalling.ObjectResolver;
+import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
+import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
@@ -95,6 +99,8 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
+
+import javax.annotation.Nullable;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -503,6 +509,70 @@ public class ExecutorStepTest {
                 story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
             }
         });
+    }
+
+    @Issue("JENKINS-44981")
+    @Test public void queueItemAction() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                final WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node('special') {}", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForMessage("[Pipeline] node", b);
+
+                FlowNode executorStartNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
+                assertNotNull(executorStartNode);
+
+                assertNotNull(executorStartNode.getAction(QueueItemAction.class));
+                assertEquals(QueueItemAction.QueueState.QUEUED, QueueItemAction.getNodeState(executorStartNode));
+
+                Queue.Item[] items = Queue.getInstance().getItems();
+                assertEquals(1, items.length);
+                assertEquals(p, items[0].task.getOwnerTask());
+                assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
+
+                assertTrue(Queue.getInstance().cancel(items[0]));
+                story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
+                story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
+
+                FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
+                assertNotNull(executorStartNode2);
+                assertEquals(QueueItemAction.QueueState.CANCELLED, QueueItemAction.getNodeState(executorStartNode2));
+                assertTrue(QueueItemAction.getQueueItem(executorStartNode2) instanceof Queue.LeftItem);
+
+                // Re-run to make sure we actually get an agent and the action is set properly.
+                story.j.createSlave("special", "special", null);
+
+                WorkflowRun b2 = story.j.buildAndAssertSuccess(p);
+
+                FlowNode executorStartNode3 = new DepthFirstScanner().findFirstMatch(b2.getExecution(), new ExecutorStepWithQueueItemPredicate());
+                assertNotNull(executorStartNode3);
+                assertEquals(QueueItemAction.QueueState.LAUNCHED, QueueItemAction.getNodeState(executorStartNode3));
+                assertTrue(QueueItemAction.getQueueItem(executorStartNode3) instanceof Queue.LeftItem);
+
+                FlowNode notExecutorNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NotExecutorStepPredicate());
+                assertNotNull(notExecutorNode);
+                assertEquals(QueueItemAction.QueueState.UNKNOWN, QueueItemAction.getNodeState(notExecutorNode));
+            }
+        });
+    }
+
+    private static final class ExecutorStepWithQueueItemPredicate implements Predicate<FlowNode> {
+        @Override
+        public boolean apply(@Nullable FlowNode input) {
+            return input != null &&
+                    input instanceof StepStartNode &&
+                    ((StepStartNode) input).getDescriptor() == ExecutorStep.DescriptorImpl.byFunctionName("node") &&
+                    input.getAction(QueueItemAction.class) != null;
+        }
+    }
+
+    private static final class NotExecutorStepPredicate implements Predicate<FlowNode> {
+        @Override
+        public boolean apply(@Nullable FlowNode input) {
+            return input != null &&
+                    input.getAction(QueueItemAction.class) == null;
+        }
     }
 
     @Issue("JENKINS-30759")
