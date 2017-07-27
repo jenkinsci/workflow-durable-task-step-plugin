@@ -545,6 +545,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 Timer.get().submit(new Runnable() { // JENKINS-31614
                     @Override public void run() {
                         execution.completed(null);
+                    }
+                });
+                Computer.threadPoolForRemoting.submit(new Runnable() { // JENKINS-34542, JENKINS-45553
+                    @Override
+                    public void run() {
                         try {
                             runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
                         } catch (ChannelClosedException x) {
