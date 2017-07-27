@@ -36,17 +36,21 @@ import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import java.io.Serializable;
+import java.util.Set;
 import javax.annotation.CheckForNull;
 import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.workflow.flow.FlowExecution;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.steps.Step;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
-
-import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.kohsuke.stapler.QueryParameter;
-
-import java.util.Set;
 
 /**
  * Grabs an {@link Executor} on a node of your choice and runs its block with that executor occupied.
@@ -59,7 +63,7 @@ import java.util.Set;
  *     }
  * </pre>
  */
-public final class ExecutorStep extends AbstractStepImpl implements Serializable {
+public final class ExecutorStep extends Step implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -73,11 +77,11 @@ public final class ExecutorStep extends AbstractStepImpl implements Serializable
         return label;
     }
 
-    @Extension public static final class DescriptorImpl extends AbstractStepDescriptorImpl {
+    @Override public StepExecution start(StepContext context) throws Exception {
+        return new ExecutorStepExecution(context, this);
+    }
 
-        public DescriptorImpl() {
-            super(ExecutorStepExecution.class);
-        }
+    @Extension public static final class DescriptorImpl extends StepDescriptor {
 
         @Override public String getFunctionName() {
             return "node";
@@ -109,13 +113,17 @@ public final class ExecutorStep extends AbstractStepImpl implements Serializable
             return AbstractProject.AbstractProjectDescriptor.validateLabelExpression(value, /* LabelValidator does not support Job */null);
         }
 
+        @Override public Set<? extends Class<?>> getRequiredContext() {
+            return ImmutableSet.of(TaskListener.class, Run.class, FlowExecution.class, FlowNode.class);
+        }
+
         @SuppressWarnings("unchecked")
-        @Override
-        public Set<Class<?>> getProvidedContext() {
+        @Override public Set<? extends Class<?>> getProvidedContext() {
             return ImmutableSet.of(Executor.class, Computer.class, FilePath.class, EnvVars.class,
                 // TODO ExecutorStepExecution.PlaceholderExecutable.run does not pass these, but DefaultStepContext infers them from Computer:
                 Node.class, Launcher.class);
         }
+        
     }
 
 }

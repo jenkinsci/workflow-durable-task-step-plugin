@@ -75,12 +75,12 @@ import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
-    @Inject(optional=true) private ExecutorStep step;
-    @StepContextParameter private transient TaskListener listener;
-    @StepContextParameter private transient Run<?,?> run;
-    // Here just for requiredContext; could perhaps be passed to the PlaceholderTask constructor:
-    @StepContextParameter private transient FlowExecution flowExecution;
-    @StepContextParameter private transient FlowNode flowNode;
+    private final ExecutorStep step;
+
+    ExecutorStepExecution(StepContext context, ExecutorStep step) {
+        super(context);
+        this.step = step;
+    }
 
     /**
      * General strategy of this step.
@@ -91,13 +91,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
      */
     @Override
     public boolean start() throws Exception {
-        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel(), run);
+        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel());
         Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
         if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
         }
-        flowNode.addAction(new QueueItemActionImpl(waitingItem.getId()));
+        getContext().get(FlowNode.class).addAction(new QueueItemActionImpl(waitingItem.getId()));
 
         Timer.get().schedule(new Runnable() {
             @Override public void run() {
@@ -105,7 +105,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (item != null) {
                     PrintStream logger;
                     try {
-                        logger = listener.getLogger();
+                        logger = getContext().get(TaskListener.class).getLogger();
                     } catch (Exception x) { // IOException, InterruptedException
                         LOGGER.log(WARNING, null, x);
                         return;
@@ -151,32 +151,34 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override public void onResume() {
         super.onResume();
         // See if we are still running, or scheduled to run. Cf. stop logic above.
-        for (Queue.Item item : Queue.getInstance().getItems()) {
-            if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
-                LOGGER.log(FINE, "Queue item for node block in {0} is still waiting after reload", run);
-                return;
+        try {
+            Run<?, ?> run = getContext().get(Run.class);
+            for (Queue.Item item : Queue.getInstance().getItems()) {
+                if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
+                    LOGGER.log(FINE, "Queue item for node block in {0} is still waiting after reload", run);
+                    return;
+                }
             }
-        }
-        Jenkins j = Jenkins.getInstance();
-        if (j != null) {
-            COMPUTERS: for (Computer c : j.getComputers()) {
-                for (Executor e : c.getExecutors()) {
-                    Queue.Executable exec = e.getCurrentExecutable();
-                    if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
-                        LOGGER.log(FINE, "Node block in {0} is running on {1} after reload", new Object[] {run, c.getName()});
-                        return;
+            Jenkins j = Jenkins.getInstance();
+            if (j != null) {
+                COMPUTERS: for (Computer c : j.getComputers()) {
+                    for (Executor e : c.getExecutors()) {
+                        Queue.Executable exec = e.getCurrentExecutable();
+                        if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
+                            LOGGER.log(FINE, "Node block in {0} is running on {1} after reload", new Object[] {run, c.getName()});
+                            return;
+                        }
                     }
                 }
             }
-        }
-        if (step == null) { // compatibility: used to be transient
-            listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281), but cannot reschedule");
-            return;
-        }
-        listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281); rescheduling");
-        try {
+            TaskListener listener = getContext().get(TaskListener.class);
+            if (step == null) { // compatibility: used to be transient
+                listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281), but cannot reschedule");
+                return;
+            }
+            listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281); rescheduling");
             start();
-        } catch (Exception x) {
+        } catch (Exception x) { // JENKINS-40161
             getContext().onFailure(x);
         }
     }
@@ -244,10 +246,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          */
         private String cookie;
 
-        PlaceholderTask(StepContext context, String label, Run<?,?> run) {
+        PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
             this.context = context;
             this.label = label;
-            runId = run.getExternalizableId();
+            runId = context.get(Run.class).getExternalizableId();
         }
 
         private Object readResolve() {

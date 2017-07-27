@@ -63,7 +63,7 @@
     </pluginRepositories>
     <properties>
         <jenkins.version>1.642.3</jenkins.version>
-        <workflow-step-api-plugin.version>2.10</workflow-step-api-plugin.version>
+        <workflow-step-api-plugin.version>2.11</workflow-step-api-plugin.version>
     </properties>
     <dependencies>
         <dependency>
