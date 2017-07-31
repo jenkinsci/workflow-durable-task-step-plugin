@@ -22,6 +22,7 @@ import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 
 public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
 
+    @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="only used from #start")
     private transient final String dir;
     private BodyExecution body;
 
