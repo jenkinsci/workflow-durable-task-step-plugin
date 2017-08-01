@@ -24,17 +24,25 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.collect.ImmutableSet;
 import hudson.Extension;
 import hudson.Util;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
+import hudson.model.Computer;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import java.util.Set;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.steps.Step;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 /**
  * Allocates a workspace on the current node and uses that as the default directory for nested steps.
  * {@link ExecutorStep} already does so, but this may be used to allocate additional workspaces.
  */
-public final class WorkspaceStep extends AbstractStepImpl {
+public final class WorkspaceStep extends Step {
 
     private final String dir;
 
@@ -46,11 +54,11 @@ public final class WorkspaceStep extends AbstractStepImpl {
         return dir;
     }
 
-    @Extension public static final class DescriptorImpl extends AbstractStepDescriptorImpl {
+    @Override public StepExecution start(StepContext context) throws Exception {
+        return new WorkspaceStepExecution(context, dir);
+    }
 
-        public DescriptorImpl() {
-            super(WorkspaceStepExecution.class);
-        }
+    @Extension public static final class DescriptorImpl extends StepDescriptor {
 
         @Override public String getFunctionName() {
             return "ws";
@@ -62,6 +70,10 @@ public final class WorkspaceStep extends AbstractStepImpl {
 
         @Override public boolean takesImplicitBlockArgument() {
             return true;
+        }
+
+        @Override public Set<? extends Class<?>> getRequiredContext() {
+            return ImmutableSet.of(Computer.class, Run.class, TaskListener.class, FlowNode.class);
         }
 
     }
