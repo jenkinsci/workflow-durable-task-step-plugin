@@ -475,11 +475,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 while (it.hasNext()) {
                     FlowNode n = it.next();
                     if (enclosingLabel == null) {
-                        ThreadNameAction tna = n.getAction(ThreadNameAction.class); // TODO use getPersistentAction when unrestricted
+                        ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {
                             enclosingLabel = tna.getThreadName();
                         } else {
-                            LabelAction a = n.getAction(LabelAction.class); // TODO ditto
+                            LabelAction a = n.getPersistentAction(LabelAction.class);
                             if (a != null) {
                                 enclosingLabel = a.getDisplayName();
                             }
