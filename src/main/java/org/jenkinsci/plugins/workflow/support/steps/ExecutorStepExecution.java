@@ -630,6 +630,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
                         env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
+                        env.put("NODE_HOME", node.getRootPath() != null ? node.getRootPath().getRemote() : "");
 
                         synchronized (runningTasks) {
                             runningTasks.put(cookie, new RunningTask());
