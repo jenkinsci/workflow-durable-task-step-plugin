@@ -194,12 +194,16 @@ public class ExecutorPickleTest {
         r.addStep(new Statement() {
             // Start up a build and then reboot and take the node offline
             @Override public void evaluate() throws Throwable {
-                Thread.sleep(1000L);
-                assertNull(r.j.jenkins.getNode("ghostly")); // Disconnected and deleted, it's ephemeral, duh
+                assertNull(r.j.jenkins.getNode("ghostly")); // Make sure test impl is correctly deleted
                 WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
-                Assert.assertTrue("Build should not die immediately if it can't obtain EphemeralNode ExecutorPickle", run.isBuilding());
+                r.j.waitForMessage("Waiting to resume", run);
+                Thread.sleep(1000L);
+                final long TIMEOUT_MILLIS_FOR_DEAD_NODE = 10000L;
+                Assert.assertEquals("Queue should still have single build Item waiting to resume but didn't", 1, Queue.getInstance().getItems().length );
+
                 try {
-                    Thread.sleep(10000L);
+                    Thread.sleep(TIMEOUT_MILLIS_FOR_DEAD_NODE);
+                    Assert.assertEquals("Should have given up and killed the Task representing the resuming build", 0, Queue.getInstance().getItems().length );
                     Assert.assertFalse(run.isBuilding());
                     r.j.assertBuildStatus(Result.FAILURE, run);
                 } catch (InterruptedIOException ioe) {
