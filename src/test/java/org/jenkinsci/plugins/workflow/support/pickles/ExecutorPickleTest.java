@@ -194,13 +194,12 @@ public class ExecutorPickleTest {
         r.addStep(new Statement() {
             // Start up a build and then reboot and take the node offline
             @Override public void evaluate() throws Throwable {
+                Thread.sleep(1000L);
+                assertNull(r.j.jenkins.getNode("ghostly")); // Disconnected and deleted, it's ephemeral, duh
                 WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
                 Assert.assertTrue("Build should not die immediately if it can't obtain EphemeralNode ExecutorPickle", run.isBuilding());
-
-                assertNull(r.j.jenkins.getNode("ghostly")); // Disconnected and deleted, it's ephemeral, duh
-
                 try {
-                    r.j.wait(10000L);
+                    Thread.sleep(10000L);
                     Assert.assertFalse(run.isBuilding());
                     r.j.assertBuildStatus(Result.FAILURE, run);
                 } catch (InterruptedIOException ioe) {

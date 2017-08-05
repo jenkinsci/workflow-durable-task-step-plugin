@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.model.Executor;
+import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
 import hudson.model.Queue;
@@ -37,9 +38,12 @@ import hudson.model.queue.SubTask;
 import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
@@ -75,7 +79,7 @@ public class ExecutorPickle extends Pickle {
             @Override
             protected Executor tryResolve() throws Exception {
                 Queue.Item item;
-                if (itemID == 0) {
+                if (itemID == 0) { // Not scheduled yet
                     item = Queue.getInstance().schedule2(task, 0).getItem();
                     if (item == null) {
                         // TODO should also report when !ScheduleResult.created, since that is arguably an error
@@ -93,8 +97,20 @@ public class ExecutorPickle extends Pickle {
                 Future<Queue.Executable> future = item.getFuture().getStartCondition();
 
                 if (!future.isDone()) {
-                    // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
-                    LOGGER.log(Level.FINER, "{0} not yet started", item);
+                    Queue.Task task = item.task;
+                    Label nodeNameLabel = task.getAssignedLabel();  // Once started, this is set to the Computer name
+                    // See javadocs for ExecutorStepExecution.PlaceholderTask.label
+                    // TODO see if we need to do something with the ExecutorStepExecution.PlaceholderTask.runningTasks
+                    if (nodeNameLabel != null && task.getLastBuiltOn() == null) {  // Can't find node it was built on!
+                        if (task instanceof ExecutorStepExecution.PlaceholderTask) {
+                            Queue.getInstance().cancel(item);
+                            LOGGER.log(Level.INFO, "{0} tried to resume on unknown Node {1}, assuming that the Node isn't coming back and aborting the build ",
+                                    new Object[]{item, nodeNameLabel.toString()});
+                        }
+                    } else {
+                        // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
+                        LOGGER.log(Level.FINER, "{0} not yet started", item);
+                    }
                     return null;
                 }
 
