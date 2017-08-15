@@ -188,6 +188,7 @@ public class ExecutorPickleTest {
                 spectre.addIfMissingAndWaitForOnline(r.j);
                 r.j.jenkins.save();
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
+                ExecutorPickle.TIMEOUT_WAITING_FOR_EPHMERAL_NODE = 4000L; // fail faster
             }
         });
 
@@ -198,14 +199,15 @@ public class ExecutorPickleTest {
                 WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
                 r.j.waitForMessage("Waiting to resume", run);
                 Thread.sleep(1000L);
-                final long TIMEOUT_MILLIS_FOR_DEAD_NODE = 10000L;
-                Assert.assertEquals("Queue should still have single build Item waiting to resume but didn't", 1, Queue.getInstance().getItems().length );
+                Assert.assertTrue(run.isBuilding());
+                Assert.assertEquals("Queue should still have single build Item waiting to resume but didn't", 1, Queue.getInstance().getItems().length);
 
                 try {
-                    Thread.sleep(TIMEOUT_MILLIS_FOR_DEAD_NODE);
+                    Thread.sleep(ExecutorPickle.TIMEOUT_WAITING_FOR_EPHMERAL_NODE + 1000L);
                     Assert.assertEquals("Should have given up and killed the Task representing the resuming build", 0, Queue.getInstance().getItems().length );
                     Assert.assertFalse(run.isBuilding());
                     r.j.assertBuildStatus(Result.FAILURE, run);
+                    Assert.assertEquals(0, r.j.jenkins.getQueue().getItems().length);
                 } catch (InterruptedIOException ioe) {
                     Assert.fail("Waited for build to detect loss of ephemeral node and it didn't!");
                 } finally {

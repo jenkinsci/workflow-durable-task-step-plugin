@@ -35,10 +35,14 @@ import hudson.model.Queue;
 import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
+
+import java.text.MessageFormat;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import hudson.slaves.EphemeralNode;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
@@ -57,6 +61,10 @@ public class ExecutorPickle extends Pickle {
 
     private final Queue.Task task;
 
+    private final boolean isEphemeral;
+
+    static long TIMEOUT_WAITING_FOR_EPHMERAL_NODE = TimeUnit.MINUTES.toMillis(5);
+
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
             throw new IllegalArgumentException("OneOffExecutor not currently supported");
@@ -65,6 +73,7 @@ public class ExecutorPickle extends Pickle {
         if (exec == null) {
             throw new IllegalArgumentException("cannot save an Executor that is not running anything");
         }
+        this.isEphemeral = executor.getOwner().getNode() instanceof EphemeralNode;
         SubTask parent = exec.getParent();
         this.task = parent instanceof Queue.Task ? (Queue.Task) parent : parent.getOwnerTask();
         if (task instanceof Queue.TransientTask) {
@@ -73,9 +82,15 @@ public class ExecutorPickle extends Pickle {
         LOGGER.log(Level.FINE, "saving {0}", task);
     }
 
+    public boolean isEphemeral() {
+        return isEphemeral;
+    }
+
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
             long itemID;
+            long startTimeMillis = System.currentTimeMillis();
+
             @Override
             protected Executor tryResolve() throws Exception {
                 Queue.Item item;
@@ -98,18 +113,19 @@ public class ExecutorPickle extends Pickle {
 
                 if (!future.isDone()) {
                     Queue.Task task = item.task;
-                    Label nodeNameLabel = task.getAssignedLabel();  // Once started, this is set to the Computer name
+                    Label nodeNameLabel = task.getAssignedLabel();  // Once execution started, this was set to the Computer name
                     // See javadocs for ExecutorStepExecution.PlaceholderTask.label
+                    long waitTime = System.currentTimeMillis()-startTimeMillis;
                     // TODO see if we need to do something with the ExecutorStepExecution.PlaceholderTask.runningTasks
                     if (nodeNameLabel != null && task.getLastBuiltOn() == null) {  // Can't find node it was built on!
-                        if (task instanceof ExecutorStepExecution.PlaceholderTask) {
+                        if (waitTime > TIMEOUT_WAITING_FOR_EPHMERAL_NODE && task instanceof ExecutorStepExecution.PlaceholderTask) {
                             Queue.getInstance().cancel(item);
-                            LOGGER.log(Level.INFO, "{0} tried to resume on unknown Node {1}, assuming that the Node isn't coming back and aborting the build ",
-                                    new Object[]{item, nodeNameLabel.toString()});
+                            throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} millis because we assume unknown Node {1} (ephemeral={2}) is never going to reappear!",
+                                    new Object[]{item, waitTime, nodeNameLabel.toString(), isEphemeral()}));
                         }
                     } else {
                         // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
-                        LOGGER.log(Level.FINER, "{0} not yet started", item);
+                        LOGGER.log(Level.FINER, "{0} not yet started after waiting for {1} millis", new Object[]{item, waitTime});
                     }
                     return null;
                 }
