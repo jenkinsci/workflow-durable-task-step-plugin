@@ -5,6 +5,7 @@ import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.Platform;
 import hudson.model.BallColor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
@@ -237,7 +238,7 @@ public class ShellStepTest {
     @Test public void deadStep() throws Exception {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep infinity') : bat('ping 127.0.0.1 > nul')}} catch (e) {sleep 1; throw e}", true));
+        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping 127.0.0.1 > nul')}} catch (e) {sleep 1; throw e}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         b.doTerm();
