@@ -44,6 +44,7 @@ import java.util.logging.Logger;
 
 import hudson.slaves.EphemeralNode;
 import jenkins.model.Jenkins;
+import jenkins.util.SystemProperties;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
@@ -63,7 +64,7 @@ public class ExecutorPickle extends Pickle {
 
     private final boolean isEphemeral;
 
-    static long TIMEOUT_WAITING_FOR_EPHMERAL_NODE = TimeUnit.MINUTES.toMillis(5);
+    static long TIMEOUT_WAITING_FOR_NODE_MILLIS = SystemProperties.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
@@ -89,7 +90,7 @@ public class ExecutorPickle extends Pickle {
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
             long itemID;
-            long startTimeMillis = System.currentTimeMillis();
+            long endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
 
             @Override
             protected Executor tryResolve() throws Exception {
@@ -113,20 +114,27 @@ public class ExecutorPickle extends Pickle {
 
                 if (!future.isDone()) {
                     Queue.Task task = item.task;
-                    Label nodeNameLabel = task.getAssignedLabel();  // Once execution started, this was set to the Computer name
-                    // See javadocs for ExecutorStepExecution.PlaceholderTask.label
-                    long waitTime = System.currentTimeMillis()-startTimeMillis;
-                    // TODO see if we need to do something with the ExecutorStepExecution.PlaceholderTask.runningTasks
-                    if (nodeNameLabel != null && task.getLastBuiltOn() == null) {  // Can't find node it was built on!
-                        if (waitTime > TIMEOUT_WAITING_FOR_EPHMERAL_NODE && task instanceof ExecutorStepExecution.PlaceholderTask) {
-                            Queue.getInstance().cancel(item);
-                            throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} millis because we assume unknown Node {1} (ephemeral={2}) is never going to reappear!",
-                                    new Object[]{item, waitTime, nodeNameLabel.toString(), isEphemeral()}));
+                    if (task instanceof ExecutorStepExecution.PlaceholderTask) {
+                        ExecutorStepExecution.PlaceholderTask placeholder = (ExecutorStepExecution.PlaceholderTask)task;
+
+                        // Non-null cookie means body has begun execution, i.e. we started using a node
+                        // PlaceholderTask#getAssignedLabel is set to the Node name when execution starts
+                        // Thus we're guaranteeing the execution began and the Node is now unknown.
+                        // Theoretically it's safe to simply fail earlier when rehydrating any EphemeralNode... but we're being extra safe.
+                        if (placeholder.getCookie() != null && Jenkins.getActiveInstance().getNode(placeholder.getAssignedLabel().getName()) == null ) {
+                            if (isEphemeral() || System.nanoTime() > endTimeNanos) {
+                                Queue.getInstance().cancel(item);
+                                if (isEphemeral()) {
+                                    throw new AbortException(MessageFormat.format("Killed {0} because EphemeralNode {1} is never going to reappear, by definition!",
+                                            new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, task.getAssignedLabel().toString()}));
+                                } else {
+                                    throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {1} is never going to appear!",
+                                            new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()}));
+                                }
+                            }
                         }
-                    } else {
-                        // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
-                        LOGGER.log(Level.FINER, "{0} not yet started after waiting for {1} millis", new Object[]{item, waitTime});
                     }
+                    LOGGER.log(Level.FINER, "{0} not yet started", new Object[]{item});
                     return null;
                 }
 

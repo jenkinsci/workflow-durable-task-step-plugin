@@ -188,7 +188,7 @@ public class ExecutorPickleTest {
                 spectre.addIfMissingAndWaitForOnline(r.j);
                 r.j.jenkins.save();
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
-                ExecutorPickle.TIMEOUT_WAITING_FOR_EPHMERAL_NODE = 4000L; // fail faster
+                ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
             }
         });
 
@@ -203,7 +203,7 @@ public class ExecutorPickleTest {
                 Assert.assertEquals("Queue should still have single build Item waiting to resume but didn't", 1, Queue.getInstance().getItems().length);
 
                 try {
-                    Thread.sleep(ExecutorPickle.TIMEOUT_WAITING_FOR_EPHMERAL_NODE + 1000L);
+                    Thread.sleep(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS + 1000L);
                     Assert.assertEquals("Should have given up and killed the Task representing the resuming build", 0, Queue.getInstance().getItems().length );
                     Assert.assertFalse(run.isBuilding());
                     r.j.assertBuildStatus(Result.FAILURE, run);
