@@ -126,7 +126,7 @@ public class ExecutorPickle extends Pickle {
                                 Queue.getInstance().cancel(item);
                                 if (isEphemeral()) {
                                     throw new AbortException(MessageFormat.format("Killed {0} because EphemeralNode {1} is never going to reappear, by definition!",
-                                            new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, task.getAssignedLabel().toString()}));
+                                            new Object[]{item, task.getAssignedLabel().toString()}));
                                 } else {
                                     throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {1} is never going to appear!",
                                             new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()}));

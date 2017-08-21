@@ -34,12 +34,17 @@ import hudson.model.Result;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.model.User;
+import hudson.remoting.Launcher;
+import hudson.remoting.Which;
 import hudson.slaves.ComputerListener;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EphemeralNode;
+import hudson.slaves.JNLPLauncher;
+import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import jenkins.model.Jenkins;
+import org.apache.tools.ant.util.JavaEnvUtils;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -47,10 +52,12 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.*;
 
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.ClassRule;
 import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
@@ -67,7 +74,29 @@ public class ExecutorPickleTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule r = new RestartableJenkinsRule();
+    @Rule public TemporaryFolder tmp = new TemporaryFolder();
     //@Rule public LoggerRule logging = new LoggerRule().record(Queue.class, Level.FINE);
+
+    private static Process jnlpProc;
+    private void startJnlpProc() throws Exception {
+        killJnlpProc();
+        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", r.j.getURL() + "computer/ghostly/slave-agent.jnlp");
+        try {
+            ProcessBuilder.class.getMethod("inheritIO").invoke(pb);
+        } catch (NoSuchMethodException x) {
+            // prior to Java 7
+        }
+        System.err.println("Running: " + pb.command());
+        jnlpProc = pb.start();
+    }
+
+    @AfterClass
+    public static void killJnlpProc() {
+        if (jnlpProc != null) {
+            jnlpProc.destroy();
+            jnlpProc = null;
+        }
+    }
 
     @Test public void canceledQueueItem() throws Exception {
         r.addStep(new Statement() {
@@ -172,7 +201,7 @@ public class ExecutorPickleTest {
 
     /**
      * Test that {@link ExecutorPickle} won't spin forever trying to rehydrate if it was using an
-     *  EphemeralNode that disappeared and will never reappear... but still waits a little bit to find out.
+     *  EphemeralNode that disappeared and will never reappear... for EphemeralNodes it should just die.
      */
     @Issue("JENKINS-36013")
     @Test public void ephemeralNodeDisappearance() throws Exception {
@@ -188,7 +217,6 @@ public class ExecutorPickleTest {
                 spectre.addIfMissingAndWaitForOnline(r.j);
                 r.j.jenkins.save();
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
-                ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
             }
         });
 
@@ -196,6 +224,47 @@ public class ExecutorPickleTest {
             // Start up a build and then reboot and take the node offline
             @Override public void evaluate() throws Throwable {
                 assertNull(r.j.jenkins.getNode("ghostly")); // Make sure test impl is correctly deleted
+                WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
+                Thread.sleep(200L);
+                r.j.waitForMessage("because EphemeralNode ghostly is never going to reappear, by definition!", run);
+            }
+        });
+    }
+
+    /**
+     * Test that {@link ExecutorPickle} won't spin forever trying to rehydrate if it was using an
+     *  non-ephemeral node that disappeared and will never reappear... but still waits a little bit to find out.
+     *
+     *  I.E. cases where the {@link RetentionStrategy} is {@link RetentionStrategy#NOOP}.
+     */
+    @Issue("JENKINS-36013")
+    @Test public void normalNodeDisappearance() throws Exception {
+        r.addStep(new Statement() {
+            // Start up a build that needs executor and then reboot and take the node offline
+            @Override public void evaluate() throws Throwable {
+                // Starting job first ensures we don't immediately fail if Node comes from a Cloud
+                //  and takes a min to provision
+                WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition("node('ghost') {semaphore 'wait'}", true));
+
+                DumbSlave s = new DumbSlave("ghostly", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "ghost", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                r.j.jenkins.addNode(s);
+                startJnlpProc();
+                r.j.jenkins.save();
+                System.out.println("Agent launched, waiting for semaphore");
+                SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
+                ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
+                killJnlpProc();
+                r.j.jenkins.removeNode(s);
+            }
+        });
+
+        r.addStep(new Statement() {
+            // Start up a build and then reboot and take the node offline
+            @Override public void evaluate() throws Throwable {
+                ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
+                assertEquals(0, r.j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
+                assertNull(r.j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
                 WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
                 r.j.waitForMessage("Waiting to resume", run);
                 Thread.sleep(1000L);
@@ -209,7 +278,7 @@ public class ExecutorPickleTest {
                     r.j.assertBuildStatus(Result.FAILURE, run);
                     Assert.assertEquals(0, r.j.jenkins.getQueue().getItems().length);
                 } catch (InterruptedIOException ioe) {
-                    Assert.fail("Waited for build to detect loss of ephemeral node and it didn't!");
+                    Assert.fail("Waited for build to detect loss of node and it didn't!");
                 } finally {
                     if (run.isBuilding()) {
                         run.doKill();
