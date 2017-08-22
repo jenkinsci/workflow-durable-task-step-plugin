@@ -275,6 +275,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return new PlaceholderExecutable();
         }
 
+        @CheckForNull
+        public String getCookie() {
+            return cookie;
+        }
+
         @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Label getAssignedLabel() {
             if (label == null) {
