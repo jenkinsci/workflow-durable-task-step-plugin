@@ -122,15 +122,10 @@ public class ExecutorPickle extends Pickle {
                         // Thus we're guaranteeing the execution began and the Node is now unknown.
                         // Theoretically it's safe to simply fail earlier when rehydrating any EphemeralNode... but we're being extra safe.
                         if (placeholder.getCookie() != null && Jenkins.getActiveInstance().getNode(placeholder.getAssignedLabel().getName()) == null ) {
-                            if (isEphemeral() || System.nanoTime() > endTimeNanos) {
+                            if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
-                                if (isEphemeral()) {
-                                    throw new AbortException(MessageFormat.format("Killed {0} because EphemeralNode {1} is never going to reappear, by definition!",
-                                            new Object[]{item, task.getAssignedLabel().toString()}));
-                                } else {
                                     throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {1} is never going to appear!",
                                             new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()}));
-                                }
                             }
                         }
                     }

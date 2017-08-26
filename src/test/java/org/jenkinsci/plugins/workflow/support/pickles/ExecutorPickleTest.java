@@ -201,39 +201,7 @@ public class ExecutorPickleTest {
 
     /**
      * Test that {@link ExecutorPickle} won't spin forever trying to rehydrate if it was using an
-     *  EphemeralNode that disappeared and will never reappear... for EphemeralNodes it should just die.
-     */
-    @Issue("JENKINS-36013")
-    @Test public void ephemeralNodeDisappearance() throws Exception {
-        r.addStep(new Statement() {
-            // Start up a build that needs executor and then reboot and take the node offline
-            @Override public void evaluate() throws Throwable {
-                // Starting job first ensures we don't immediately fail if Node comes from a Cloud
-                //  and takes a min to provision
-                WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("node('ghost') {semaphore 'wait'}", true));
-
-                EphemeralDumbAgent spectre = new EphemeralDumbAgent(r.j, "ghost");
-                spectre.addIfMissingAndWaitForOnline(r.j);
-                r.j.jenkins.save();
-                SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
-            }
-        });
-
-        r.addStep(new Statement() {
-            // Start up a build and then reboot and take the node offline
-            @Override public void evaluate() throws Throwable {
-                assertNull(r.j.jenkins.getNode("ghostly")); // Make sure test impl is correctly deleted
-                WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
-                Thread.sleep(200L);
-                r.j.waitForMessage("because EphemeralNode ghostly is never going to reappear, by definition!", run);
-            }
-        });
-    }
-
-    /**
-     * Test that {@link ExecutorPickle} won't spin forever trying to rehydrate if it was using an
-     *  non-ephemeral node that disappeared and will never reappear... but still waits a little bit to find out.
+     *  node that disappeared and will never reappear... but still waits a little bit to find out.
      *
      *  I.E. cases where the {@link RetentionStrategy} is {@link RetentionStrategy#NOOP}.
      */
