@@ -244,7 +244,7 @@ public abstract class DurableTaskStep extends Step {
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
                 recurrencePeriod = 0;
-                getContext().onFailure(cause);
+                super.stop(cause);
             }
         }
 

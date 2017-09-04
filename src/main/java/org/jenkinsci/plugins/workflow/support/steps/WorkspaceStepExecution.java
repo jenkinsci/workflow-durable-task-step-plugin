@@ -14,7 +14,6 @@ import hudson.slaves.WorkspaceList;
 import java.util.Collections;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
-import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -24,7 +23,6 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
 
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="only used from #start")
     private transient final String dir;
-    private BodyExecution body;
 
     WorkspaceStepExecution(StepContext context, String dir) {
         super(context);
@@ -61,7 +59,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         FlowNode flowNode = getContext().get(FlowNode.class);
         flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
         getContext().get(TaskListener.class).getLogger().println("Running in " + workspace);
-        body = getContext().newBodyInvoker()
+        getContext().newBodyInvoker()
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
                         EnvironmentExpander.constant(Collections.singletonMap("WORKSPACE", workspace.getRemote()))),
@@ -81,12 +79,6 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         @Override public void expand(EnvVars env) throws IOException, InterruptedException {
             env.override("WORKSPACE", path);
         }
-    }
-
-    @Override
-    public void stop(Throwable cause) throws Exception {
-        if (body!=null)
-            body.cancel(cause);
     }
 
     @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled")

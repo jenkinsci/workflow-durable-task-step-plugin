@@ -161,7 +161,6 @@ public class ShellStepTest {
                         start();
                 return false;
             }
-            @Override public void stop(Throwable cause) throws Exception {}
         }
         private static class Decorator extends LauncherDecorator implements Serializable {
             private static final long serialVersionUID = 1;
