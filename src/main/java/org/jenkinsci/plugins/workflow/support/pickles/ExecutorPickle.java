@@ -28,7 +28,6 @@ import com.google.common.util.concurrent.ListenableFuture;
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.model.Executor;
-import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
 import hudson.model.Queue;
@@ -44,7 +43,6 @@ import java.util.logging.Logger;
 
 import hudson.slaves.EphemeralNode;
 import jenkins.model.Jenkins;
-import jenkins.util.SystemProperties;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
@@ -64,7 +62,7 @@ public class ExecutorPickle extends Pickle {
 
     private final boolean isEphemeral;
 
-    static long TIMEOUT_WAITING_FOR_NODE_MILLIS = SystemProperties.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
+    static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
