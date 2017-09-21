@@ -688,16 +688,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             }
                             LOGGER.log(FINE, "interrupted {0}", cookie);
                             // TODO save the BodyExecution somehow and call .cancel() here; currently we just interrupt the build as a whole:
-                            Executor masterExecutor = r.getExecutor();
-                            if (masterExecutor != null) {
-                                masterExecutor.interrupt();
-                            } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                Executor thisExecutor = super.getExecutor();
-                                if (thisExecutor != null) {
-                                    thisExecutor.recordCauseOfInterruption(r, listener);
+                            Timer.get().submit(new Runnable() { // JENKINS-46738
+                                @Override public void run() {
+                                    Executor masterExecutor = r.getExecutor();
+                                    if (masterExecutor != null) {
+                                        masterExecutor.interrupt();
+                                    } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                        Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
+                                        if (thisExecutor != null) {
+                                            thisExecutor.recordCauseOfInterruption(r, listener);
+                                        }
+                                        completed(null);
+                                    }
                                 }
-                                completed(null);
-                            }
+                            });
                         }
                         @Override public boolean blocksRestart() {
                             return false;
