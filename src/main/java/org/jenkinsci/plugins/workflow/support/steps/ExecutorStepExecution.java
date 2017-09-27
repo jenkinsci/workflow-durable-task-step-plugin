@@ -657,7 +657,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         if (flowNode != null) {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
-                        listener.getLogger().println("Running on " +  ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
+                        listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
                                 .withCallback(new Callback(cookie, lease))
