@@ -56,6 +56,7 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
+import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -284,7 +285,7 @@ public abstract class DurableTaskStep extends Step {
         /** Checks for progress or completion of the external task. */
         @Override public void run() {
             task = null;
-            try {
+            try (WithThreadName naming = new WithThreadName(": checking " + remote + " on " + node)) {
                 check();
             } catch (Exception x) { // TODO use ErrorLoggingScheduledThreadPoolExecutor from core if it becomes public
                 LOGGER.log(Level.WARNING, null, x);
