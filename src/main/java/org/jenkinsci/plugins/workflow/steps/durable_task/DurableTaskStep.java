@@ -31,13 +31,16 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
+import hudson.util.NamingThreadFactory;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -135,6 +138,12 @@ public abstract class DurableTaskStep extends Step {
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
+
+        private static final ScheduledThreadPoolExecutor THREAD_POOL = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
+        static {
+            THREAD_POOL.setKeepAliveTime(1, TimeUnit.MINUTES);
+            THREAD_POOL.allowCoreThreadTimeOut(true);
+        }
 
         private transient final DurableTaskStep step;
         private transient FilePath ws;
@@ -277,9 +286,11 @@ public abstract class DurableTaskStep extends Step {
             task = null;
             try {
                 check();
+            } catch (Exception x) { // TODO use ErrorLoggingScheduledThreadPoolExecutor from core if it becomes public
+                LOGGER.log(Level.WARNING, null, x);
             } finally {
                 if (recurrencePeriod > 0) {
-                    task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+                    task = THREAD_POOL.schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
                 }
             }
         }
@@ -341,7 +352,7 @@ public abstract class DurableTaskStep extends Step {
 
         private void setupTimer() {
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
-            task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+            task = THREAD_POOL.schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;
