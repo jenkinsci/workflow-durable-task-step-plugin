@@ -122,7 +122,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     @Override
-    public void stop(Throwable cause) {
+    public void stop(Throwable cause) throws Exception {
         for (Queue.Item item : Queue.getInstance().getItems()) {
             // if we are still in the queue waiting to be scheduled, just retract that
             if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
@@ -145,7 +145,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
         // Whether or not either of the above worked (and they would not if for example our item were canceled), make sure we die.
-        getContext().onFailure(cause);
+        super.stop(cause);
     }
 
     @Override public void onResume() {
