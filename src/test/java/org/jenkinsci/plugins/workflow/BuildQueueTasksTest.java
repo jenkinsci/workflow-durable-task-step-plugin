@@ -31,7 +31,6 @@ import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
-import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
@@ -61,7 +60,7 @@ public class BuildQueueTasksTest {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
                 // use non-existent node label to keep the build queued
-                p.setDefinition(new CpsFlowDefinition("node('nonexistent') { echo 'test' }"));
+                p.setDefinition(new CpsFlowDefinition("node('nonexistent') { echo 'test' }", true));
 
                 WorkflowRun b = scheduleAndWaitQueued(p);
                 assertQueueAPIStatusOKAndAbort(b);
@@ -76,7 +75,7 @@ public class BuildQueueTasksTest {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
                 // use non-existent node label to keep the build queued
-                p.setDefinition(new CpsFlowDefinition("node('nonexistent') { echo 'test' }"));
+                p.setDefinition(new CpsFlowDefinition("node('nonexistent') { echo 'test' }", true));
                 scheduleAndWaitQueued(p);
                 // Ok, the item is in he queue now, restart
             }
@@ -101,7 +100,7 @@ public class BuildQueueTasksTest {
                         "node {\n" +
                         "  echo 'test'\n " +
                         "  semaphore 'watch'\n " +
-                        "}"));
+                        "}", true));
 
                 WorkflowRun b = p.scheduleBuild2(0).getStartCondition().get();
                 SemaphoreStep.waitForStart("watch/1", b);
@@ -132,7 +131,7 @@ public class BuildQueueTasksTest {
     }
 
     private void assertQueueAPIStatusOKAndAbort(WorkflowRun b)
-            throws IOException, SAXException, InterruptedException, ExecutionException {
+            throws Exception {
         JenkinsRule.WebClient wc = story.j.createWebClient();
         Page queue = wc.goTo("queue/api/json", "application/json");
 
@@ -142,8 +141,8 @@ public class BuildQueueTasksTest {
         // Not going into de the content in this test
         assertEquals(1, items.size());
 
-        CpsFlowExecution e = (CpsFlowExecution) b.getExecutionPromise().get();
-        e.interrupt(Result.ABORTED);
+        b.getExecutor().interrupt();
+        story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
 
         queue = wc.goTo("queue/api/json", "application/json");
         o = JSONObject.fromObject(queue.getWebResponse().getContentAsString());
