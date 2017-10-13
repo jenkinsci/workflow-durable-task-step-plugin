@@ -8,6 +8,7 @@ import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
+import hudson.console.ModelHyperlinkNote;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
@@ -656,7 +657,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         if (flowNode != null) {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
-                        listener.getLogger().println("Running on " + computer.getDisplayName() + " in " + workspace); // TODO hyperlink
+                        listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
                                 .withCallback(new Callback(cookie, lease))
