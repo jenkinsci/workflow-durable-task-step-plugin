@@ -74,7 +74,6 @@ import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
-import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
@@ -191,27 +190,6 @@ public class ExecutorStepTest {
                 Thread.sleep(10000);
                 // Then check for existence of the file
                 assertFalse(f1.exists());
-            }
-        });
-    }
-
-    @Test public void buildShellScriptOnSlaveWithDifferentResumePoint() throws Exception {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                String script = "node {semaphore 'wait'}";
-                p.setDefinition(new CpsFlowDefinition(script));
-                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                ((CpsFlowExecution) b.getExecutionPromise().get()).waitForSuspension();
-                // intentionally not waiting for semaphore step to begin
-            }
-        });
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
-                WorkflowRun b = p.getLastBuild();
-                SemaphoreStep.success("wait/1", null);
-                story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
             }
         });
     }
