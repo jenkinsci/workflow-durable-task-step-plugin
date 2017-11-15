@@ -31,13 +31,16 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
+import hudson.util.NamingThreadFactory;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -53,6 +56,7 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
+import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -135,6 +139,12 @@ public abstract class DurableTaskStep extends Step {
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
+
+        private static final ScheduledThreadPoolExecutor THREAD_POOL = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
+        static {
+            THREAD_POOL.setKeepAliveTime(1, TimeUnit.MINUTES);
+            THREAD_POOL.allowCoreThreadTimeOut(true);
+        }
 
         private transient final DurableTaskStep step;
         private transient FilePath ws;
@@ -244,13 +254,13 @@ public abstract class DurableTaskStep extends Step {
             } else {
                 logger().println("Could not connect to " + node + " to send interrupt signal to process");
                 recurrencePeriod = 0;
-                getContext().onFailure(cause);
+                super.stop(cause);
             }
         }
 
         @Override public String getStatus() {
             StringBuilder b = new StringBuilder();
-            try {
+            try (Timeout timeout = Timeout.limit(2, TimeUnit.SECONDS)) { // CpsThreadDump applies a 3s timeout anyway
                 FilePath workspace = getWorkspace();
                 if (workspace != null) {
                     b.append(controller.getDiagnostics(workspace, launcher()));
@@ -258,7 +268,7 @@ public abstract class DurableTaskStep extends Step {
                     b.append("waiting to reconnect to ").append(remote).append(" on ").append(node);
                 }
             } catch (IOException | InterruptedException x) {
-                b.append("failed to look up workspace: ").append(x);
+                b.append("failed to look up workspace ").append(remote).append(" on ").append(node).append(": ").append(x);
             }
             b.append("; recurrence period: ").append(recurrencePeriod).append("ms");
             ScheduledFuture<?> t = task;
@@ -275,11 +285,13 @@ public abstract class DurableTaskStep extends Step {
         /** Checks for progress or completion of the external task. */
         @Override public void run() {
             task = null;
-            try {
+            try (WithThreadName naming = new WithThreadName(": checking " + remote + " on " + node)) {
                 check();
+            } catch (Exception x) { // TODO use ErrorLoggingScheduledThreadPoolExecutor from core if it becomes public
+                LOGGER.log(Level.WARNING, null, x);
             } finally {
                 if (recurrencePeriod > 0) {
-                    task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+                    task = THREAD_POOL.schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
                 }
             }
         }
@@ -341,7 +353,7 @@ public abstract class DurableTaskStep extends Step {
 
         private void setupTimer() {
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
-            task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+            task = THREAD_POOL.schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;

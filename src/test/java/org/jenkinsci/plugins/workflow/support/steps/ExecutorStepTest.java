@@ -24,14 +24,17 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
 import hudson.model.Computer;
+import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
@@ -68,11 +71,14 @@ import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import org.hamcrest.Matchers;
 import org.jboss.marshalling.ObjectResolver;
+import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowExecution;
+import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
@@ -93,6 +99,8 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
+
+import javax.annotation.Nullable;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -144,6 +152,45 @@ public class ExecutorStepTest {
                 }
                 assertEquals(1, actions.size());
                 assertEquals(new HashSet<LabelAtom>(Arrays.asList(LabelAtom.get("remote"), LabelAtom.get("quick"))), actions.get(0).getLabels());
+            }
+        });
+    }
+
+    /**
+     * Executes a shell script build on a slave and ensures the processes are
+     * killed at the end of the run
+     *
+     * This ensures that the context variable overrides are working as expected, and
+     * that they are persisted and resurrected.
+     */
+    @Test public void buildShellScriptWithPersistentProcesses() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                File f1 = new File(story.j.jenkins.getRootDir(), "test.txt");
+                String fullPathToTestFile = f1.getAbsolutePath();
+                // Escape any \ in the source so that the script is valid
+                fullPathToTestFile = fullPathToTestFile.replace("\\", "\\\\");
+                // Ensure deleted
+                f1.delete();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                // We use sleep on Unix.  On Windows, timeout would
+                // be the equivalent, but it uses input redirection which is
+                // not supported.  So instead use ping.
+                p.setDefinition(new CpsFlowDefinition(
+                    "node('" + s.getNodeName() + "') {\n" +
+                    "    isUnix() ? sh('(sleep 5; touch " + fullPathToTestFile + ") &') : bat('start /B cmd.exe /C \"ping localhost -n 5 && copy NUL " + fullPathToTestFile + "\"')\n" +
+                    "}", true));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                // Wait until the build completes.
+                story.j.waitForCompletion(b);
+                // Then wait additionally for 10 seconds to make sure that the sleep
+                // steps would have exited
+                Thread.sleep(10000);
+                // Then check for existence of the file
+                assertFalse(f1.exists());
             }
         });
     }
@@ -464,6 +511,70 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-44981")
+    @Test public void queueItemAction() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                final WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node('special') {}", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForMessage("[Pipeline] node", b);
+
+                FlowNode executorStartNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
+                assertNotNull(executorStartNode);
+
+                assertNotNull(executorStartNode.getAction(QueueItemAction.class));
+                assertEquals(QueueItemAction.QueueState.QUEUED, QueueItemAction.getNodeState(executorStartNode));
+
+                Queue.Item[] items = Queue.getInstance().getItems();
+                assertEquals(1, items.length);
+                assertEquals(p, items[0].task.getOwnerTask());
+                assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
+
+                assertTrue(Queue.getInstance().cancel(items[0]));
+                story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
+                story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
+
+                FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
+                assertNotNull(executorStartNode2);
+                assertEquals(QueueItemAction.QueueState.CANCELLED, QueueItemAction.getNodeState(executorStartNode2));
+                assertTrue(QueueItemAction.getQueueItem(executorStartNode2) instanceof Queue.LeftItem);
+
+                // Re-run to make sure we actually get an agent and the action is set properly.
+                story.j.createSlave("special", "special", null);
+
+                WorkflowRun b2 = story.j.buildAndAssertSuccess(p);
+
+                FlowNode executorStartNode3 = new DepthFirstScanner().findFirstMatch(b2.getExecution(), new ExecutorStepWithQueueItemPredicate());
+                assertNotNull(executorStartNode3);
+                assertEquals(QueueItemAction.QueueState.LAUNCHED, QueueItemAction.getNodeState(executorStartNode3));
+                assertTrue(QueueItemAction.getQueueItem(executorStartNode3) instanceof Queue.LeftItem);
+
+                FlowNode notExecutorNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NotExecutorStepPredicate());
+                assertNotNull(notExecutorNode);
+                assertEquals(QueueItemAction.QueueState.UNKNOWN, QueueItemAction.getNodeState(notExecutorNode));
+            }
+        });
+    }
+
+    private static final class ExecutorStepWithQueueItemPredicate implements Predicate<FlowNode> {
+        @Override
+        public boolean apply(@Nullable FlowNode input) {
+            return input != null &&
+                    input instanceof StepStartNode &&
+                    ((StepStartNode) input).getDescriptor() == ExecutorStep.DescriptorImpl.byFunctionName("node") &&
+                    input.getAction(QueueItemAction.class) != null;
+        }
+    }
+
+    private static final class NotExecutorStepPredicate implements Predicate<FlowNode> {
+        @Override
+        public boolean apply(@Nullable FlowNode input) {
+            return input != null &&
+                    input.getAction(QueueItemAction.class) == null;
+        }
+    }
+
     @Issue("JENKINS-30759")
     @Test public void quickNodeBlock() {
         story.addStep(new Statement() {
@@ -471,6 +582,69 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}"));
                 story.j.assertLogContains("ran node block #49", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+            }
+        });
+    }
+
+    @Issue("JENKINS-26132")
+    @Test public void taskDisplayName() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition(
+                    "stage('one') {\n" +
+                    "  node {\n" +
+                    "    semaphore 'one'\n" +
+                    "    stage('two') {\n" +
+                    "      semaphore 'two'\n" +
+                    "    }\n" +
+                    "  }\n" +
+                    "}\n" +
+                    "stage('three') {\n" +
+                    "  node {\n" +
+                    "    semaphore 'three'\n" +
+                    "  }\n" +
+                    "  parallel a: {\n" +
+                    "    node {\n" +
+                    "      semaphore 'a'\n" +
+                    "    }\n" +
+                    "  }, b: {\n" +
+                    "    node {\n" +
+                    "      semaphore 'b'\n" +
+                    "    }\n" +
+                    "  }\n" +
+                    "}", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("one/1", b);
+                assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
+                assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
+                SemaphoreStep.success("one/1", null);
+                SemaphoreStep.waitForStart("two/1", b);
+                assertEquals(Collections.singletonList(n(b, "two")), currentLabels());
+                SemaphoreStep.success("two/1", null);
+                SemaphoreStep.waitForStart("three/1", b);
+                assertEquals(Collections.singletonList(n(b, "three")), currentLabels());
+                SemaphoreStep.success("three/1", null);
+                SemaphoreStep.waitForStart("a/1", b);
+                SemaphoreStep.waitForStart("b/1", b);
+                assertEquals(Arrays.asList(n(b, "a"), n(b, "b")), currentLabels());
+                SemaphoreStep.success("a/1", null);
+                SemaphoreStep.success("b/1", null);
+                story.j.waitForCompletion(b);
+            }
+            String n(Run<?, ?> b, String label) {
+                return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(b.getFullDisplayName(), label);
+            }
+            List<String> currentLabels() {
+                List<String> r = new ArrayList<>();
+                for (Executor executor : story.j.jenkins.toComputer().getExecutors()) {
+                    Queue.Executable executable = executor.getCurrentExecutable();
+                    if (executable != null) {
+                        r.add(executable.getParent().getDisplayName());
+                    }
+                }
+                Collections.sort(r);
+                return r;
             }
         });
     }

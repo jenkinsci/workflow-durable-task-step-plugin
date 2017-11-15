@@ -34,12 +34,19 @@ import hudson.model.Queue;
 import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
+
+import java.text.MessageFormat;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import hudson.slaves.EphemeralNode;
+import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
@@ -53,6 +60,10 @@ public class ExecutorPickle extends Pickle {
 
     private final Queue.Task task;
 
+    private final boolean isEphemeral;
+
+    static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
+
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
             throw new IllegalArgumentException("OneOffExecutor not currently supported");
@@ -61,6 +72,7 @@ public class ExecutorPickle extends Pickle {
         if (exec == null) {
             throw new IllegalArgumentException("cannot save an Executor that is not running anything");
         }
+        this.isEphemeral = executor.getOwner().getNode() instanceof EphemeralNode;
         SubTask parent = exec.getParent();
         this.task = parent instanceof Queue.Task ? (Queue.Task) parent : parent.getOwnerTask();
         if (task instanceof Queue.TransientTask) {
@@ -69,13 +81,19 @@ public class ExecutorPickle extends Pickle {
         LOGGER.log(Level.FINE, "saving {0}", task);
     }
 
+    public boolean isEphemeral() {
+        return isEphemeral;
+    }
+
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
             long itemID;
+            long endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
+
             @Override
             protected Executor tryResolve() throws Exception {
                 Queue.Item item;
-                if (itemID == 0) {
+                if (itemID == 0) { // Not scheduled yet
                     item = Queue.getInstance().schedule2(task, 0).getItem();
                     if (item == null) {
                         // TODO should also report when !ScheduleResult.created, since that is arguably an error
@@ -93,8 +111,23 @@ public class ExecutorPickle extends Pickle {
                 Future<Queue.Executable> future = item.getFuture().getStartCondition();
 
                 if (!future.isDone()) {
-                    // TODO JENKINS-26130 we might be able to detect that the item is blocked on an agent which has been deleted (not just offline), and abort ourselves
-                    LOGGER.log(Level.FINER, "{0} not yet started", item);
+                    Queue.Task task = item.task;
+                    if (task instanceof ExecutorStepExecution.PlaceholderTask) {
+                        ExecutorStepExecution.PlaceholderTask placeholder = (ExecutorStepExecution.PlaceholderTask)task;
+
+                        // Non-null cookie means body has begun execution, i.e. we started using a node
+                        // PlaceholderTask#getAssignedLabel is set to the Node name when execution starts
+                        // Thus we're guaranteeing the execution began and the Node is now unknown.
+                        // Theoretically it's safe to simply fail earlier when rehydrating any EphemeralNode... but we're being extra safe.
+                        if (placeholder.getCookie() != null && Jenkins.getActiveInstance().getNode(placeholder.getAssignedLabel().getName()) == null ) {
+                            if (System.nanoTime() > endTimeNanos) {
+                                Queue.getInstance().cancel(item);
+                                    throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {1} is never going to appear!",
+                                            new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()}));
+                            }
+                        }
+                    }
+                    LOGGER.log(Level.FINER, "{0} not yet started", new Object[]{item});
                     return null;
                 }
 

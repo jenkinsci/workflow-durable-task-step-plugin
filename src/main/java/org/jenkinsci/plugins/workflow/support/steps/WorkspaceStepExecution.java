@@ -1,10 +1,7 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.google.inject.Inject;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.model.Computer;
@@ -14,39 +11,36 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.slaves.WorkspaceList;
+import java.util.Collections;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
-import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 
-/**
- * @author Jesse Glick
- */
 public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
 
-    @Inject(optional=true) private transient WorkspaceStep step;
-    @StepContextParameter private transient Computer computer;
-    @StepContextParameter private transient Run<?,?> run;
-    @StepContextParameter private transient TaskListener listener;
-    @StepContextParameter private transient FlowNode flowNode;
-    private BodyExecution body;
+    @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="only used from #start")
+    private transient final String dir;
+
+    WorkspaceStepExecution(StepContext context, String dir) {
+        super(context);
+        this.dir = dir;
+    }
 
     @Override
     public boolean start() throws Exception {
-        Job<?,?> job = run.getParent();
+        Job<?,?> job = getContext().get(Run.class).getParent();
         if (!(job instanceof TopLevelItem)) {
             throw new Exception(job + " must be a top-level job");
         }
+        Computer computer = getContext().get(Computer.class);
         Node node = computer.getNode();
         if (node == null) {
             throw new Exception("computer does not correspond to a live node");
         }
         WorkspaceList.Lease lease;
-        String dir = step.getDir();
         if (dir == null) {
             FilePath baseWorkspace = node.getWorkspaceFor((TopLevelItem) job);
             if (baseWorkspace == null) {
@@ -62,18 +56,20 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
             lease = computer.getWorkspaceList().allocate(baseWorkspace);
         }
         FilePath workspace = lease.path; // may be baseWorkspace + @2, @3, etc.
+        FlowNode flowNode = getContext().get(FlowNode.class);
         flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
-        listener.getLogger().println("Running in " + workspace);
-        body = getContext().newBodyInvoker()
+        getContext().get(TaskListener.class).getLogger().println("Running in " + workspace);
+        getContext().newBodyInvoker()
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
-                        new ExpanderImpl(workspace.getRemote())),
+                        EnvironmentExpander.constant(Collections.singletonMap("WORKSPACE", workspace.getRemote()))),
                     workspace)
                 .withCallback(new Callback(lease))
                 .start();
         return false;
     }
 
+    @Deprecated // for serial compatibility only
     private static final class ExpanderImpl extends EnvironmentExpander {
         private static final long serialVersionUID = 1;
         private final String path;
@@ -83,12 +79,6 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         @Override public void expand(EnvVars env) throws IOException, InterruptedException {
             env.override("WORKSPACE", path);
         }
-    }
-
-    @Override
-    public void stop(Throwable cause) throws Exception {
-        if (body!=null)
-            body.cancel(cause);
     }
 
     @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled")
