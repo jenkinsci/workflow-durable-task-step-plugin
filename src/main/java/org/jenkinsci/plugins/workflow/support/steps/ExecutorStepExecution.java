@@ -9,6 +9,9 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
+import hudson.model.Actionable;
+import hudson.model.Cause;
+import hudson.model.CauseAction;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
@@ -92,8 +95,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
      */
     @Override
     public boolean start() throws Exception {
-        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel());
-        Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
+        final StepContext context = getContext();
+
+        // Construct cause to link the placeholder action
+        final Run<?, ?> run = context.get(Run.class);
+        final Cause.UpstreamCause upstreamCause;
+        if (run != null) {
+            upstreamCause = new Cause.UpstreamCause(run);
+        } else {
+            // PlaceholderTask needs it anyway
+            throw new IllegalStateException("Cannot determine Run from the execution context");
+        }
+
+        final PlaceholderTask task = new PlaceholderTask(context, step.getLabel());
+        Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0, new CauseAction(upstreamCause)).getCreateItem();
         if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
             throw new IllegalStateException("failed to schedule task");
@@ -229,6 +244,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @ExportedBean
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {
+        Actionable a;
 
         /** keys are {@link #cookie}s */
         private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
@@ -248,9 +264,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private String cookie;
 
         PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
+            this(context.get(Run.class), context, label);
+        }
+
+        PlaceholderTask(Run<?, ?> run, StepContext context, String label) throws IOException, InterruptedException {
             this.context = context;
             this.label = label;
-            runId = context.get(Run.class).getExternalizableId();
+            runId = run.getExternalizableId();
         }
 
         private Object readResolve() {
