@@ -9,7 +9,6 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
-import hudson.model.Actionable;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Computer;
@@ -244,7 +243,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @ExportedBean
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {
-        Actionable a;
 
         /** keys are {@link #cookie}s */
         private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
