@@ -20,6 +20,7 @@ import hudson.model.ResourceList;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
+import hudson.model.listeners.RunListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueListener;
 import hudson.model.queue.SubTask;
@@ -658,6 +659,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
+                        RunListener.fireStarted(r, listener);
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
                                 .withCallback(new Callback(cookie, lease))
