@@ -35,11 +35,13 @@ import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.model.Slave;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
+import hudson.security.Permission;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
@@ -67,6 +69,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import jenkins.model.Jenkins;
+import jenkins.security.QueueItemAuthenticator;
+import jenkins.security.QueueItemAuthenticatorConfiguration;
+import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import org.hamcrest.Matchers;
@@ -107,6 +112,9 @@ public class ExecutorStepTest {
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    /* Currently too noisy due to unrelated warnings; might clear up if test dependencies updated:
+    @Rule public LoggerRule logging = new LoggerRule().record(ExecutorStepExecution.class, Level.FINE);
+    */
 
     /**
      * Executes a shell script build on a slave.
@@ -724,6 +732,70 @@ public class ExecutorStepTest {
         controlDirFP.child("jenkins-result.txt").write("0", null);
         FilePath log = controlDirFP.child("jenkins-log.txt");
         log.write(log.readToString() + "simulated later output\n", null);
+    }
+
+    @Issue("SECURITY-675")
+    @Test public void authentication() {
+        story.then(r -> {
+            Slave s = r.createSlave("remote", null, null);
+            r.waitOnline(s);
+            r.jenkins.setNumExecutors(0);
+            r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
+            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategyWithNode().
+                grant(Jenkins.ADMINISTER).everywhere().to("admin").
+                // TODO pending fix of JENKINS-46652 in baseline, we must grant BUILD on master but then go back and deny it on remote:
+                grant(Computer.BUILD).everywhere().to("dev"));
+            Authentication dev = User.get("dev").impersonate();
+            assertTrue(r.jenkins.getACL().hasPermission(dev, Computer.BUILD));
+            assertTrue(r.jenkins.toComputer().getACL().hasPermission(dev, Computer.BUILD));
+            assertFalse(s.getACL().hasPermission(dev, Computer.BUILD));
+            assertFalse(s.toComputer().getACL().hasPermission(dev, Computer.BUILD));
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
+            // First check that if the build is run as dev, they are not allowed to use this agent:
+            QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
+            p.setDefinition(new CpsFlowDefinition("timeout(time: 5, unit: 'SECONDS') {node {error 'should not be allowed'}}", true));
+            r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
+            // What about when there is a fallback authenticator?
+            QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new FallbackAuthenticator());
+            r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
+            // Must also work even if the PlaceholderTask is recreated:
+            p.setDefinition(new CpsFlowDefinition("node {error 'should not be allowed'}", true));
+            s.toComputer().setTemporarilyOffline(true, null);
+            r.waitForMessage("Still waiting to schedule task", p.scheduleBuild2(0).waitForStart());
+        });
+        story.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+            r.waitOnline((Slave) r.jenkins.getNode("remote"));
+            Thread.sleep(5000);
+            WorkflowRun b3 = p.getBuildByNumber(3);
+            assertTrue(b3.isBuilding());
+            b3.doStop();
+        });
+    }
+    // Pending direct support in MockAuthorizationStrategy for granting node permissions:
+    private static class MockAuthorizationStrategyWithNode extends MockAuthorizationStrategy {
+        @Override public ACL getACL(Node node) {
+            final ACL stock = super.getACL(node);
+            if (node.getNodeName().equals("remote")) {
+                return new ACL() {
+                    @Override public boolean hasPermission(Authentication a, Permission permission) {
+                        return stock.hasPermission(a, permission) && !(a.getName().equals("dev") && permission.equals(Computer.BUILD));
+                    }
+                };
+            } else {
+                return stock;
+            }
+        }
+    }
+    private static class MainAuthenticator extends QueueItemAuthenticator {
+        @Override public Authentication authenticate(Queue.Task task) {
+            return task instanceof WorkflowJob ? User.get("dev").impersonate() : null;
+        }
+    }
+    private static class FallbackAuthenticator extends QueueItemAuthenticator {
+        @Override public Authentication authenticate(Queue.Task task) {
+            return ACL.SYSTEM;
+        }
     }
 
 }

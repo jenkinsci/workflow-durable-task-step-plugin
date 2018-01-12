@@ -20,6 +20,7 @@ import hudson.model.ResourceList;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
+import hudson.model.User;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueListener;
 import hudson.model.queue.SubTask;
@@ -48,6 +49,8 @@ import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
 import jenkins.model.queue.AsynchronousExecution;
+import jenkins.security.QueueItemAuthenticator;
+import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.Timer;
 import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
@@ -247,19 +250,29 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          */
         private String cookie;
 
+        /** {@link Authentication#getName} of user of build, if known. */
+        private final @CheckForNull String auth;
+
         PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
             this.context = context;
             this.label = label;
             runId = context.get(Run.class).getExternalizableId();
+            Authentication runningAuth = Jenkins.getAuthentication();
+            if (runningAuth.equals(ACL.SYSTEM)) {
+                auth = null;
+            } else {
+                auth = runningAuth.getName();
+            }
+            LOGGER.log(FINE, "scheduling {0}", this);
         }
 
         private Object readResolve() {
-            LOGGER.log(FINE, "deserialized {0}", cookie);
             if (cookie != null) {
                 synchronized (runningTasks) {
                     runningTasks.put(cookie, new RunningTask());
                 }
             }
+            LOGGER.log(FINE, "deserializing previously scheduled {0}", this);
             return this;
         }
 
@@ -519,11 +532,32 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public Authentication getDefaultAuthentication() {
-            return ACL.SYSTEM; // TODO should pick up credentials from configuring user or something
+            return ACL.SYSTEM;
         }
 
         @Override public Authentication getDefaultAuthentication(Queue.Item item) {
             return getDefaultAuthentication();
+        }
+
+        @Restricted(NoExternalUse.class)
+        @Extension(ordinal=959) public static class AuthenticationFromBuild extends QueueItemAuthenticatorProvider {
+            @Override public List<QueueItemAuthenticator> getAuthenticators() {
+                return Collections.singletonList(new QueueItemAuthenticator() {
+                    @Override public Authentication authenticate(Queue.Task task) {
+                        if (task instanceof PlaceholderTask) {
+                            String auth = ((PlaceholderTask) task).auth;
+                            LOGGER.log(FINE, "authenticating {0}", task);
+                            if (Jenkins.ANONYMOUS.getName().equals(auth)) {
+                                return Jenkins.ANONYMOUS;
+                            } else if (auth != null) {
+                                User user = User.getById(auth, false);
+                                return user != null ? user.impersonate() : Jenkins.ANONYMOUS;
+                            }
+                        }
+                        return null;
+                    }
+                });
+            }
         }
 
         @Override public boolean isContinued() {
@@ -531,7 +565,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public String toString() {
-            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie +  '}';
+            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie + ",auth=" + auth + '}';
         }
 
         private static void finish(@CheckForNull final String cookie) {
