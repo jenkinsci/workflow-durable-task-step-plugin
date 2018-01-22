@@ -62,7 +62,8 @@
         </pluginRepository>
     </pluginRepositories>
     <properties>
-        <jenkins.version>2.60.3</jenkins.version>
+        <jenkins-core.version>2.104-20180122.224643-1</jenkins-core.version> <!-- TODO https://github.com/jenkinsci/jenkins/pull/3254 -->
+        <jenkins-war.version>2.104-20180122.224719-1</jenkins-war.version>
         <java.level>8</java.level>
         <workflow-step-api-plugin.version>2.13</workflow-step-api-plugin.version>
     </properties>

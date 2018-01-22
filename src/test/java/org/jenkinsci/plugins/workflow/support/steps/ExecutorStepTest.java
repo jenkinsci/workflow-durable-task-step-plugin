@@ -41,7 +41,6 @@ import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
-import hudson.security.Permission;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
@@ -741,15 +740,8 @@ public class ExecutorStepTest {
             r.waitOnline(s);
             r.jenkins.setNumExecutors(0);
             r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
-            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategyWithNode().
-                grant(Jenkins.ADMINISTER).everywhere().to("admin").
-                // TODO pending fix of JENKINS-46652 in baseline, we must grant BUILD on master but then go back and deny it on remote:
-                grant(Computer.BUILD).everywhere().to("dev"));
-            Authentication dev = User.get("dev").impersonate();
-            assertTrue(r.jenkins.getACL().hasPermission(dev, Computer.BUILD));
-            assertTrue(r.jenkins.toComputer().getACL().hasPermission(dev, Computer.BUILD));
-            assertFalse(s.getACL().hasPermission(dev, Computer.BUILD));
-            assertFalse(s.toComputer().getACL().hasPermission(dev, Computer.BUILD));
+            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().
+                grant(Jenkins.ADMINISTER).everywhere().to("admin"));
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
             // First check that if the build is run as dev, they are not allowed to use this agent:
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
@@ -772,24 +764,9 @@ public class ExecutorStepTest {
             b3.doStop();
         });
     }
-    // Pending direct support in MockAuthorizationStrategy for granting node permissions:
-    private static class MockAuthorizationStrategyWithNode extends MockAuthorizationStrategy {
-        @Override public ACL getACL(Node node) {
-            final ACL stock = super.getACL(node);
-            if (node.getNodeName().equals("remote")) {
-                return new ACL() {
-                    @Override public boolean hasPermission(Authentication a, Permission permission) {
-                        return stock.hasPermission(a, permission) && !(a.getName().equals("dev") && permission.equals(Computer.BUILD));
-                    }
-                };
-            } else {
-                return stock;
-            }
-        }
-    }
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
-            return task instanceof WorkflowJob ? User.get("dev").impersonate() : null;
+            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
         }
     }
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
