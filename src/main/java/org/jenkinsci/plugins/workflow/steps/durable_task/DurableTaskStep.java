@@ -36,7 +36,6 @@ import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import hudson.util.NamingThreadFactory;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
@@ -196,7 +195,7 @@ public abstract class DurableTaskStep extends Step {
                 LOGGER.log(Level.FINE, node + " is evidently offline now", x);
                 ws = null;
                 if (!printedCannotContactMessage) {
-                    logger().println("Cannot contact " + node + ": " + x);
+                    listener().getLogger().println("Cannot contact " + node + ": " + x);
                     printedCannotContactMessage = true;
                 }
                 return null;
@@ -207,7 +206,7 @@ public abstract class DurableTaskStep extends Step {
             return ws;
         }
 
-        private @Nonnull PrintStream logger() {
+        private @Nonnull TaskListener listener() {
             TaskListener l;
             StepContext context = getContext();
             try {
@@ -223,7 +222,7 @@ public abstract class DurableTaskStep extends Step {
                 l = new LogTaskListener(LOGGER, Level.FINE);
                 recurrencePeriod = 0;
             }
-            return l.getLogger();
+            return l;
         }
 
         private @Nonnull Launcher launcher() throws IOException, InterruptedException {
@@ -238,21 +237,21 @@ public abstract class DurableTaskStep extends Step {
         @Override public void stop(final Throwable cause) throws Exception {
             FilePath workspace = getWorkspace();
             if (workspace != null) {
-                logger().println("Sending interrupt signal to process");
+                listener().getLogger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
                 stopTask = Timer.get().schedule(new Runnable() {
                     @Override public void run() {
                         stopTask = null;
                         if (recurrencePeriod > 0) {
                             recurrencePeriod = 0;
-                            logger().println("After 10s process did not stop");
+                            listener().getLogger().println("After 10s process did not stop");
                             getContext().onFailure(cause);
                         }
                     }
                 }, 10, TimeUnit.SECONDS);
                 controller.stop(workspace, launcher());
             } else {
-                logger().println("Could not connect to " + node + " to send interrupt signal to process");
+                listener().getLogger().println("Could not connect to " + node + " to send interrupt signal to process");
                 recurrencePeriod = 0;
                 super.stop(cause);
             }
@@ -312,25 +311,26 @@ public abstract class DurableTaskStep extends Step {
             if (workspace == null) {
                 return; // slave not yet ready, wait for another day
             }
+            TaskListener listener = listener();
             try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
-                        if (controller.writeLog(workspace, logger())) {
+                        if (controller.writeLog(workspace, listener.getLogger())) {
                             getContext().saveState();
                             recurrencePeriod = MIN_RECURRENCE_PERIOD; // got output, maybe we will get more soon
                         } else {
                             recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
                         }
-                        Integer exitCode = controller.exitStatus(workspace, launcher());
+                        Integer exitCode = controller.exitStatus(workspace, launcher(), listener);
                         if (exitCode == null) {
                             LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                         } else {
-                            if (controller.writeLog(workspace, logger())) {
+                            if (controller.writeLog(workspace, listener.getLogger())) {
                                 LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                             }
                             if (returnStatus || exitCode == 0) {
                                 getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), encoding) : null);
                             } else {
                                 if (returnStdout) {
-                                    logger().write(controller.getOutput(workspace, launcher())); // diagnostic
+                                    listener.getLogger().write(controller.getOutput(workspace, launcher())); // diagnostic
                                 }
                                 getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                             }
@@ -341,7 +341,7 @@ public abstract class DurableTaskStep extends Step {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
                 ws = null;
                 if (!printedCannotContactMessage) {
-                    logger().println("Cannot contact " + node + ": " + x);
+                    listener.getLogger().println("Cannot contact " + node + ": " + x);
                     printedCannotContactMessage = true;
                 }
             }
