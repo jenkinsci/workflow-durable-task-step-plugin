@@ -184,10 +184,11 @@ public abstract class DurableTaskStep extends Step {
             if (returnStdout) {
                 durableTask.captureOutput();
             }
-            controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), context.get(TaskListener.class));
+            TaskListener listener = context.get(TaskListener.class);
+            controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), listener);
             this.remote = ws.getRemote();
             try {
-                controller.watch(ws, new HandlerImpl(this, ws, context.get(TaskListener.class)));
+                controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
                 watching = true;
             } catch (UnsupportedOperationException x) {
                 LOGGER.log(Level.WARNING, null, x);
