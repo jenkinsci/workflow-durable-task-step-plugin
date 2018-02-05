@@ -393,6 +393,12 @@ public abstract class DurableTaskStep extends Step {
 
         // called remotely from HandlerImpl
         @Override public void exited(int exitCode, byte[] output) throws Exception {
+            try {
+                getContext().get(TaskListener.class);
+            } catch (IOException | InterruptedException x) {
+                LOGGER.log(Level.FINE, "asynchronous exit notification with code " + exitCode + " in " + remote + " on " + node + " ignored since step already seems dead", x);
+                return;
+            }
             LOGGER.log(Level.FINE, "asynchronous exit notification with code {0} in {1} on {2}", new Object[] {exitCode, remote, node});
             if (returnStdout && output == null) {
                 getContext().onFailure(new IllegalStateException("expected output but got none"));
