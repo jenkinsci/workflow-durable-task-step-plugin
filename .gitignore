@@ -2,3 +2,8 @@ target
 work
 .idea
 *.iml
+
+# for eclipse
+.project
+.settings/
+.classpath

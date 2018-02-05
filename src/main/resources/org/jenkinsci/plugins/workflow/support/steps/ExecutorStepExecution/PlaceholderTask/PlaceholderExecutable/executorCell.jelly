@@ -24,14 +24,14 @@
   ~ THE SOFTWARE.
   -->
 
-<j:jelly xmlns:j="jelly:core" xmlns:t="/lib/hudson" xmlns:l="/lib/layout">
+<j:jelly xmlns:j="jelly:core" xmlns:t="/lib/hudson" xmlns:l="/lib/layout" xmlns:st="jelly:stapler">
     <td class="pane">
         <div style="white-space: normal">
             <j:set var="r" value="${it.parent.runForDisplay()}"/>
             <j:set var="rAuth" value="${r != null and h.hasPermission(r.parent, r.parent.READ) ? r : null}"/>
             <j:choose>
                 <j:when test="${rAuth != null}">
-                    part of <a href="${rootURL}/${r.parent.url}"><l:breakable value="${r.parent.fullDisplayName}"/></a>
+                    <a href="${rootURL}/${r.parent.url}"><l:breakable value="${r.parent.fullDisplayName}"/></a>
                     <t:buildProgressBar build="${it.parent}" executor="${executor}"/>
                 </j:when>
                 <j:otherwise>
@@ -43,6 +43,16 @@
     <td class="pane">
         <j:if test="${rAuth != null}">
             <a href="${rootURL}/${r.url}" class="model-link inside"><l:breakable value="${r.displayName}"/></a>
+            <st:nbsp/>
+            <j:set var="label" value="${it.parent.enclosingLabel}"/>
+            <j:choose>
+                <j:when test="${label != null}">
+                    <l:breakable value="(${label})"/>
+                </j:when>
+                <j:otherwise>
+                    ${%part}
+                </j:otherwise>
+            </j:choose>
         </j:if>
     </td>
 </j:jelly>
