@@ -75,7 +75,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
-            <version>1.18-20180125.194359-1</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/57 -->
+            <version>1.18-20180209.181433-2</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/60 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>

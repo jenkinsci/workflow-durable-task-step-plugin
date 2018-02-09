@@ -63,10 +63,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.logging.ConsoleHandler;
-import java.util.logging.Handler;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
@@ -74,6 +71,7 @@ import jenkins.security.QueueItemAuthenticatorConfiguration;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
+import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.hamcrest.Matchers;
 import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
@@ -99,6 +97,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
+import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
@@ -112,8 +111,9 @@ public class ExecutorStepTest {
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    @Rule public LoggerRule logging = new LoggerRule();
     /* Currently too noisy due to unrelated warnings; might clear up if test dependencies updated:
-    @Rule public LoggerRule logging = new LoggerRule().record(ExecutorStepExecution.class, Level.FINE);
+    .record(ExecutorStepExecution.class, Level.FINE);
     */
 
     /**
@@ -227,11 +227,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
                 // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
@@ -280,11 +276,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
