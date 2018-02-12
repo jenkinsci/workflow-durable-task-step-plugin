@@ -31,7 +31,7 @@ THE SOFTWARE.
             <f:checkbox/>
         </f:entry>
         <f:entry field="encoding" title="${%Encoding of standard output}">
-            <f:textbox default="${descriptor.defaultEncoding}"/>
+            <f:textbox/>
         </f:entry>
         <f:entry field="returnStatus" title="${%Return exit status}">
             <f:checkbox/>

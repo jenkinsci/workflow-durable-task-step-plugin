@@ -1,3 +1,6 @@
 <div>
-    Encoding of standard output, if it is being captured.
+    Encoding of process output.
+    In the case of <code>returnStdout</code>, applies to the return value of this step;
+    otherwise, or always for standard error, controls how text is copied to the build log.
+    If unspecified, uses the system default encoding of the node on which the step is run.
 </div>
