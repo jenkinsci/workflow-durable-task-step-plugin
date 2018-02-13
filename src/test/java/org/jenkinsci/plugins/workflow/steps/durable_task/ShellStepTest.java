@@ -17,9 +17,7 @@ import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.Result;
 import hudson.remoting.Channel;
-import hudson.slaves.CommandLauncher;
-import hudson.slaves.NodeProperty;
-import hudson.slaves.RetentionStrategy;
+import hudson.model.Slave;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
@@ -36,7 +34,6 @@ import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
-import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HashMap;
 import java.util.Map;
@@ -68,6 +65,7 @@ import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
+import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
 
@@ -223,7 +221,7 @@ public class ShellStepTest {
         s = new StepConfigTester(j).configRoundTrip(s);
         assertEquals("echo hello", s.getScript());
         assertFalse(s.isReturnStdout());
-        assertEquals(DurableTaskStep.DurableTaskStepDescriptor.defaultEncoding, s.getEncoding());
+        assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
@@ -233,12 +231,12 @@ public class ShellStepTest {
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
         s.setReturnStdout(false);
-        s.setEncoding(DurableTaskStep.DurableTaskStepDescriptor.defaultEncoding);
+        s.setEncoding("UTF-8");
         s.setReturnStatus(true);
         s = new StepConfigTester(j).configRoundTrip(s);
         assertEquals("echo hello", s.getScript());
         assertFalse(s.isReturnStdout());
-        assertEquals(DurableTaskStep.DurableTaskStepDescriptor.defaultEncoding, s.getEncoding());
+        assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
     }
 
@@ -343,19 +341,25 @@ public class ShellStepTest {
     @Issue("JENKINS-31096")
     @Test public void encoding() throws Exception {
         // Like JenkinsRule.createSlave but passing a system encoding:
-        Node remote = new DumbSlave("remote", "", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "",
-            new CommandLauncher("'" + System.getProperty("java.home") + "/bin/java' -Dfile.encoding=ISO-8859-2 -jar '" + new File(j.jenkins.getJnlpJars("slave.jar").getURL().toURI()) + "'"),
-            RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+        Slave remote = new DumbSlave("remote", tmp.getRoot().getAbsolutePath(),
+            new SimpleCommandLauncher("'" + System.getProperty("java.home") + "/bin/java' -Dfile.encoding=ISO-8859-2 -jar '" + new File(j.jenkins.getJnlpJars("slave.jar").getURL().toURI()) + "'"));
         j.jenkins.addNode(remote);
+        j.waitOnline(remote);
         WorkflowJob p = j.createProject(WorkflowJob.class, "p");
         FilePath ws;
         while ((ws = remote.getWorkspaceFor(p)) == null) {
             Thread.sleep(100);
         }
-        // `echo -e '\xC8au ty vole!'` works from /bin/bash on Ubuntu but not /bin/sh; anyway nonportable
         ws.child("message").write("Čau ty vole!\n", "ISO-8859-2");
-        p.setDefinition(new CpsFlowDefinition("node('remote') {sh 'cat message'}", true));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh 'cat message'} else {bat 'type message'}}", true));
         j.assertLogContains("Čau ty vole!", j.buildAndAssertSuccess(p));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {echo(/received: ${isUnix() ? sh(script: 'cat message', returnStdout: true) : bat(script: '@type message', returnStdout: true)}/)}", true)); // http://stackoverflow.com/a/8486061/12916
+        j.assertLogContains("received: Čau ty vole!", j.buildAndAssertSuccess(p));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh script: 'cat message', encoding: 'US-ASCII'} else {bat script: 'type message', encoding: 'US-ASCII'}}", true));
+        j.assertLogContains("�au ty vole!", j.buildAndAssertSuccess(p));
+        ws.child("message").write("¡Čau → there!\n", "UTF-8");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh script: 'cat message', encoding: 'UTF-8'} else {bat script: 'type message', encoding: 'UTF-8'}}", true));
+        j.assertLogContains("¡Čau → there!", j.buildAndAssertSuccess(p));
     }
 
     @Issue("JENKINS-34021")
