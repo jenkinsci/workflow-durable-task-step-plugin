@@ -64,6 +64,13 @@ public class PowerShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {powershell 'throw \"bogus error\"'}"));
         j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
+    
+    @Test public void testUnicode() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "foobar");
+        p.setDefinition(new CpsFlowDefinition("node {def x = powershell(returnStdout: true, script: 'write-output \"Hëllö Wórld\"'); println x.replace(\"\ufeff\",\"\")}"));
+        String log = new String(j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))).getBytes(), "UTF-8");
+        Assume.assumeTrue("Correct UTF-8 output should be produced",log.contains("Hëllö Wórld"));
+    }
 
 }
 
