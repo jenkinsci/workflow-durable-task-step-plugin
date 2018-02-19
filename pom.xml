@@ -33,7 +33,7 @@
     </parent>
     <groupId>org.jenkins-ci.plugins.workflow</groupId>
     <artifactId>workflow-durable-task-step</artifactId>
-    <version>2.19-SNAPSHOT</version>
+    <version>2.20-SNAPSHOT</version>
     <packaging>hpi</packaging>
     <name>Pipeline: Nodes and Processes</name>
     <url>https://wiki.jenkins.io/display/JENKINS/Pipeline+Nodes+and+Processes+Plugin</url>
@@ -76,7 +76,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
-            <version>1.18-20180212.221815-3</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/61 -->
+            <version>1.19-SNAPSHOT</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/61 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
