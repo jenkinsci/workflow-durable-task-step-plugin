@@ -122,7 +122,7 @@ public class ExecutorPickle extends Pickle {
                         if (placeholder.getCookie() != null && Jenkins.getActiveInstance().getNode(placeholder.getAssignedLabel().getName()) == null ) {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
-                                    throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {1} is never going to appear!",
+                                    throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {2} is never going to appear!",
                                             new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()}));
                             }
                         }
