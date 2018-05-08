@@ -755,9 +755,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             @Exported
-            public int getNumber() {
+            public Integer getNumber() {
                 Run<?, ?> r = getParent().runForDisplay();
-                return r != null ? r.getNumber() : -1;
+                return r != null ? r.getNumber() : null;
             }
 
             @Exported
@@ -775,6 +775,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return getParent().getEstimatedDuration();
             }
 
+            @Exported
+            public Long getTimestamp() {
+                Run<?, ?> r = getParent().runForDisplay();
+                return r != null ? r.getStartTimeInMillis() : null;
+            }
+
             @Override public boolean willContinue() {
                 synchronized (runningTasks) {
                     return runningTasks.containsKey(cookie);
@@ -786,8 +792,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return Executor.of(this);
             }
 
-            @Exported @Restricted(NoExternalUse.class) // for Jelly and toString
+            @Restricted(NoExternalUse.class) // for Jelly and toString
             public String getUrl() {
+                return PlaceholderTask.this.getUrl(); // we hope this has a console.jelly
+            }
+
+            @Exported(name="url")
+            public String getAbsoluteUrl() {
                 Run<?,?> r = runForDisplay();
                 if (r == null) {
                     return "";

@@ -24,12 +24,12 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
-import com.gargoylesoftware.htmlunit.Page;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
@@ -69,6 +69,7 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -90,6 +91,9 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
 import org.junit.AfterClass;
 import static org.junit.Assert.*;
 import org.junit.Assume;
@@ -104,8 +108,6 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
-
-import javax.annotation.Nullable;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -457,31 +459,35 @@ public class ExecutorStepTest {
             public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
 
+                JSONParser parser = new JSONParser();
+                JSONObject propertiesJSON = null;
+
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
-                        "node('" + s.getNodeName() + "') {\n" +
-                                "    sleep 10\n" +
-                                "}"));
+                        "node('" + s.getNodeName() + "') {\n"
+                        + "semaphore 'wait'\n"
+                        + "    sleep 10\n"
+                        + "}"));
 
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                Thread.sleep(100);
+                SemaphoreStep.waitForStart("wait/1", b);
                 JenkinsRule.WebClient wc = story.j.createWebClient();
                 Page page = wc
                         .goTo("computer/" + s.getNodeName()
-                                        + "/api/xml?depth=2&xpath=//currentExecutable/number/text()",
-                                "text/plain");
+                                + "/api/json?tree=executors[currentExecutable[number,displayName,url,timestamp]]", "application/json");
 
-                assertEquals("1", page.getWebResponse().getContentAsString());
-                page = wc.goTo("computer/" + s.getNodeName()
-                                + "/api/xml?depth=2&xpath=//currentExecutable/displayName/text()",
-                        "text/plain");
-                assertEquals("part of " + p.getDisplayName() + " #1",
-                        page.getWebResponse().getContentAsString());
-                page = wc.goTo("computer/" + s.getNodeName()
-                                + "/api/xml?depth=2&xpath=//currentExecutable/url/text()",
-                        "text/plain");
-                assertEquals(story.j.getURL().toString() + "job/" + p.getDisplayName() + "/1/",
-                        page.getWebResponse().getContentAsString());
+                propertiesJSON = (JSONObject) parser.parse(page.getWebResponse().getContentAsString());
+                JSONArray executors = (JSONArray) propertiesJSON.get("executors");
+                JSONObject executor = (JSONObject) executors.get(0);
+                JSONObject currentExecutable = (JSONObject) executor.get("currentExecutable");
+
+                assertEquals(1L, currentExecutable.get("number"));
+
+                assertEquals("part of " + p.getName() + " #1",
+                        currentExecutable.get("displayName"));
+
+                assertEquals(story.j.getURL().toString() + "job/" + p.getName() + "/1/",
+                        currentExecutable.get("url"));
             }
         });
     }
