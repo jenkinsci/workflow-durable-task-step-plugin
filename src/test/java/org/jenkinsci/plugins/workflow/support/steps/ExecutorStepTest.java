@@ -48,6 +48,7 @@ import hudson.slaves.JNLPLauncher;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
+import hudson.slaves.WorkspaceList;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -275,6 +276,7 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-41854")
     @Test public void buildShellScriptAcrossDisconnect() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
@@ -295,6 +297,8 @@ public class ExecutorStepTest {
                 p.setDefinition(new CpsFlowDefinition(
                     "node('dumbo') {\n" +
                     "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
+                    // TODO: The following line fails due to JENKINS-41854.
+                    //"    sh 'echo Back again'\n" +
                     "    echo 'OK, done'\n" +
                     "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -304,6 +308,17 @@ public class ExecutorStepTest {
                 assertTrue(b.isBuilding());
                 Computer c = s.toComputer();
                 assertNotNull(c);
+                FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
+                List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+                for (FlowNode n : walker) {
+                    WorkspaceAction a = n.getAction(WorkspaceAction.class);
+                    if (a != null) {
+                        actions.add(a);
+                    }
+                }
+                assertEquals(1, actions.size());
+                String workspacePath = actions.get(0).getWorkspace().getRemote();
+                assertWorkspaceLocked(c, workspacePath);
                 killJnlpProc();
                 while (c.isOnline()) {
                     Thread.sleep(100);
@@ -312,6 +327,8 @@ public class ExecutorStepTest {
                 while (c.isOffline()) {
                     Thread.sleep(100);
                 }
+                // TODO: The following line fails due to JENKINS-41854.
+                //assertWorkspaceLocked(c, workspacePath);
                 assertTrue(f2.isFile());
                 assertTrue(f1.delete());
                 while (f2.isFile()) {
@@ -319,10 +336,22 @@ public class ExecutorStepTest {
                 }
                 story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
                 story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
+                // TODO: The following line fails due to JENKINS-41854.
+                //story.j.assertLogContains("Back again", b);
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
             }
         });
+    }
+
+    private void assertWorkspaceLocked(Computer computer, String workspacePath) throws InterruptedException {
+        FilePath proposed = new FilePath(computer.getChannel(), workspacePath);
+        WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(proposed);
+        try {
+            assertNotEquals(workspacePath, lease.path.getRemote());
+        } finally {
+            lease.release();
+        }
     }
 
     @Test public void buildShellScriptQuick() throws Exception {
