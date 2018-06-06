@@ -327,7 +327,7 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore
+    @Ignore("TODO currently fails with: hudson.remoting.RequestAbortedException: java.nio.channels.ClosedChannelException")
     @Issue("JENKINS-41854")
     @Test
     public void contextualizeFreshFilePathAfterAgentReconnection() throws Exception {
