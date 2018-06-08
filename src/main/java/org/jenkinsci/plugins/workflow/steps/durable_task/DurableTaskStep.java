@@ -29,6 +29,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
+import hudson.Functions;
 import hudson.Launcher;
 import hudson.Main;
 import hudson.model.TaskListener;
@@ -278,6 +279,14 @@ public abstract class DurableTaskStep extends Step {
                             recurrencePeriod = 0;
                             listener().getLogger().println("After 10s process did not stop");
                             getContext().onFailure(cause);
+                            try {
+                                FilePath workspace = getWorkspace();
+                                if (workspace != null) {
+                                    controller.cleanup(workspace);
+                                }
+                            } catch (IOException | InterruptedException x) {
+                                Functions.printStackTrace(x, listener().getLogger());
+                            }
                         }
                     }
                 }, 10, TimeUnit.SECONDS);
