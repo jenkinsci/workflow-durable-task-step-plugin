@@ -58,6 +58,8 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -104,6 +106,7 @@ public abstract class DurableTaskStep extends Step {
 
     public abstract static class DurableTaskStepDescriptor extends StepDescriptor {
 
+        @Restricted(DoNotUse.class)
         public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
             if (encoding.isEmpty()) {
                 return FormValidation.ok();
