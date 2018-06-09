@@ -216,10 +216,8 @@ public abstract class DurableTaskStep extends Step {
                         recurrencePeriod = WATCHING_RECURRENCE_PERIOD;
                     } catch (UnsupportedOperationException x) {
                         getContext().onFailure(x);
-                    } catch (Exception x) { // as below
-                        LOGGER.log(Level.FINE, node + " is evidently offline now", x);
-                        ws = null;
-                        recurrencePeriod = MIN_RECURRENCE_PERIOD;
+                    } catch (Exception x) {
+                        getWorkspaceProblem(x);
                         return null;
                     }
                 }
@@ -228,21 +226,25 @@ public abstract class DurableTaskStep extends Step {
             try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
                 directory = ws.isDirectory();
             } catch (Exception x) {
-                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
-                LOGGER.log(Level.FINE, node + " is evidently offline now", x);
-                ws = null;
-                recurrencePeriod = MIN_RECURRENCE_PERIOD;
-                if (!printedCannotContactMessage) {
-                    listener().getLogger().println("Cannot contact " + node + ": " + x);
-                    printedCannotContactMessage = true;
-                }
+                getWorkspaceProblem(x);
                 return null;
             }
             if (!directory) {
                 throw new AbortException("missing workspace " + remote + " on " + node);
             }
-            LOGGER.log(Level.FINE, "{0} seems to be online", node);
+            LOGGER.log(Level.FINER, "{0} seems to be online so using {1}", new Object[] {node, remote});
             return ws;
+        }
+
+        private void getWorkspaceProblem(Exception x) {
+            // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
+            LOGGER.log(Level.FINE, node + " is evidently offline now", x);
+            ws = null;
+            recurrencePeriod = MIN_RECURRENCE_PERIOD;
+            if (!printedCannotContactMessage) {
+                listener().getLogger().println("Cannot contact " + node + ": " + x);
+                printedCannotContactMessage = true;
+            }
         }
 
         private @Nonnull TaskListener listener() {
