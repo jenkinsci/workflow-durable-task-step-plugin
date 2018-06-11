@@ -29,6 +29,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
+import hudson.Functions;
 import hudson.Launcher;
 import hudson.Main;
 import hudson.Util;
@@ -62,6 +63,8 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -108,6 +111,7 @@ public abstract class DurableTaskStep extends Step {
 
     public abstract static class DurableTaskStepDescriptor extends StepDescriptor {
 
+        @Restricted(DoNotUse.class)
         public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
             if (encoding.isEmpty()) {
                 return FormValidation.ok();
@@ -212,10 +216,8 @@ public abstract class DurableTaskStep extends Step {
                         recurrencePeriod = WATCHING_RECURRENCE_PERIOD;
                     } catch (UnsupportedOperationException x) {
                         getContext().onFailure(x);
-                    } catch (Exception x) { // as below
-                        LOGGER.log(Level.FINE, node + " is evidently offline now", x);
-                        ws = null;
-                        recurrencePeriod = MIN_RECURRENCE_PERIOD;
+                    } catch (Exception x) {
+                        getWorkspaceProblem(x);
                         return null;
                     }
                 }
@@ -224,21 +226,25 @@ public abstract class DurableTaskStep extends Step {
             try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
                 directory = ws.isDirectory();
             } catch (Exception x) {
-                // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
-                LOGGER.log(Level.FINE, node + " is evidently offline now", x);
-                ws = null;
-                recurrencePeriod = MIN_RECURRENCE_PERIOD;
-                if (!printedCannotContactMessage) {
-                    listener().getLogger().println("Cannot contact " + node + ": " + x);
-                    printedCannotContactMessage = true;
-                }
+                getWorkspaceProblem(x);
                 return null;
             }
             if (!directory) {
                 throw new AbortException("missing workspace " + remote + " on " + node);
             }
-            LOGGER.log(Level.FINE, "{0} seems to be online", node);
+            LOGGER.log(Level.FINER, "{0} seems to be online so using {1}", new Object[] {node, remote});
             return ws;
+        }
+
+        private void getWorkspaceProblem(Exception x) {
+            // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
+            LOGGER.log(Level.FINE, node + " is evidently offline now", x);
+            ws = null;
+            recurrencePeriod = MIN_RECURRENCE_PERIOD;
+            if (!printedCannotContactMessage) {
+                listener().getLogger().println("Cannot contact " + node + ": " + x);
+                printedCannotContactMessage = true;
+            }
         }
 
         private @Nonnull TaskListener listener() {
@@ -281,6 +287,14 @@ public abstract class DurableTaskStep extends Step {
                             recurrencePeriod = 0;
                             listener().getLogger().println("After 10s process did not stop");
                             getContext().onFailure(cause);
+                            try {
+                                FilePath workspace = getWorkspace();
+                                if (workspace != null) {
+                                    controller.cleanup(workspace);
+                                }
+                            } catch (IOException | InterruptedException x) {
+                                Functions.printStackTrace(x, listener().getLogger());
+                            }
                         }
                     }
                 }, 10, TimeUnit.SECONDS);
