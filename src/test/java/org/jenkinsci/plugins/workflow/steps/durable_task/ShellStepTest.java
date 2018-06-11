@@ -56,6 +56,7 @@ import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
 import org.junit.Assume;
+import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -258,6 +259,7 @@ public class ShellStepTest {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
         final String password = "s3cr3t";
