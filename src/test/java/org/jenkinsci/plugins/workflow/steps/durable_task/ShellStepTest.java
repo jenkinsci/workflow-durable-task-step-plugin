@@ -52,7 +52,6 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
-import org.jenkinsci.plugins.workflow.support.actions.LessAbstractTaskListener;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
@@ -295,7 +294,7 @@ public class ShellStepTest {
             return new File(b.getRootDir(), "special.log");
         }
     }
-    private static class RemotableBuildListener extends LessAbstractTaskListener implements BuildListener {
+    private static class RemotableBuildListener implements BuildListener {
         private static final long serialVersionUID = 1;
         /** counts which instance this is per JVM */
         private static final AtomicInteger instantiationCounter = new AtomicInteger();
