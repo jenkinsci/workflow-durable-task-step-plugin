@@ -10,6 +10,7 @@ import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.console.AnnotatedLargeText;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
 import hudson.model.BuildListener;
@@ -18,22 +19,17 @@ import hudson.model.Node;
 import hudson.model.Result;
 import hudson.remoting.Channel;
 import hudson.model.Slave;
+import hudson.model.TaskListener;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
-import java.nio.channels.Channels;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.StandardOpenOption;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HashMap;
 import java.util.Map;
@@ -43,9 +39,14 @@ import static org.hamcrest.Matchers.containsString;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
-import org.jenkinsci.plugins.workflow.job.console.PipelineLogFile;
+import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
+import org.jenkinsci.plugins.workflow.log.LogStorage;
+import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
+import org.jenkinsci.plugins.workflow.log.StreamLogStorage;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
@@ -274,59 +275,65 @@ public class ShellStepTest {
             "node('remote') {\n" +
             "  sh 'pwd'\n" +
             "  sh 'echo on agent'\n" +
-            "  withCredentials([[$class: 'UsernamePasswordBinding', variable: 'USERPASS', credentialsId: '" + credentialsId + "']]) {\n" +
+            "  withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
             "    sh 'set +x; echo curl -u $USERPASS http://server/'\n" +
             "  }\n" +
             "}", true));
         WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        j.assertLogContains("+ pwd [master #1]", b);
-        j.assertLogContains("+ pwd [master #1 → remote #", b);
-        j.assertLogContains("on agent [master #1 → remote #", b);
+        j.assertLogContains("+ pwd [master]", b);
+        j.assertLogContains("+ pwd [master → remote]", b);
+        j.assertLogContains("on agent [master → remote]", b);
         j.assertLogNotContains(password, b);
-        j.assertLogContains("curl -u **** http://server/ [master #1 → remote #", b);
+        j.assertLogContains("curl -u **** http://server/ [master → remote]", b);
     }
-    @TestExtension("remoteLogger") public static class LogFile extends PipelineLogFile {
-        @Override protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
-            return new RemotableBuildListener(logFile(b));
-        }
-        @Override protected InputStream logFor(WorkflowRun b, long start) throws IOException {
-            return Channels.newInputStream(FileChannel.open(logFile(b).toPath(), StandardOpenOption.READ).position(start));
-        }
-        File logFile(WorkflowRun b) {
-            return new File(b.getRootDir(), "special.log");
+    @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
+        @Override public LogStorage forBuild(FlowExecutionOwner b) {
+            final LogStorage base;
+            try {
+                base = StreamLogStorage.forFile(new File(b.getRootDir(), "special.log"), b);
+            } catch (IOException x) {
+                return new BrokenLogStorage(x);
+            }
+            return new LogStorage() {
+                @Override public BuildListener overallListener() throws IOException, InterruptedException {
+                    return new RemotableBuildListener(base.overallListener());
+                }
+                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
+                    return new RemotableBuildListener(base.nodeListener(node));
+                }
+                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
+                    return base.overallLog(build, complete);
+                }
+                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
+                    return base.stepLog(node, complete);
+                }
+            };
         }
     }
     private static class RemotableBuildListener implements BuildListener {
         private static final long serialVersionUID = 1;
-        /** counts which instance this is per JVM */
-        private static final AtomicInteger instantiationCounter = new AtomicInteger();
-        /** location of log file streamed to by multiple sources */
-        private final File logFile;
-        /** records allocation & deserialization history; e.g., {@code master #1 → agent #1} */
+        /** actual implementation */
+        private final TaskListener delegate;
+        /** records allocation & deserialization history; e.g., {@code master → agent} */
         private final String id;
         private transient PrintStream logger;
-        RemotableBuildListener(File logFile) {
-            this(logFile, "master #" + instantiationCounter.incrementAndGet());
+        RemotableBuildListener(TaskListener delegate) {
+            this(delegate, "master");
         }
-        private RemotableBuildListener(File logFile, String id) {
-            this.logFile = logFile;
+        private RemotableBuildListener(TaskListener delegate, String id) {
+            this.delegate = delegate;
             this.id = id;
         }
         @Override public PrintStream getLogger() {
             if (logger == null) {
-                final OutputStream fos;
-                try {
-                    fos = new FileOutputStream(logFile, true);
-                } catch (FileNotFoundException x) {
-                    throw new AssertionError(x);
-                }
+                final OutputStream os = delegate.getLogger();
                 logger = new PrintStream(new LineTransformationOutputStream() {
                     @Override protected void eol(byte[] b, int len) throws IOException {
-                        fos.write(b, 0, len - 1); // all but NL
-                        fos.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
-                        fos.write(b[len - 1]); // NL
+                        os.write(b, 0, len - 1); // all but NL
+                        os.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
+                        os.write(b[len - 1]); // NL
                     }
-                });
+                }, true);
             }
             return logger;
         }
@@ -335,7 +342,7 @@ public class ShellStepTest {
             Thread.dumpStack();
             */
             String name = Channel.current().getName();
-            return new RemotableBuildListener(logFile, id + " → " + name + " #" + instantiationCounter.incrementAndGet());
+            return new RemotableBuildListener(delegate, id + " → " + name);
         }
     }
 
