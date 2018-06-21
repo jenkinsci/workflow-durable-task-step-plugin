@@ -67,7 +67,7 @@
         <jenkins.version>2.121.1</jenkins.version>
         <java.level>8</java.level>
         <workflow-step-api-plugin.version>2.13</workflow-step-api-plugin.version>
-        <workflow-support-plugin.version>2.19-rc263.468f91dca27d</workflow-support-plugin.version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
+        <workflow-support-plugin.version>2.19-rc265.3e5e4aeecfff</workflow-support-plugin.version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
     </properties>
     <dependencies>
         <dependency>
@@ -83,7 +83,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-api</artifactId>
-            <version>2.29-rc218.58f0128f8864</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
+            <version>2.29-rc219.239019e84015</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -99,7 +99,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-job</artifactId>
-            <version>2.22-rc308.46bf528f5965</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
+            <version>2.22-rc311.5616213fbed0</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
             <scope>test</scope>
         </dependency>
         <dependency>
