@@ -1,6 +1,5 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.google.inject.Inject;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
@@ -68,7 +67,6 @@ import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
@@ -310,7 +308,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
-        @Override public Node getLastBuiltOn() {
+        @Override public Node getLastBuiltOn()   {
             if (label == null) {
                 return null;
             }
@@ -437,12 +435,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             // TODO more generic to check whether FlowExecution.owner.executable is a ModelObject
             Run<?,?> r = runForDisplay();
             if (r != null) {
-                String runDisplayName = r.getFullDisplayName();
+				String jobName =  r.getParent().getName();
                 String enclosingLabel = getEnclosingLabel();
                 if (enclosingLabel != null) {
-                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(runDisplayName, enclosingLabel);
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName_label(jobName, enclosingLabel);
                 } else {
-                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runDisplayName);
+                    return Messages.ExecutorStepExecution_PlaceholderTask_displayName(jobName);
                 }
             } else {
                 return Messages.ExecutorStepExecution_PlaceholderTask_displayName(runId);
