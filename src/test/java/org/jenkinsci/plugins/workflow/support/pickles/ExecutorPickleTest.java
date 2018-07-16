@@ -114,7 +114,8 @@ public class ExecutorPickleTest {
                 SemaphoreStep.success("wait/1", null);
                 WorkflowRun b = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
                 // first prints on 2.35-: hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(); 2.36+: hudson.model.Messages.Node_LabelMissing("Jenkins", "slave0")
-                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(
+                        Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getParent().getName())), b);
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);
@@ -146,7 +147,8 @@ public class ExecutorPickleTest {
                 WorkflowJob p = r.j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 assertFalse(p.getACL().hasPermission(Jenkins.ANONYMOUS, Item.READ));
                 WorkflowRun b = p.getBuildByNumber(1);
-                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(
+                		Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getParent().getName())), b);
                 r.j.jenkins.getNode("remote").toComputer().setTemporarilyOffline(false, null);
                 r.j.assertBuildStatusSuccess(r.j.waitForCompletion(b));
             }

@@ -98,7 +98,7 @@ public class ShellStepTest {
                 "echo . >" + tmp + "\r\n" +
                 "ping -n 2 127.0.0.1 >nul\r\n" + // http://stackoverflow.com/a/4317036/12916
                 "goto :loop/$)}" :
-            "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}"));
+            "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}", true));
 
         // get the build going, and wait until workflow pauses
         WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
