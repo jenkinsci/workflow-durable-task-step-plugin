@@ -250,6 +250,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          */
         private String cookie;
 
+        /**
+         * Key which will be used to identify the task and stage context when searching for a specific node
+         */
+        private String affinityKey;
+
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
 
@@ -456,6 +461,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public String getFullDisplayName() {
             return getDisplayName();
         }
+
+        @Override public String getAffinityKey() { return getOwnerTask().getName(); }
 
         /** hash code of list of heads */
         private transient int lastCheckedHashCode;
