@@ -28,7 +28,7 @@
     <parent>
         <groupId>org.jenkins-ci.plugins</groupId>
         <artifactId>plugin</artifactId>
-        <version>3.14</version>
+        <version>3.19</version>
         <relativePath />
     </parent>
     <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -67,7 +67,7 @@
         <jenkins.version>2.73.3</jenkins.version>
         <java.level>8</java.level>
         <workflow-step-api-plugin.version>2.13</workflow-step-api-plugin.version>
-        <workflow-support-plugin.version>2.19-rc287.918f5958551d</workflow-support-plugin.version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/56 -->
+        <workflow-support-plugin.version>2.20-rc569.8b4964ac1954</workflow-support-plugin.version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/56 -->
     </properties>
     <dependencies>
         <dependency>
@@ -78,7 +78,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
-            <version>1.23-rc125.7208013b9494</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/61 -->
+            <version>1.24-rc319.e1ef73b3ab09</version> <!-- TODO pending release -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -99,7 +99,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-job</artifactId>
-            <version>2.22-rc329.5cb884ef714a</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/89 -->
+            <version>2.24-rc765.2c5d9ffed127</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/89 -->
             <scope>test</scope>
         </dependency>
         <dependency>
