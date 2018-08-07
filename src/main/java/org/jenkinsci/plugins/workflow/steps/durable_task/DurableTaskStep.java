@@ -146,6 +146,10 @@ public abstract class DurableTaskStep extends Step {
     @Restricted(NoExternalUse.class) // public only for tests
     public static long WATCHING_RECURRENCE_PERIOD = /* 5m */300_000;
 
+    /** If set to false, disables {@link Execution#watching} mode. */
+    @SuppressWarnings("FieldMayBeFinal")
+    private static boolean USE_WATCHING = !"false".equals(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING"));
+
     /**
      * Represents one task that is believed to still be running.
      */
@@ -172,7 +176,7 @@ public abstract class DurableTaskStep extends Step {
         private String remote;
         private boolean returnStdout; // serialized default is false
         private boolean returnStatus; // serialized default is false
-        private boolean watching;
+        private boolean watching; // serialized default is false
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -197,11 +201,13 @@ public abstract class DurableTaskStep extends Step {
             }
             controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), listener);
             this.remote = ws.getRemote();
-            try {
-                controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
-                watching = true;
-            } catch (UnsupportedOperationException x) {
-                LOGGER.log(Level.WARNING, null, x);
+            if (USE_WATCHING) {
+                try {
+                    controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
+                    watching = true;
+                } catch (UnsupportedOperationException x) {
+                    LOGGER.log(Level.WARNING, null, x);
+                }
             }
             setupTimer(watching ? WATCHING_RECURRENCE_PERIOD : MIN_RECURRENCE_PERIOD);
             return false;
