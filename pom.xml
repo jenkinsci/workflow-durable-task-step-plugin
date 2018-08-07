@@ -67,7 +67,7 @@
         <jenkins.version>2.73.3</jenkins.version>
         <java.level>8</java.level>
         <workflow-step-api-plugin.version>2.13</workflow-step-api-plugin.version>
-        <workflow-support-plugin.version>2.20-rc569.8b4964ac1954</workflow-support-plugin.version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/56 -->
+        <workflow-support-plugin.version>2.20</workflow-support-plugin.version>
     </properties>
     <dependencies>
         <dependency>
@@ -78,7 +78,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
-            <version>1.24-rc319.e1ef73b3ab09</version> <!-- TODO pending release -->
+            <version>1.24</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
