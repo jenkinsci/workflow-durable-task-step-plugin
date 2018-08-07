@@ -65,6 +65,7 @@ import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -141,6 +142,10 @@ public abstract class DurableTaskStep extends Step {
         void exited(int code, byte[] output) throws Exception;
     }
 
+    // TODO this and the other constants could be made customizable via system property
+    @Restricted(NoExternalUse.class) // public only for tests
+    public static long WATCHING_RECURRENCE_PERIOD = /* 5m */300_000;
+
     /**
      * Represents one task that is believed to still be running.
      */
@@ -150,7 +155,6 @@ public abstract class DurableTaskStep extends Step {
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
-        private static final long WATCHING_RECURRENCE_PERIOD = Main.isUnitTest ? /* 5s */5_000: /* 5m */300_000;
 
         private static final ScheduledThreadPoolExecutor THREAD_POOL = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
         static {
