@@ -143,7 +143,8 @@ public abstract class DurableTaskStep extends Step {
     }
 
     // TODO this and the other constants could be made customizable via system property
-    @Restricted(NoExternalUse.class) // public only for tests
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable only for tests")
+    @Restricted(NoExternalUse.class)
     public static long WATCHING_RECURRENCE_PERIOD = /* 5m */300_000;
 
     /** If set to false, disables {@link Execution#watching} mode. */
