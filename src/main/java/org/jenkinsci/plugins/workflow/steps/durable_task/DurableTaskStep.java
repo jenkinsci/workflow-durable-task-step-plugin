@@ -65,6 +65,7 @@ import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -141,6 +142,15 @@ public abstract class DurableTaskStep extends Step {
         void exited(int code, byte[] output) throws Exception;
     }
 
+    // TODO this and the other constants could be made customizable via system property
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable only for tests")
+    @Restricted(NoExternalUse.class)
+    public static long WATCHING_RECURRENCE_PERIOD = /* 5m */300_000;
+
+    /** If set to false, disables {@link Execution#watching} mode. */
+    @SuppressWarnings("FieldMayBeFinal")
+    private static boolean USE_WATCHING = !"false".equals(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING"));
+
     /**
      * Represents one task that is believed to still be running.
      */
@@ -150,7 +160,6 @@ public abstract class DurableTaskStep extends Step {
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
-        private static final long WATCHING_RECURRENCE_PERIOD = Main.isUnitTest ? /* 5s */5_000: /* 5m */300_000;
 
         private static final ScheduledThreadPoolExecutor THREAD_POOL = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
         static {
@@ -168,7 +177,9 @@ public abstract class DurableTaskStep extends Step {
         private String remote;
         private boolean returnStdout; // serialized default is false
         private boolean returnStatus; // serialized default is false
-        private boolean watching;
+        private boolean watching; // serialized default is false
+        /** Only used when {@link #watching}, if after {@link #WATCHING_RECURRENCE_PERIOD} comes around twice {@link #exited} has yet to be called. */
+        private transient boolean awaitingAsynchExit;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -193,11 +204,13 @@ public abstract class DurableTaskStep extends Step {
             }
             controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), listener);
             this.remote = ws.getRemote();
-            try {
-                controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
-                watching = true;
-            } catch (UnsupportedOperationException x) {
-                LOGGER.log(Level.WARNING, null, x);
+            if (USE_WATCHING) {
+                try {
+                    controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
+                    watching = true;
+                } catch (UnsupportedOperationException x) {
+                    LOGGER.log(Level.WARNING, null, x);
+                }
             }
             setupTimer(watching ? WATCHING_RECURRENCE_PERIOD : MIN_RECURRENCE_PERIOD);
             return false;
@@ -367,9 +380,12 @@ public abstract class DurableTaskStep extends Step {
                     Integer exitCode = controller.exitStatus(workspace, launcher());
                     if (exitCode == null) {
                         LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
+                    } else if (awaitingAsynchExit) {
+                        recurrencePeriod = 0;
+                        getContext().onFailure(new AbortException("script apparently exited with code " + exitCode + " but asynchronous notification was lost"));
                     } else {
                         LOGGER.log(Level.FINE, "exited with {0} in {1} on {2}; expect asynchronous exit soon", new Object[] {exitCode, remote, node});
-                        // TODO if we get here again and exited has still not been called, assume we lost the notification somehow and end the step
+                        awaitingAsynchExit = true;
                     }
                 } else { // legacy mode
                         if (controller.writeLog(workspace, listener.getLogger())) {

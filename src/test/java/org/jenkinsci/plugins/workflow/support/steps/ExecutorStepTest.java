@@ -217,7 +217,7 @@ public class ExecutorStepTest {
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
         if (jnlpProc != null) {
-            jnlpProc.destroy();
+            jnlpProc.destroyForcibly();
             jnlpProc = null;
         }
     }
@@ -276,6 +276,9 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
+                long origWatchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
+                DurableTaskStep.WATCHING_RECURRENCE_PERIOD = /* 5s */5_000;
+                try {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
@@ -313,6 +316,9 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
+                } finally {
+                    DurableTaskStep.WATCHING_RECURRENCE_PERIOD = origWatchingRecurrencePeriod;
+                }
             }
         });
     }
