@@ -178,6 +178,8 @@ public abstract class DurableTaskStep extends Step {
         private boolean returnStdout; // serialized default is false
         private boolean returnStatus; // serialized default is false
         private boolean watching; // serialized default is false
+        /** Only used when {@link #watching}, if after {@link #WATCHING_RECURRENCE_PERIOD} comes around twice {@link #exited} has yet to be called. */
+        private transient boolean awaitingAsynchExit;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -378,9 +380,12 @@ public abstract class DurableTaskStep extends Step {
                     Integer exitCode = controller.exitStatus(workspace, launcher());
                     if (exitCode == null) {
                         LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
+                    } else if (awaitingAsynchExit) {
+                        recurrencePeriod = 0;
+                        getContext().onFailure(new AbortException("script apparently exited with code " + exitCode + " but asynchronous notification was lost"));
                     } else {
                         LOGGER.log(Level.FINE, "exited with {0} in {1} on {2}; expect asynchronous exit soon", new Object[] {exitCode, remote, node});
-                        // TODO if we get here again and exited has still not been called, assume we lost the notification somehow and end the step
+                        awaitingAsynchExit = true;
                     }
                 } else { // legacy mode
                         if (controller.writeLog(workspace, listener.getLogger())) {
