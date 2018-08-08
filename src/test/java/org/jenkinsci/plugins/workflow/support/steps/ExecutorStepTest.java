@@ -217,7 +217,7 @@ public class ExecutorStepTest {
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
         if (jnlpProc != null) {
-            jnlpProc.destroy();
+            jnlpProc.destroyForcibly();
             jnlpProc = null;
         }
     }
