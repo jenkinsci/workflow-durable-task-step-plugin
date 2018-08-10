@@ -48,6 +48,7 @@ import hudson.slaves.JNLPLauncher;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
+import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -206,13 +207,10 @@ public class ExecutorStepTest {
     private void startJnlpProc() throws Exception {
         killJnlpProc();
         ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", story.j.getURL() + "computer/dumbo/slave-agent.jnlp");
-        try {
-            ProcessBuilder.class.getMethod("inheritIO").invoke(pb);
-        } catch (NoSuchMethodException x) {
-            // prior to Java 7
-        }
+        pb.redirectErrorStream(true);
         System.err.println("Running: " + pb.command());
         jnlpProc = pb.start();
+        new StreamCopyThread("jnlp", jnlpProc.getInputStream(), System.err).start();
     }
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
