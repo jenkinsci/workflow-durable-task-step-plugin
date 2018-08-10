@@ -287,8 +287,7 @@ public class ExecutorStepTest {
             p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("\n<<<" + (count / 3) + ">>>\n", b);
-            // TODO if we instead s.toComputer().disconnect(null) then we lose a bit:
-            killJnlpProc();
+            s.toComputer().disconnect(null);
         });
         story.then(r -> {
             WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
@@ -305,7 +304,7 @@ public class ExecutorStepTest {
             while (m.find()) {
                 seen++;
             }
-            System.out.println("Duplicated content: " + ((seen - count) * 100 / count) + "%");
+            System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
             killJnlpProc();
         });
     }
