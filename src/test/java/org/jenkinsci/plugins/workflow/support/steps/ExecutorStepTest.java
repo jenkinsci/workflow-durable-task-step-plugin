@@ -64,16 +64,21 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.logging.Level;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
-import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.hamcrest.Matchers;
+import static org.hamcrest.Matchers.*;
 import org.jboss.marshalling.ObjectResolver;
+import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
+import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -81,6 +86,7 @@ import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
+import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
@@ -97,13 +103,11 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
-import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
-
-import javax.annotation.Nullable;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -268,6 +272,42 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
             }
+        });
+    }
+
+    @Issue("JENKINS-52165")
+    @Test public void shellOutputAcrossRestart() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+        // for comparison: DurableTaskStep.USE_WATCHING = false;
+        int count = 3_000;
+        story.then(r -> {
+            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+            r.jenkins.addNode(s);
+            startJnlpProc();
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("\n<<<" + (count / 3) + ">>>\n", b);
+            killJnlpProc();
+        });
+        story.then(r -> {
+            WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+            startJnlpProc();
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
+            FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
+            String log = IOUtils.toString(shNode.getAction(LogAction.class).getLogText().readAll());
+            for (int i = 0; i < count; i++) {
+                assertThat(log, containsString("\n<<<" + i + ">>>\n"));
+            }
+            Matcher m = Pattern.compile("<<<\\d+>>>").matcher(log);
+            int seen = 0;
+            while (m.find()) {
+                seen++;
+            }
+            System.out.println("Duplicated content: " + ((seen - count) * 100 / count) + "%");
+            killJnlpProc();
         });
     }
 
