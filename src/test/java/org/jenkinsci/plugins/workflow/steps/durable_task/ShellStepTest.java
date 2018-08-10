@@ -290,7 +290,7 @@ public class ShellStepTest {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
             final LogStorage base;
             try {
-                base = StreamLogStorage.forFile(new File(b.getRootDir(), "special.log"), b);
+                base = StreamLogStorage.forFile(new File(b.getRootDir(), "special.log"));
             } catch (IOException x) {
                 return new BrokenLogStorage(x);
             }
