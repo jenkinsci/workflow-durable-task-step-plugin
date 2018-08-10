@@ -33,6 +33,7 @@ import hudson.Functions;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.model.TaskListener;
+import hudson.remoting.ChannelClosedException;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
@@ -143,6 +144,7 @@ public abstract class DurableTaskStep extends Step {
 
     interface ExecutionRemotable {
         void exited(int code, byte[] output) throws Exception;
+        void problem(Exception x);
     }
 
     // TODO this and the other constants could be made customizable via system property
@@ -461,6 +463,12 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
+        // ditto
+        @Override public void problem(Exception x) {
+            Functions.printStackTrace(x, listener().getLogger());
+            // note that if there is _also_ a problem in the master-side logger, PrintStream will mask it
+        }
+
         @Override public void onResume() {
             ws = null; // find it from scratch please
             setupTimer(MIN_RECURRENCE_PERIOD);
@@ -510,7 +518,21 @@ public abstract class DurableTaskStep extends Step {
                 // A subclass. Who knows why, but trust any write(…) overrides it may have.
                 os = ps;
             }
-            IOUtils.copy(stream, os);
+            try {
+                IOUtils.copy(stream, os);
+            } catch (ChannelClosedException x) {
+                // We are giving up on this watch. Wait for some call to getWorkspace to rewatch.
+                throw x;
+            } catch (Exception x) {
+                // Try to report it to the master.
+                try {
+                    execution.problem(x);
+                    // OK, printed to log on master side, we may have lost some text but could continue.
+                } catch (Exception x2) { // e.g., RemotingSystemException
+                    // No, channel seems to be broken, give up on this watch.
+                    throw x;
+                }
+            }
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
