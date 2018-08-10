@@ -172,6 +172,10 @@ public abstract class DurableTaskStep extends Step {
 
         private transient final DurableTaskStep step;
         private transient FilePath ws;
+        /**
+         * How many ms we plan to sleep before running {@link #check} again.
+         * Zero is used as a signal to break out of the loop.
+         */
         private transient long recurrencePeriod;
         private transient volatile ScheduledFuture<?> task, stopTask;
         private transient boolean printedCannotContactMessage;
@@ -212,7 +216,8 @@ public abstract class DurableTaskStep extends Step {
                     controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
                     watching = true;
                 } catch (UnsupportedOperationException x) {
-                    LOGGER.log(Level.WARNING, null, x);
+                    LOGGER.log(Level.WARNING, /* default exception message suffices */null, x);
+                    // and we fall back to polling mode
                 }
             }
             setupTimer(watching ? WATCHING_RECURRENCE_PERIOD : MIN_RECURRENCE_PERIOD);
@@ -231,6 +236,7 @@ public abstract class DurableTaskStep extends Step {
                         controller.watch(ws, new HandlerImpl(this, ws, listener()), listener());
                         recurrencePeriod = WATCHING_RECURRENCE_PERIOD;
                     } catch (UnsupportedOperationException x) {
+                        // Should not happen, since it worked in start() and a given Controller should not have *dropped* support.
                         getContext().onFailure(x);
                     } catch (Exception x) {
                         getWorkspaceProblem(x);
@@ -431,6 +437,8 @@ public abstract class DurableTaskStep extends Step {
             try {
                 getContext().get(TaskListener.class);
             } catch (IOException | InterruptedException x) {
+                // E.g., CpsStepContext.doGet complaining that getThreadSynchronously() == null.
+                // If we cannot even print messages, there is no point proceeding.
                 LOGGER.log(Level.FINE, "asynchronous exit notification with code " + exitCode + " in " + remote + " on " + node + " ignored since step already seems dead", x);
                 return;
             }
@@ -454,8 +462,10 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void onResume() {
-            ws = null; // find it from scratch please, rewatching as needed
+            ws = null; // find it from scratch please
             setupTimer(MIN_RECURRENCE_PERIOD);
+            // In watch mode, we will quickly enter the check.
+            // Then in getWorkspace when ws == null we will start a watch and go back to sleep.
         }
 
         private void setupTimer(long initialRecurrencePeriod) {
