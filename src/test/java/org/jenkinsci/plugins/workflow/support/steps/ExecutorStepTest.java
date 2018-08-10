@@ -287,6 +287,7 @@ public class ExecutorStepTest {
             p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("\n<<<" + (count / 3) + ">>>\n", b);
+            // TODO if we instead s.toComputer().disconnect(null) then we lose a bit:
             killJnlpProc();
         });
         story.then(r -> {
