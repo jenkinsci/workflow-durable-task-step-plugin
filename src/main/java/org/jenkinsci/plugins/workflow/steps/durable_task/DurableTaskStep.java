@@ -31,15 +31,18 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
-import hudson.Main;
 import hudson.Util;
 import hudson.model.TaskListener;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import hudson.util.NamingThreadFactory;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -466,6 +469,17 @@ public abstract class DurableTaskStep extends Step {
 
     private static class HandlerImpl extends Handler {
 
+        private static final Field printStreamDelegate;
+        static {
+            try {
+                printStreamDelegate = FilterOutputStream.class.getDeclaredField("out");
+            } catch (NoSuchFieldException x) {
+                // Defined in Java Platform and protected, so should not happen.
+                throw new ExceptionInInitializerError(x);
+            }
+            printStreamDelegate.setAccessible(true);
+        }
+
         private static final long serialVersionUID = 1L;
 
         private final ExecutionRemotable execution;
@@ -477,7 +491,16 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void output(InputStream stream) throws Exception {
-            IOUtils.copy(stream, listener.getLogger());
+            PrintStream ps = listener.getLogger();
+            OutputStream os;
+            if (ps.getClass() == PrintStream.class) {
+                // Try to extract the underlying stream, since swallowing exceptions is undesirable and PrintStream.checkError is useless.
+                os = (OutputStream) printStreamDelegate.get(ps);
+            } else {
+                // A subclass. Who knows why, but trust any write(…) overrides it may have.
+                os = ps;
+            }
+            IOUtils.copy(stream, os);
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
