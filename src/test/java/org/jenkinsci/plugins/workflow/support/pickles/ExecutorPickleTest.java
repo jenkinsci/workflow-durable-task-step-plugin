@@ -34,17 +34,12 @@ import hudson.model.Result;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.model.User;
-import hudson.remoting.Launcher;
-import hudson.remoting.Which;
 import hudson.slaves.ComputerListener;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EphemeralNode;
-import hudson.slaves.JNLPLauncher;
-import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import jenkins.model.Jenkins;
-import org.apache.tools.ant.util.JavaEnvUtils;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -52,7 +47,6 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.*;
 
-import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.ClassRule;
@@ -76,27 +70,6 @@ public class ExecutorPickleTest {
     @Rule public RestartableJenkinsRule r = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     //@Rule public LoggerRule logging = new LoggerRule().record(Queue.class, Level.FINE);
-
-    private static Process jnlpProc;
-    private void startJnlpProc() throws Exception {
-        killJnlpProc();
-        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", r.j.getURL() + "computer/ghostly/slave-agent.jnlp");
-        try {
-            ProcessBuilder.class.getMethod("inheritIO").invoke(pb);
-        } catch (NoSuchMethodException x) {
-            // prior to Java 7
-        }
-        System.err.println("Running: " + pb.command());
-        jnlpProc = pb.start();
-    }
-
-    @AfterClass
-    public static void killJnlpProc() {
-        if (jnlpProc != null) {
-            jnlpProc.destroy();
-            jnlpProc = null;
-        }
-    }
 
     @Test public void canceledQueueItem() throws Exception {
         r.addStep(new Statement() {
@@ -215,14 +188,10 @@ public class ExecutorPickleTest {
                 WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("node('ghost') {semaphore 'wait'}", true));
 
-                DumbSlave s = new DumbSlave("ghostly", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "ghost", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
-                r.j.jenkins.addNode(s);
-                startJnlpProc();
-                r.j.jenkins.save();
+                DumbSlave s = r.j.createSlave(Label.get("ghost"));
                 System.out.println("Agent launched, waiting for semaphore");
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
                 ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
-                killJnlpProc();
                 r.j.jenkins.removeNode(s);
             }
         });

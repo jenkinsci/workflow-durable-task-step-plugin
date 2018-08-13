@@ -31,15 +31,22 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
-import hudson.Main;
 import hudson.Util;
+import hudson.model.Node;
 import hudson.model.TaskListener;
+import hudson.remoting.Channel;
+import hudson.remoting.ChannelClosedException;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import hudson.util.NamingThreadFactory;
+import hudson.util.StreamTaskListener;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -70,7 +77,14 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
 /**
- * Runs an durable task on a slave, such as a shell script.
+ * Runs a durable task, such as a shell script, typically on an agent.
+ * <p>“Durable” in this context means that Jenkins makes an attempt to keep the external process running
+ * even if either the Jenkins master or an agent JVM is restarted.
+ * Process standard output is directed to a file near the workspace, rather than holding a file handle open.
+ * Whenever a Remoting connection between the two can be reëstablished,
+ * Jenkins again looks for any output sent since the last time it checked.
+ * When the process exits, the status code is also written to a file and ultimately results in the step passing or failing.
+ * <p>Tasks can also be run on the master node, which differs only in that there is no possibility of a network failure.
  */
 public abstract class DurableTaskStep extends Step {
 
@@ -138,8 +152,14 @@ public abstract class DurableTaskStep extends Step {
 
     }
 
+    /**
+     * Something we will {@link Channel#export} to {@link HandlerImpl}.
+     */
     interface ExecutionRemotable {
+        /** @see Handler#exited */
         void exited(int code, byte[] output) throws Exception;
+        /** A potentially recoverable problem was encountered in the watch task. */
+        void problem(Exception x);
     }
 
     // TODO this and the other constants could be made customizable via system property
@@ -153,6 +173,29 @@ public abstract class DurableTaskStep extends Step {
 
     /**
      * Represents one task that is believed to still be running.
+     * <p>This step has two modes, based on pulling or pushing log content from an agent.
+     * In the default (push) mode, {@link Controller#watch} is used to ask the agent to begin streaming log content.
+     * As new output is detected at regular intervals, it is streamed to the {@link TaskListener},
+     * which in the default {@link StreamTaskListener} implementation sends chunks of text over Remoting.
+     * When the process exits, {@link #exited} is called and the step execution also ends.
+     * If Jenkins is restarted in the middle, {@link #onResume} starts a new watch task.
+     * Every {@link #WATCHING_RECURRENCE_PERIOD}, the master also checks to make sure the process still seems to be running using {@link Controller#exitStatus}.
+     * If the agent connection is closed, {@link #ws} will be stale
+     * ({@link FilePath#channel} will be {@link Channel#isClosingOrClosed})
+     * and so {@link #getWorkspace} called from {@link #check} will call {@link #getWorkspaceProblem}
+     * and we will attempt to get a fresh {@link #ws} as soon as possible, with a new watch.
+     * (The persisted {@link #node} and {@link #remote} identify the workspace.)
+     * If the process does not seem to be running after two consecutive checks,
+     * yet no explicit process completion signal was sent,
+     * {@link #awaitingAsynchExit} will make the step assume that the watch task is broken and the step should fail.
+     * If sending output fails for any reason other than {@link ChannelClosedException},
+     * {@link #problem} will attempt to record the issue but permit the step to proceed.
+     * <p>In the older pull mode, available on request by {@link #USE_WATCHING} or when encountering a noncompliant {@link Controller} implementation,
+     * the master looks for process output ({@link Controller#writeLog}) and/or exit status in {@link #check} at variable intervals,
+     * initially {@link #MIN_RECURRENCE_PERIOD} but slowing down by {@link #RECURRENCE_PERIOD_BACKOFF} up to {@link #MAX_RECURRENCE_PERIOD}.
+     * Any new output will be noted in a change to the state of {@link #controller}, which gets saved to the step state in turn.
+     * If there is any connection problem to the workspace (including master restarts and Remoting disconnects),
+     * {@link #ws} is nulled out and Jenkins waits until a fresh handle is available.
      */
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
     static final class Execution extends AbstractStepExecutionImpl implements Runnable, ExecutionRemotable {
@@ -167,16 +210,32 @@ public abstract class DurableTaskStep extends Step {
             THREAD_POOL.allowCoreThreadTimeOut(true);
         }
 
+        /** Used only during {@link #start}. */
         private transient final DurableTaskStep step;
+        /** Current “live” connection to the workspace, or null if we might be offline at the moment. */
         private transient FilePath ws;
+        /**
+         * How many ms we plan to sleep before running {@link #check} again.
+         * Zero is used as a signal to break out of the loop.
+         */
         private transient long recurrencePeriod;
-        private transient volatile ScheduledFuture<?> task, stopTask;
+        /** A handle for the fact that we plan to run {@link #check}. */
+        private transient volatile ScheduledFuture<?> task;
+        /** Defined only after {@link #stop} has been called. */
+        private transient volatile ScheduledFuture<?> stopTask;
+        /** Set if we have already notified the build log of a connectivity problem, which is done at most once per session. */
         private transient boolean printedCannotContactMessage;
+        /** Serialized state of the controller. */
         private Controller controller;
+        /** {@link Node#getNodeName} of {@link #ws}. */
         private String node;
+        /** {@link FilePath#getRemote} of {@link #ws}. */
         private String remote;
+        /** Whether the entire stdout of the process is to become the return value of the step. */
         private boolean returnStdout; // serialized default is false
+        /** Whether the exit code of the process is to become the return value of the step. */
         private boolean returnStatus; // serialized default is false
+        /** Whether we are using the newer push mode. */
         private boolean watching; // serialized default is false
         /** Only used when {@link #watching}, if after {@link #WATCHING_RECURRENCE_PERIOD} comes around twice {@link #exited} has yet to be called. */
         private transient boolean awaitingAsynchExit;
@@ -209,7 +268,8 @@ public abstract class DurableTaskStep extends Step {
                     controller.watch(ws, new HandlerImpl(this, ws, listener), listener);
                     watching = true;
                 } catch (UnsupportedOperationException x) {
-                    LOGGER.log(Level.WARNING, null, x);
+                    LOGGER.log(Level.WARNING, /* default exception message suffices */null, x);
+                    // and we fall back to polling mode
                 }
             }
             setupTimer(watching ? WATCHING_RECURRENCE_PERIOD : MIN_RECURRENCE_PERIOD);
@@ -228,6 +288,7 @@ public abstract class DurableTaskStep extends Step {
                         controller.watch(ws, new HandlerImpl(this, ws, listener()), listener());
                         recurrencePeriod = WATCHING_RECURRENCE_PERIOD;
                     } catch (UnsupportedOperationException x) {
+                        // Should not happen, since it worked in start() and a given Controller should not have *dropped* support.
                         getContext().onFailure(x);
                     } catch (Exception x) {
                         getWorkspaceProblem(x);
@@ -377,7 +438,7 @@ public abstract class DurableTaskStep extends Step {
             TaskListener listener = listener();
             try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
                 if (watching) {
-                    Integer exitCode = controller.exitStatus(workspace, launcher());
+                    Integer exitCode = controller.exitStatus(workspace, launcher(), listener);
                     if (exitCode == null) {
                         LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
                     } else if (awaitingAsynchExit) {
@@ -428,6 +489,8 @@ public abstract class DurableTaskStep extends Step {
             try {
                 getContext().get(TaskListener.class);
             } catch (IOException | InterruptedException x) {
+                // E.g., CpsStepContext.doGet complaining that getThreadSynchronously() == null.
+                // If we cannot even print messages, there is no point proceeding.
                 LOGGER.log(Level.FINE, "asynchronous exit notification with code " + exitCode + " in " + remote + " on " + node + " ignored since step already seems dead", x);
                 return;
             }
@@ -450,9 +513,17 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
+        // ditto
+        @Override public void problem(Exception x) {
+            Functions.printStackTrace(x, listener().getLogger());
+            // note that if there is _also_ a problem in the master-side logger, PrintStream will mask it
+        }
+
         @Override public void onResume() {
-            ws = null; // find it from scratch please, rewatching as needed
+            ws = null; // find it from scratch please
             setupTimer(MIN_RECURRENCE_PERIOD);
+            // In watch mode, we will quickly enter the check.
+            // Then in getWorkspace when ws == null we will start a watch and go back to sleep.
         }
 
         private void setupTimer(long initialRecurrencePeriod) {
@@ -466,6 +537,17 @@ public abstract class DurableTaskStep extends Step {
 
     private static class HandlerImpl extends Handler {
 
+        private static final Field printStreamDelegate;
+        static {
+            try {
+                printStreamDelegate = FilterOutputStream.class.getDeclaredField("out");
+            } catch (NoSuchFieldException x) {
+                // Defined in Java Platform and protected, so should not happen.
+                throw new ExceptionInInitializerError(x);
+            }
+            printStreamDelegate.setAccessible(true);
+        }
+
         private static final long serialVersionUID = 1L;
 
         private final ExecutionRemotable execution;
@@ -477,7 +559,30 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void output(InputStream stream) throws Exception {
-            IOUtils.copy(stream, listener.getLogger());
+            PrintStream ps = listener.getLogger();
+            OutputStream os;
+            if (ps.getClass() == PrintStream.class) {
+                // Try to extract the underlying stream, since swallowing exceptions is undesirable and PrintStream.checkError is useless.
+                os = (OutputStream) printStreamDelegate.get(ps);
+            } else {
+                // A subclass. Who knows why, but trust any write(…) overrides it may have.
+                os = ps;
+            }
+            try {
+                IOUtils.copy(stream, os);
+            } catch (ChannelClosedException x) {
+                // We are giving up on this watch. Wait for some call to getWorkspace to rewatch.
+                throw x;
+            } catch (Exception x) {
+                // Try to report it to the master.
+                try {
+                    execution.problem(x);
+                    // OK, printed to log on master side, we may have lost some text but could continue.
+                } catch (Exception x2) { // e.g., RemotingSystemException
+                    // No, channel seems to be broken, give up on this watch.
+                    throw x;
+                }
+            }
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
