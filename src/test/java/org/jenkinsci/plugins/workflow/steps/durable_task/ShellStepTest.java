@@ -30,7 +30,6 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -44,9 +43,9 @@ import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
+import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
-import org.jenkinsci.plugins.workflow.log.StreamLogStorage;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
@@ -290,7 +289,7 @@ public class ShellStepTest {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
             final LogStorage base;
             try {
-                base = StreamLogStorage.forFile(new File(b.getRootDir(), "special.log"));
+                base = FileLogStorage.forFile(new File(b.getRootDir(), "special.log"));
             } catch (IOException x) {
                 return new BrokenLogStorage(x);
             }
