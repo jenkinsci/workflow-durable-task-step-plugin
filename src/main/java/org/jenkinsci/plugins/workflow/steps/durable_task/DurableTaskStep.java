@@ -563,9 +563,8 @@ public abstract class DurableTaskStep extends Step {
             try {
                 if (ps.getClass() == PrintStream.class) {
                     // Try to extract the underlying stream, since swallowing exceptions is undesirable and PrintStream.checkError is useless.
-                    OutputStream os = (OutputStream) printStreamDelegate.get(ps);
-                    synchronized (os) { // like PrintStream.write overloads do
-                        IOUtils.copy(stream, os);
+                    synchronized (ps) { // like PrintStream.write overloads do
+                        IOUtils.copy(stream, (OutputStream) printStreamDelegate.get(ps));
                     }
                 } else {
                     // A subclass. Who knows why, but trust any write(…) overrides it may have.
