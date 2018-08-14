@@ -560,16 +560,17 @@ public abstract class DurableTaskStep extends Step {
 
         @Override public void output(InputStream stream) throws Exception {
             PrintStream ps = listener.getLogger();
-            OutputStream os;
-            if (ps.getClass() == PrintStream.class) {
-                // Try to extract the underlying stream, since swallowing exceptions is undesirable and PrintStream.checkError is useless.
-                os = (OutputStream) printStreamDelegate.get(ps);
-            } else {
-                // A subclass. Who knows why, but trust any write(…) overrides it may have.
-                os = ps;
-            }
             try {
-                IOUtils.copy(stream, os);
+                if (ps.getClass() == PrintStream.class) {
+                    // Try to extract the underlying stream, since swallowing exceptions is undesirable and PrintStream.checkError is useless.
+                    OutputStream os = (OutputStream) printStreamDelegate.get(ps);
+                    synchronized (os) { // like PrintStream.write overloads do
+                        IOUtils.copy(stream, os);
+                    }
+                } else {
+                    // A subclass. Who knows why, but trust any write(…) overrides it may have.
+                    IOUtils.copy(stream, ps);
+                }
             } catch (ChannelClosedException x) {
                 // We are giving up on this watch. Wait for some call to getWorkspace to rewatch.
                 throw x;
