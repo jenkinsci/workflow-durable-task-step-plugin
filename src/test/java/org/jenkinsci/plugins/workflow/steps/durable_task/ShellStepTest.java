@@ -31,6 +31,7 @@ import java.io.PrintStream;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -280,10 +281,11 @@ public class ShellStepTest {
             "}", true));
         WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
         j.assertLogContains("+ pwd [master]", b);
-        j.assertLogContains("+ pwd [master → remote]", b);
-        j.assertLogContains("on agent [master → remote]", b);
+        j.assertLogContains("+ PWD [master → remote]", b);
+        j.assertLogContains("ON AGENT [master → remote]", b);
         j.assertLogNotContains(password, b);
-        j.assertLogContains("curl -u **** http://server/ [master → remote]", b);
+        j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
+        j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
     }
     @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
@@ -328,7 +330,9 @@ public class ShellStepTest {
                 final OutputStream os = delegate.getLogger();
                 logger = new PrintStream(new LineTransformationOutputStream() {
                     @Override protected void eol(byte[] b, int len) throws IOException {
-                        os.write(b, 0, len - 1); // all but NL
+                        for (int i = 0; i < len - 1; i++) { // all but NL
+                            os.write(id.equals("master") ? b[i] : Character.toUpperCase(b[i]));
+                        }
                         os.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
                         os.write(b[len - 1]); // NL
                     }
