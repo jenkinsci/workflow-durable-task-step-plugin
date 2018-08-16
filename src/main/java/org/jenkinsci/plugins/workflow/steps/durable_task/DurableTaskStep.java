@@ -30,6 +30,7 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.Util;
 import hudson.model.TaskListener;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
@@ -37,6 +38,7 @@ import hudson.util.LogTaskListener;
 import hudson.util.NamingThreadFactory;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -56,6 +58,8 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -67,7 +71,7 @@ public abstract class DurableTaskStep extends Step {
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
     private boolean returnStdout;
-    private String encoding = DurableTaskStepDescriptor.defaultEncoding;
+    private String encoding;
     private boolean returnStatus;
 
     protected abstract DurableTask task();
@@ -85,7 +89,7 @@ public abstract class DurableTaskStep extends Step {
     }
 
     @DataBoundSetter public void setEncoding(String encoding) {
-        this.encoding = encoding;
+        this.encoding = Util.fixEmpty(encoding);
     }
 
     public boolean isReturnStatus() {
@@ -102,16 +106,15 @@ public abstract class DurableTaskStep extends Step {
 
     public abstract static class DurableTaskStepDescriptor extends StepDescriptor {
 
-        public static final String defaultEncoding = "UTF-8";
-
+        @Restricted(DoNotUse.class)
         public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
+            if (encoding.isEmpty()) {
+                return FormValidation.ok();
+            }
             try {
                 Charset.forName(encoding);
             } catch (Exception x) {
                 return FormValidation.error(x, "Unrecognized encoding");
-            }
-            if (!returnStdout && !encoding.equals(DurableTaskStepDescriptor.defaultEncoding)) {
-                return FormValidation.warning("encoding is ignored unless returnStdout is checked.");
             }
             return FormValidation.ok();
         }
@@ -154,7 +157,6 @@ public abstract class DurableTaskStep extends Step {
         private String node;
         private String remote;
         private boolean returnStdout; // serialized default is false
-        private String encoding; // serialized default is irrelevant
         private boolean returnStatus; // serialized default is false
 
         Execution(StepContext context, DurableTaskStep step) {
@@ -164,7 +166,6 @@ public abstract class DurableTaskStep extends Step {
 
         @Override public boolean start() throws Exception {
             returnStdout = step.returnStdout;
-            encoding = step.encoding;
             returnStatus = step.returnStatus;
             StepContext context = getContext();
             ws = context.get(FilePath.class);
@@ -172,6 +173,11 @@ public abstract class DurableTaskStep extends Step {
             DurableTask durableTask = step.task();
             if (returnStdout) {
                 durableTask.captureOutput();
+            }
+            if (step.encoding != null) {
+                durableTask.charset(Charset.forName(step.encoding));
+            } else {
+                durableTask.defaultCharset();
             }
             controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), context.get(TaskListener.class));
             this.remote = ws.getRemote();
@@ -327,7 +333,7 @@ public abstract class DurableTaskStep extends Step {
                                 LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                             }
                             if (returnStatus || exitCode == 0) {
-                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), encoding) : null);
+                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), StandardCharsets.UTF_8) : null);
                             } else {
                                 if (returnStdout) {
                                     listener.getLogger().write(controller.getOutput(workspace, launcher())); // diagnostic
