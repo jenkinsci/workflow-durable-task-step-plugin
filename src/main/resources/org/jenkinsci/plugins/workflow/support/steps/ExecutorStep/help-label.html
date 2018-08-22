@@ -33,7 +33,7 @@
       "implies" operator — equivalent to <tt>!a || b</tt>.<br>
       For example, <tt>windows -> x64</tt> could be thought of as "if a Windows
       agent is used, then that agent <i>must</i> be 64-bit", while still
-      allowing this project to be executed on any agents that <i>do not</i> have
+      allowing this block to be executed on any agents that <i>do not</i> have
       the <tt>windows</tt> label, regardless of whether they have also have an
       <tt>x64</tt> label
     </dd>
@@ -78,25 +78,25 @@
   <h3>Examples</h3>
   <dl>
     <dt><tt>master</tt></dt>
-    <dd>Builds of this project may be executed only on the Jenkins master<dd>
+    <dd>Builds of this block may be executed only on the Jenkins master<dd>
 
     <dt><tt>linux-machine-42</tt></dt>
     <dd>
-      Builds of this project may be executed only on the agent with the name
+      Builds of this block may be executed only on the agent with the name
       <tt>linux-machine-42</tt> (or on any machine that happens to have a label
       called <tt>linux-machine-42</tt>)
     </dd>
 
     <dt><tt>windows &amp;&amp; jdk9</tt></dt>
     <dd>
-      Builds of this project may be executed only on any Windows agent that has
+      Builds of this block may be executed only on any Windows agent that has
       version 9 of the Java Development Kit installed (assuming that agents
       with JDK 9 installed have been given a <tt>jdk9</tt> label)
     </dd>
 
     <dt><tt>postgres &amp;&amp; !vm &amp;&amp; (linux || freebsd)</tt></dt>
     <dd>
-      Builds of this project may be executed only any on Linux or FreeBSD agent,
+      Builds of this block may be executed only any on Linux or FreeBSD agent,
       so long as they are <i>not</i> a virtual machine, and they have PostgreSQL
       installed (assuming that each agent has the appropriate labels — in
       particular, each agent running in a virtual machine must have the
