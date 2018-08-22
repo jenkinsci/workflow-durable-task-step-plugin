@@ -49,6 +49,7 @@ import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import hudson.slaves.WorkspaceList;
+import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -75,7 +76,7 @@ import jenkins.security.QueueItemAuthenticatorConfiguration;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
-import org.hamcrest.Matchers;
+import static org.hamcrest.Matchers.*;
 import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
@@ -107,6 +108,7 @@ import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
 
 import javax.annotation.Nullable;
+import org.jvnet.hudson.test.LoggerRule;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -114,9 +116,7 @@ public class ExecutorStepTest {
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
-    /* Currently too noisy due to unrelated warnings; might clear up if test dependencies updated:
-    @Rule public LoggerRule logging = new LoggerRule().record(ExecutorStepExecution.class, Level.FINE);
-    */
+    @Rule public LoggerRule logging = new LoggerRule();
 
     /**
      * Executes a shell script build on a slave.
@@ -208,13 +208,10 @@ public class ExecutorStepTest {
     private void startJnlpProc() throws Exception {
         killJnlpProc();
         ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", story.j.getURL() + "computer/dumbo/slave-agent.jnlp");
-        try {
-            ProcessBuilder.class.getMethod("inheritIO").invoke(pb);
-        } catch (NoSuchMethodException x) {
-            // prior to Java 7
-        }
+        pb.redirectErrorStream(true);
         System.err.println("Running: " + pb.command());
         jnlpProc = pb.start();
+        new StreamCopyThread("jnlp", jnlpProc.getInputStream(), System.err).start();
     }
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
@@ -722,7 +719,7 @@ public class ExecutorStepTest {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getBuildByNumber(1);
-                assertThat(patchedFiles, Matchers.containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
+                assertThat(patchedFiles, containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
                 /* TODO this seems to randomly not include the expected items:
                 assertThat(patchedFields, Matchers.containsInAnyOrder(
                     // But not FileMonitoringController.controlDir, since this old version is still using location-independent .id.
@@ -817,6 +814,7 @@ public class ExecutorStepTest {
     @Issue("SECURITY-675")
     @Test public void authentication() {
         story.then(r -> {
+            logging.record(ExecutorStepExecution.class, Level.FINE);
             Slave s = r.createSlave("remote", null, null);
             r.waitOnline(s);
             r.jenkins.setNumExecutors(0);
@@ -835,6 +833,7 @@ public class ExecutorStepTest {
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
             p.setDefinition(new CpsFlowDefinition("timeout(time: 5, unit: 'SECONDS') {node {error 'should not be allowed'}}", true));
             r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
+            assertThat(Queue.getInstance().getItems(), emptyArray());
             // What about when there is a fallback authenticator?
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new FallbackAuthenticator());
             r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
