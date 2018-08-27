@@ -634,7 +634,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Occupies {@link Executor} while workflow uses this slave.
          */
         @ExportedBean
-        public final class PlaceholderExecutable implements ContinuableExecutable {
+        private final class PlaceholderExecutable implements ContinuableExecutable {
 
             @Override public void run() {
                 final TaskListener listener;
@@ -757,7 +757,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             @Exported
             public Integer getNumber() {
                 Run<?, ?> r = getParent().runForDisplay();
-                return r != null ? r.getNumber() : null;
+                return r != null ? r.getNumber() : -1;
             }
 
             @Exported

@@ -73,6 +73,9 @@ import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
@@ -91,9 +94,6 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
 import org.junit.AfterClass;
 import static org.junit.Assert.*;
 import org.junit.Assume;
@@ -459,9 +459,6 @@ public class ExecutorStepTest {
             public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
 
-                JSONParser parser = new JSONParser();
-                JSONObject propertiesJSON = null;
-
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                         "node('" + s.getNodeName() + "') {\n"
@@ -476,12 +473,12 @@ public class ExecutorStepTest {
                         .goTo("computer/" + s.getNodeName()
                                 + "/api/json?tree=executors[currentExecutable[number,displayName,url,timestamp]]", "application/json");
 
-                propertiesJSON = (JSONObject) parser.parse(page.getWebResponse().getContentAsString());
-                JSONArray executors = (JSONArray) propertiesJSON.get("executors");
-                JSONObject executor = (JSONObject) executors.get(0);
-                JSONObject currentExecutable = (JSONObject) executor.get("currentExecutable");
+                JSONObject propertiesJSON = (JSONObject) (new JsonSlurper()).parseText(page.getWebResponse().getContentAsString());
+                JSONArray executors = propertiesJSON.getJSONArray("executors");
+                JSONObject executor = executors.getJSONObject(0);
+                JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
 
-                assertEquals(1L, currentExecutable.get("number"));
+                assertEquals(1, currentExecutable.get("number"));
 
                 assertEquals("part of " + p.getName() + " #1",
                         currentExecutable.get("displayName"));
