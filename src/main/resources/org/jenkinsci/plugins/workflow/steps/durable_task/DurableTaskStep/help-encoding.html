@@ -1,3 +1,12 @@
 <div>
-    Encoding of standard output, if it is being captured.
+    Encoding of process output.
+    In the case of <code>returnStdout</code>, applies to the return value of this step;
+    otherwise, or always for standard error, controls how text is copied to the build log.
+    If unspecified, uses the system default encoding of the node on which the step is run.
+    If there is any expectation that process output might include non-ASCII characters,
+    it is best to specify the encoding explicitly.
+    For example, if you have specific knowledge that a given process is going to be producing UTF-8
+    yet will be running on a node with a different system encoding
+    (typically Windows, since every Linux distribution has defaulted to UTF-8 for a long time),
+    you can ensure correct output by specifying: <code>encoding: 'UTF-8'</code>
 </div>
