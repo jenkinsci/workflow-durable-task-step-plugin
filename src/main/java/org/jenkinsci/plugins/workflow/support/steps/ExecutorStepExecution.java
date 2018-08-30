@@ -8,6 +8,7 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
+import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
@@ -663,7 +664,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Occupies {@link Executor} while workflow uses this slave.
          */
         @ExportedBean
-        private final class PlaceholderExecutable implements ContinuableExecutable {
+        private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
 
             @Override public void run() {
                 final TaskListener listener;
@@ -786,7 +787,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             @Exported
             public Integer getNumber() {
                 Run<?, ?> r = getParent().runForDisplay();
-                return r != null ? r.getNumber() : -1;
+                return r != null ? r.getNumber() : null;
             }
 
             @Exported
@@ -845,6 +846,38 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             private static final long serialVersionUID = 1L;
+
+            @Override
+            public ACL getACL() {
+                try {
+                    if (!context.isReady()) {
+                        return Jenkins.getActiveInstance().getACL();
+                    }
+                    FlowExecution exec = context.get(FlowExecution.class);
+                    if (exec == null) {
+                        return Jenkins.getActiveInstance().getACL();
+                    }
+                    Queue.Executable executable = exec.getOwner().getExecutable();
+                    if (executable instanceof AccessControlled) {
+                        return ((AccessControlled) executable).getACL();
+                    } else {
+                        return Jenkins.getActiveInstance().getACL();
+                    }
+                } catch (Exception x) {
+                    LOGGER.log(FINE, null, x);
+                    return Jenkins.getActiveInstance().getACL();
+                }
+            }
+
+            @Override
+            public void checkPermission(Permission permission) throws AccessDeniedException {
+                getACL().checkPermission(permission);
+            }
+
+            @Override
+            public boolean hasPermission(Permission permission) {
+                return getACL().hasPermission(permission);
+            }
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
