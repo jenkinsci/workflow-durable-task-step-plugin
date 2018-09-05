@@ -359,20 +359,22 @@ public class ShellStepTest {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition(
             "node('remote') {\n" +
-            "  sh 'set +x; for i in 0 1 2 3 4 5 6 7 8 9; do for j in 0 1 2 3 4 5 6 7 8 9; do for k in 0 1 2 3 4 5 6 7 8 9; do echo ijk=$i$j$k; sleep .01; done; done; done'\n" +
+            "  sh 'echo one; sleep 1; echo two'\n" +
             "}", true));
         // Priming builds:
-        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        j.assertLogNotContains("ijk=567", b);
-        assertThat(FileUtils.readFileToString(new File(b.getRootDir(), "log-remote")), containsString("ijk=567"));
+        j.assertBuildStatusSuccess(p.scheduleBuild2(0));
         try {
             DurableTaskStep.USE_WATCHING = false;
-            b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-            j.assertLogContains("ijk=567", b);
+            j.assertBuildStatusSuccess(p.scheduleBuild2(0));
         } finally {
             DurableTaskStep.USE_WATCHING = true;
         }
         // Now check Remoting usage:
+        Thread.sleep(1000); // TODO waiting for GC?
+        p.setDefinition(new CpsFlowDefinition(
+            "node('remote') {\n" +
+            "  sh 'set +x; for i in 0 1 2 3 4 5 6 7 8 9; do for j in 0 1 2 3 4 5 6 7 8 9; do for k in 0 1 2 3 4 5 6 7 8 9; do echo ijk=$i$j$k; sleep .01; done; done; done'\n" +
+            "}", true));
         AtomicInteger cnt = new AtomicInteger();
         ((Channel) remote.getChannel()).addListener(new Channel.Listener() {
             @Override public void onRead(Channel channel, Command cmd, long blockSize) {
@@ -382,11 +384,15 @@ public class ShellStepTest {
                 cnt.incrementAndGet();
             }
         });
-        j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        j.assertLogNotContains("ijk=567", b);
+        assertThat(FileUtils.readFileToString(new File(b.getRootDir(), "log-remote")), containsString("ijk=567"));
+        Thread.sleep(1000); // ditto
         int watchCount = cnt.getAndSet(0);
         try {
             DurableTaskStep.USE_WATCHING = false;
-            j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            j.assertLogContains("ijk=567", b);
         } finally {
             DurableTaskStep.USE_WATCHING = true;
         }
