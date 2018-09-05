@@ -41,6 +41,8 @@ import hudson.slaves.JNLPLauncher;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
+import hudson.slaves.WorkspaceList;
+import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -68,7 +70,7 @@ import jenkins.security.QueueItemAuthenticatorConfiguration;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
-import org.hamcrest.Matchers;
+import static org.hamcrest.Matchers.*;
 import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
@@ -87,6 +89,7 @@ import org.junit.*;
 
 import static org.junit.Assert.*;
 
+import org.junit.Ignore;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
@@ -97,6 +100,7 @@ import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
 
 import javax.annotation.Nullable;
+import org.jvnet.hudson.test.LoggerRule;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -104,9 +108,7 @@ public class ExecutorStepTest {
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
-    /* Currently too noisy due to unrelated warnings; might clear up if test dependencies updated:
-    @Rule public LoggerRule logging = new LoggerRule().record(ExecutorStepExecution.class, Level.FINE);
-    */
+    @Rule public LoggerRule logging = new LoggerRule();
 
     /**
      * Executes a shell script build on a slave.
@@ -198,13 +200,10 @@ public class ExecutorStepTest {
     private void startJnlpProc() throws Exception {
         killJnlpProc();
         ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", story.j.getURL() + "computer/dumbo/slave-agent.jnlp");
-        try {
-            ProcessBuilder.class.getMethod("inheritIO").invoke(pb);
-        } catch (NoSuchMethodException x) {
-            // prior to Java 7
-        }
+        pb.redirectErrorStream(true);
         System.err.println("Running: " + pb.command());
         jnlpProc = pb.start();
+        new StreamCopyThread("jnlp", jnlpProc.getInputStream(), System.err).start();
     }
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
@@ -315,6 +314,84 @@ public class ExecutorStepTest {
                 killJnlpProc();
             }
         });
+    }
+
+    @Ignore("TODO currently fails with: hudson.remoting.RequestAbortedException: java.nio.channels.ClosedChannelException")
+    @Issue("JENKINS-41854")
+    @Test
+    public void contextualizeFreshFilePathAfterAgentReconnection() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        story.addStep(new Statement() {
+            @SuppressWarnings("SleepWhileInLoop")
+            @Override
+            public void evaluate() throws Throwable {
+                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
+                LOGGER.setLevel(Level.FINE);
+                Handler handler = new ConsoleHandler();
+                handler.setLevel(Level.ALL);
+                LOGGER.addHandler(handler);
+                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                story.j.jenkins.addNode(s);
+                startJnlpProc();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                File f1 = new File(story.j.jenkins.getRootDir(), "f1");
+                File f2 = new File(story.j.jenkins.getRootDir(), "f2");
+                new FileOutputStream(f1).close();
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('dumbo') {\n" +
+                                "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
+                                "    sh 'echo Back again'\n" +
+                                "    echo 'OK, done'\n" +
+                                "}", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                while (!f2.isFile()) {
+                    Thread.sleep(100);
+                }
+                assertTrue(b.isBuilding());
+                Computer computer = s.toComputer();
+                assertNotNull(computer);
+                FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
+                List<WorkspaceAction> actions = new ArrayList<>();
+                for (FlowNode node : walker) {
+                    WorkspaceAction action = node.getAction(WorkspaceAction.class);
+                    if (action != null) {
+                        actions.add(action);
+                    }
+                }
+                assertEquals(1, actions.size());
+                String workspacePath = actions.get(0).getWorkspace().getRemote();
+                assertWorkspaceLocked(computer, workspacePath);
+                killJnlpProc();
+                while (computer.isOnline()) {
+                    Thread.sleep(100);
+                }
+                startJnlpProc();
+                while (computer.isOffline()) {
+                    Thread.sleep(100);
+                }
+                assertWorkspaceLocked(computer, workspacePath);
+                assertTrue(f2.isFile());
+                assertTrue(f1.delete());
+                while (f2.isFile()) {
+                    Thread.sleep(100);
+                }
+                story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
+                story.j.assertLogContains("finished waiting", b);
+                story.j.assertLogContains("Back again", b);
+                story.j.assertLogContains("OK, done", b);
+                killJnlpProc();
+            }
+        });
+    }
+
+    private static void assertWorkspaceLocked(Computer computer, String workspacePath) throws InterruptedException {
+        FilePath proposed = new FilePath(computer.getChannel(), workspacePath);
+        WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(proposed);
+        try {
+            assertNotEquals(workspacePath, lease.path.getRemote());
+        } finally {
+            lease.release();
+        }
     }
 
     @Test public void buildShellScriptQuick() throws Exception {
@@ -813,7 +890,7 @@ public class ExecutorStepTest {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getBuildByNumber(1);
-                assertThat(patchedFiles, Matchers.containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
+                assertThat(patchedFiles, containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
                 /* TODO this seems to randomly not include the expected items:
                 assertThat(patchedFields, Matchers.containsInAnyOrder(
                     // But not FileMonitoringController.controlDir, since this old version is still using location-independent .id.
@@ -908,6 +985,7 @@ public class ExecutorStepTest {
     @Issue("SECURITY-675")
     @Test public void authentication() {
         story.then(r -> {
+            logging.record(ExecutorStepExecution.class, Level.FINE);
             Slave s = r.createSlave("remote", null, null);
             r.waitOnline(s);
             r.jenkins.setNumExecutors(0);
@@ -926,6 +1004,7 @@ public class ExecutorStepTest {
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
             p.setDefinition(new CpsFlowDefinition("timeout(time: 5, unit: 'SECONDS') {node {error 'should not be allowed'}}", true));
             r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
+            assertThat(Queue.getInstance().getItems(), emptyArray());
             // What about when there is a fallback authenticator?
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new FallbackAuthenticator());
             r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));

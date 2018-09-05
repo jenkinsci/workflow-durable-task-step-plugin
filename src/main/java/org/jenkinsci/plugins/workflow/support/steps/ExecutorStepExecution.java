@@ -1,6 +1,5 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.google.inject.Inject;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
@@ -27,12 +26,14 @@ import hudson.model.queue.SubTask;
 import hudson.remoting.ChannelClosedException;
 import hudson.remoting.RequestAbortedException;
 import hudson.security.ACL;
+import hudson.security.ACLContext;
 import hudson.security.AccessControlled;
 import hudson.security.Permission;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -68,7 +69,6 @@ import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
@@ -111,7 +111,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     try {
                         logger = getContext().get(TaskListener.class).getLogger();
                     } catch (Exception x) { // IOException, InterruptedException
-                        LOGGER.log(WARNING, null, x);
+                        LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
                         return;
                     }
                     logger.println("Still waiting to schedule task");
@@ -127,11 +127,26 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @Override
     public void stop(Throwable cause) throws Exception {
-        for (Queue.Item item : Queue.getInstance().getItems()) {
+        Queue.Item[] items;
+        try (ACLContext as = ACL.as(ACL.SYSTEM)) {
+            items = Queue.getInstance().getItems();
+        }
+        LOGGER.log(FINE, "stopping one of {0}", Arrays.asList(items));
+        StepContext context = getContext();
+        for (Queue.Item item : items) {
             // if we are still in the queue waiting to be scheduled, just retract that
-            if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
-                Queue.getInstance().cancel(item);
-                break;
+            if (item.task instanceof PlaceholderTask) {
+                PlaceholderTask task = (PlaceholderTask) item.task;
+                if (task.context.equals(context)) {
+                    task.stopping = true;
+                    Queue.getInstance().cancel(item);
+                    LOGGER.log(FINE, "canceling {0}", item);
+                    break;
+                } else {
+                    LOGGER.log(FINE, "no match on {0} with {1} vs. {2}", new Object[] {item, task.context, context});
+                }
+            } else {
+                LOGGER.log(FINE, "no match on {0}", item);
             }
         }
         Jenkins j = Jenkins.getInstance();
@@ -141,9 +156,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             COMPUTERS: for (Computer c : j.getComputers()) {
                 for (Executor e : c.getExecutors()) {
                     Queue.Executable exec = e.getCurrentExecutable();
-                    if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
-                        PlaceholderTask.finish(((PlaceholderTask.PlaceholderExecutable) exec).getParent().cookie);
-                        break COMPUTERS;
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                        StepContext actualContext = ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context;
+                        if (actualContext.equals(context)) {
+                            PlaceholderTask.finish(((PlaceholderTask.PlaceholderExecutable) exec).getParent().cookie);
+                            LOGGER.log(FINE, "canceling {0}", exec);
+                            break COMPUTERS;
+                        } else {
+                            LOGGER.log(FINE, "no match on {0} with {1} vs. {2}", new Object[] {exec, actualContext, context});
+                        }
+                    } else {
+                        LOGGER.log(FINE, "no match on {0}", exec);
                     }
                 }
             }
@@ -213,7 +236,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public void onLeft(Queue.LeftItem li) {
             if (li.isCancelled()) {
                 if (li.task instanceof PlaceholderTask) {
-                    (((PlaceholderTask) li.task).context).onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                    PlaceholderTask task = (PlaceholderTask) li.task;
+                    if (!task.stopping) {
+                        task.context.onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                    }
                 }
             }
         }
@@ -257,6 +283,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
+
+        /** Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed. */
+        private transient boolean stopping;
 
         PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
             this.context = context;
