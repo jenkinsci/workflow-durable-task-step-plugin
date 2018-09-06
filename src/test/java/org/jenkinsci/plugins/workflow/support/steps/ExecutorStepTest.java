@@ -550,7 +550,7 @@ public class ExecutorStepTest {
                 JenkinsRule.WebClient wc = story.j.createWebClient();
                 Page page = wc
                         .goTo("computer/" + s.getNodeName()
-                                + "/api/json?tree=executors[currentExecutable[number,displayName,url,timestamp]]", "application/json");
+                                + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
 
                 JSONObject propertiesJSON = (JSONObject) (new JsonSlurper()).parseText(page.getWebResponse().getContentAsString());
                 JSONArray executors = propertiesJSON.getJSONArray("executors");
@@ -559,8 +559,11 @@ public class ExecutorStepTest {
 
                 assertEquals(1, currentExecutable.get("number"));
 
-                assertEquals("part of " + p.getName() + " #1",
+                assertEquals("part of " + b.getFullDisplayName(),
                         currentExecutable.get("displayName"));
+
+                assertEquals("part of " + p.getFullDisplayName() + " #1",
+                        currentExecutable.get("fullDisplayName"));
 
                 assertEquals(story.j.getURL().toString() + "job/" + p.getName() + "/1/",
                         currentExecutable.get("url"));
