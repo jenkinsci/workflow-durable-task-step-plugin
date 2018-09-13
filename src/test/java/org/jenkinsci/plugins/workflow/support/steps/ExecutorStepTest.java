@@ -69,15 +69,20 @@ import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import static org.hamcrest.Matchers.*;
 import org.jboss.marshalling.ObjectResolver;
+import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
+import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -85,6 +90,7 @@ import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
+import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
@@ -103,12 +109,10 @@ import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
-
-import javax.annotation.Nullable;
-import org.jvnet.hudson.test.LoggerRule;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -116,6 +120,7 @@ public class ExecutorStepTest {
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
     @Rule public LoggerRule logging = new LoggerRule();
 
     /**
@@ -216,7 +221,7 @@ public class ExecutorStepTest {
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
         if (jnlpProc != null) {
-            jnlpProc.destroy();
+            jnlpProc.destroyForcibly();
             jnlpProc = null;
         }
     }
@@ -226,11 +231,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
                 // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
@@ -274,16 +275,51 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-52165")
+    @Test public void shellOutputAcrossRestart() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+        // for comparison: DurableTaskStep.USE_WATCHING = false;
+        int count = 3_000;
+        story.then(r -> {
+            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+            r.jenkins.addNode(s);
+            startJnlpProc();
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("\n<<<" + (count / 3) + ">>>\n", b);
+            s.toComputer().disconnect(null);
+        });
+        story.then(r -> {
+            WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+            startJnlpProc();
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
+            FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
+            String log = IOUtils.toString(shNode.getAction(LogAction.class).getLogText().readAll());
+            for (int i = 0; i < count; i++) {
+                assertThat(log, containsString("\n<<<" + i + ">>>\n"));
+            }
+            Matcher m = Pattern.compile("<<<\\d+>>>").matcher(log);
+            int seen = 0;
+            while (m.find()) {
+                seen++;
+            }
+            System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
+            killJnlpProc();
+        });
+    }
+
     @Test public void buildShellScriptAcrossDisconnect() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                long origWatchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
+                DurableTaskStep.WATCHING_RECURRENCE_PERIOD = /* 5s */5_000;
+                try {
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
@@ -320,6 +356,9 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
+                } finally {
+                    DurableTaskStep.WATCHING_RECURRENCE_PERIOD = origWatchingRecurrencePeriod;
+                }
             }
         });
     }
