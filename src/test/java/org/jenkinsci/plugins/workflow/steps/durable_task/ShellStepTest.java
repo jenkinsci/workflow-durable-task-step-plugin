@@ -294,7 +294,7 @@ public class ShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {" +
                 (Functions.isWindows()
-                        ? "bat 'timeout /t 5'\n"
+                        ? "bat 'ping -n 6 127.0.0.1 >nul'\n"
                         : "sh 'sleep 5'\n") +
                 "  }" +
                 "}", true));
@@ -311,7 +311,7 @@ public class ShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node() {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {\n" +
                 (Functions.isWindows()
-                        ? "bat(returnStatus: true, script: 'timeout /t 5')\n)"
+                        ? "bat(returnStatus: true, script: 'ping -n 6 127.0.0.1 >nul')\n)"
                         : "sh(returnStatus: true, script: 'sleep 5')\n") +
                 "  }\n" +
                 "}", true));
