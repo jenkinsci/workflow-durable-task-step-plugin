@@ -288,6 +288,40 @@ public class ShellStepTest {
         
     }
 
+    @Issue("JENKINS-28822")
+    @Test public void interruptingAbortsBuild() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {\n" +
+                "  timeout(time: 1, unit: 'SECONDS') {" +
+                (Functions.isWindows()
+                        ? "bat 'timeout /t 5'\n"
+                        : "sh 'sleep 5'\n") +
+                "  }" +
+                "}", true));
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+        j.waitForCompletion(b);
+        // Fails with Result.FAILURE as of commit a224295d12.
+        j.assertBuildStatus(Result.ABORTED, b);
+        j.assertLogContains("Timeout has been exceeded", b);
+    }
+
+    @Issue("JENKINS-28822")
+    @Test public void interruptingAbortsBuildEvenWithReturnStatus() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node() {\n" +
+                "  timeout(time: 1, unit: 'SECONDS') {\n" +
+                (Functions.isWindows()
+                        ? "bat(returnStatus: true, script: 'timeout /t 5')\n)"
+                        : "sh(returnStatus: true, script: 'sleep 5')\n") +
+                "  }\n" +
+                "}", true));
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+        j.waitForCompletion(b);
+        // Succeeds as of commit a224295d12.
+        j.assertBuildStatus(Result.ABORTED, b);
+        j.assertLogContains("Timeout has been exceeded", b);
+    }
+
     /**
      * Asserts that the predicate remains true up to the given timeout.
      */
