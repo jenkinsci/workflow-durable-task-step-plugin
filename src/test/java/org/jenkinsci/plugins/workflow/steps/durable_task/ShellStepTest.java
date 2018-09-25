@@ -62,6 +62,7 @@ import static org.junit.Assert.*;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -352,6 +353,7 @@ public class ShellStepTest {
         }
     }
 
+    @Ignore("TODO too flaky to run in CI")
     @Issue("JENKINS-38381")
     @Test public void remoteVoluminousLogger() throws Exception {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
