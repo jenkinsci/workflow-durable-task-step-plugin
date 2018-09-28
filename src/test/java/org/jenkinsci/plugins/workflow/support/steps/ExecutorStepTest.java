@@ -31,6 +31,7 @@ import hudson.init.InitMilestone;
 import hudson.init.Initializer;
 import hudson.model.Computer;
 import hudson.model.Executor;
+import hudson.model.Item;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -38,6 +39,8 @@ import hudson.model.Run;
 import hudson.model.Slave;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
+import hudson.model.queue.CauseOfBlockage;
+import hudson.model.queue.QueueTaskDispatcher;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
@@ -112,6 +115,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
+import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.recipes.LocalData;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
@@ -890,6 +894,34 @@ public class ExecutorStepTest {
             b3.doStop();
         });
     }
+
+    /**
+     * @see PipelineOnlyTaskDispatcher
+     */
+    @Issue("JENKINS-53837")
+    @Test public void queueTaskOwnerCorrectWhenRestarting() {
+        story.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p1");
+            p.setDefinition(new CpsFlowDefinition("node {\n" +
+                    "  semaphore('wait')\n" +
+                    "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+        });
+        story.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p1", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            SemaphoreStep.waitForStart("wait/1", b);
+            SemaphoreStep.success("wait/1", null);
+            while (b.isBuilding()) {
+                // This assertion fails before the fix for JENKINS-53837.
+                r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
+                Thread.sleep(100);
+            }
+            r.assertBuildStatusSuccess(b);
+        });
+    }
+
     // Pending direct support in MockAuthorizationStrategy for granting node permissions:
     private static class MockAuthorizationStrategyWithNode extends MockAuthorizationStrategy {
         @Override public ACL getACL(Node node) {
@@ -913,6 +945,30 @@ public class ExecutorStepTest {
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return ACL.SYSTEM;
+        }
+    }
+
+    @TestExtension("queueTaskOwnerCorrectWhenRestarting")
+    public static class PipelineOnlyTaskDispatcher extends QueueTaskDispatcher {
+        @Override
+        public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
+            final Queue.Task[] t = new Queue.Task[]{item.task};
+            while (!(t[0] instanceof Item) && (t[0] != null)) {
+                final Queue.Task ownerTask = t[0].getOwnerTask();
+                if (t[0] == ownerTask) {
+                    break;
+                }
+                t[0] = ownerTask;
+            }
+            if (t[0] instanceof WorkflowJob) {
+                return null;
+            }
+            return new CauseOfBlockage() {
+                @Override
+                public String getShortDescription() {
+                    return "Non-Pipeline tasks are forbidden! Not building: " + t[0];
+                }
+            };
         }
     }
 
