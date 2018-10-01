@@ -62,7 +62,7 @@
         </pluginRepository>
     </pluginRepositories>
     <properties>
-        <revision>2.22</revision>
+        <revision>2.23</revision>
         <changelist>-SNAPSHOT</changelist>
         <jenkins.version>2.145-rc27341.296ad9122b93</jenkins.version>
         <java.level>8</java.level>
@@ -78,7 +78,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
-            <version>1.24</version>
+            <version>1.26</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
