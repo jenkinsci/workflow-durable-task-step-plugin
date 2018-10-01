@@ -64,8 +64,8 @@ import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
-import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -275,11 +275,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * and allows {@link Launcher#kill} to work.
          */
         private String cookie;
-
-        /**
-         * Key which will be used to identify the task and stage context when searching for a specific node
-         */
-        private String affinityKey;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
@@ -491,7 +486,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return getDisplayName();
         }
 
-        @Override public String getAffinityKey() { return getOwnerTask().getName(); }
+        @Override
+        public String getAffinityKey() {
+            String enclosingLabel = getEnclosingLabel();
+            String ownerTaskName = getOwnerTask().getName();
+            if (enclosingLabel != null) {
+                return ownerTaskName + '#' + enclosingLabel;
+            } else {
+                return ownerTaskName;
+            }
+        }
 
         /** hash code of list of heads */
         private transient int lastCheckedHashCode;
@@ -523,12 +527,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private String computeEnclosingLabel(FlowNode executorStepNode, List<FlowNode> heads) {
             for (FlowNode runningNode : heads) {
                 // See if this step is inside our node {} block, and track the associated label.
-                boolean match = false;
                 String enclosingLabel = null;
-                Iterator<FlowNode> it = FlowScanningUtils.fetchEnclosingBlocks(runningNode);
+                // Just in case we're asking for the enclosing label from within a node step. See JENKINS-36547
+                boolean match = runningNode.equals(executorStepNode);
+                Iterator<? extends BlockStartNode> it = runningNode.iterateEnclosingBlocks().iterator();
                 int count = 0;
                 while (it.hasNext()) {
-                    FlowNode n = it.next();
+                    BlockStartNode n = it.next();
                     if (enclosingLabel == null) {
                         ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {

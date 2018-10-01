@@ -29,7 +29,14 @@ import hudson.FilePath;
 import hudson.Functions;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
-import hudson.model.*;
+import hudson.model.Computer;
+import hudson.model.Executor;
+import hudson.model.Node;
+import hudson.model.Queue;
+import hudson.model.Result;
+import hudson.model.Run;
+import hudson.model.Slave;
+import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
@@ -46,7 +53,6 @@ import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
@@ -85,11 +91,13 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.*;
-
+import org.junit.AfterClass;
 import static org.junit.Assert.*;
-
+import org.junit.Assume;
+import org.junit.ClassRule;
 import org.junit.Ignore;
+import org.junit.Rule;
+import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
@@ -510,7 +518,7 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding());
-                story.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getParent().getName())), b);
+                story.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
                 story.j.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
                 b.getExecutor().interrupt();
                 story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
@@ -641,97 +649,100 @@ public class ExecutorStepTest {
         });
     }
 
-	@Test public void reuseNodeFromPreviousRun() {
-		story.addStep(new Statement() {
-			@Override public void evaluate() throws Throwable {
-				for (int i = 0; i < 5; ++i) {
-					story.j.createOnlineSlave();
-				}
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodeFromPreviousRun() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                for (int i = 0; i < 5; ++i) {
+                    story.j.createOnlineSlave();
+                }
 
-				WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-				p.setDefinition(new CpsFlowDefinition("node {echo \"ran node block\"}", true));
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node {echo \"ran node block\"}", true));
                 story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
 
                 List<String> log = p.getLastBuild().getLog(10);
                 String firstNode = "";
                 for (String line: log) {
-                	if (line.contains("Running on")) {
-                		firstNode = line.replaceAll("Running on ([^ ]*)", "$1");
-					}
-				}
+                    if (line.contains("Running on")) {
+                        firstNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                    }
+                }
 
-				for (int i = 0; i < 5; ++i) {
-					story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-					List<String> currentLog = p.getLastBuild().getLog(10);
-					String currentNode = "";
-					for (String line: currentLog) {
-						if (line.contains("Running on")) {
-							currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
-						}
-					}
-					assertEquals(firstNode, currentNode);
-				}
-			}
-		});
-	}
+                for (int i = 0; i < 5; ++i) {
+                    story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                    List<String> currentLog = p.getLastBuild().getLog(10);
+                    String currentNode = "";
+                    for (String line: currentLog) {
+                        if (line.contains("Running on")) {
+                            currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                        }
+                    }
+                    assertEquals(firstNode, currentNode);
+                }
+            }
+        });
+    }
 
-	@Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
-		story.addStep(new Statement() {
-			@Override public void evaluate() throws Throwable {
-				for (int i = 0; i < 5; ++i) {
-					DumbSlave slave = story.j.createOnlineSlave();
-					slave.setLabelString("foo bar");
-				}
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                for (int i = 0; i < 5; ++i) {
+                    DumbSlave slave = story.j.createOnlineSlave();
+                    slave.setLabelString("foo bar");
+                }
 
-				WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-				p.setDefinition(new CpsFlowDefinition(
-						"node('foo') {\n" +
-								"   echo \"ran node block foo\"\n" +
-								"}\n" +
-								"node('bar') {\n" +
-								"	echo \"ran node block bar\"\n" +
-								"}\n" +
-								"", true));
-				story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('foo') {\n" +
+                                "   echo \"ran node block foo\"\n" +
+                                "}\n" +
+                                "node('bar') {\n" +
+                                "	echo \"ran node block bar\"\n" +
+                                "}\n" +
+                                "", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
 
-				List<String> log = p.getLastBuild().getLog(10);
-				String firstFoo = "";
-				String firstBar = "";
-				String lastNode = "";
-				for (String line: log) {
-					if (line.contains("ran node block foo")) {
-						firstFoo = lastNode;
-					}
-					if (line.contains("ran node block bar")) {
-						firstBar = lastNode;
-					}
-					if (line.contains("Running on")) {
-						lastNode = line.replaceAll("Running on ([^ ]*)", "$1");
-					}
-				}
+                List<String> log = p.getLastBuild().getLog(10);
+                String firstFoo = "";
+                String firstBar = "";
+                String lastNode = "";
+                for (String line: log) {
+                    if (line.contains("ran node block foo")) {
+                        firstFoo = lastNode;
+                    }
+                    if (line.contains("ran node block bar")) {
+                        firstBar = lastNode;
+                    }
+                    if (line.contains("Running on")) {
+                        lastNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                    }
+                }
 
-				assertNotEquals(firstFoo, firstBar);
+                assertNotEquals(firstFoo, firstBar);
 
-				for (int i = 0; i < 5; ++i) {
-					story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-					List<String> currentLog = p.getLastBuild().getLog(10);
-					String currentNode = "";
-					for (String line: currentLog) {
-						if (line.contains("ran node block foo")) {
-							assertEquals(firstFoo, currentNode);
-						}
-						if (line.contains("ran node block bar")) {
-							assertEquals(firstBar, currentNode);
-						}
-						if (line.contains("Running on")) {
-							currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
-						}
-					}
-				}
-			}
-		});
-	}
+                for (int i = 0; i < 5; ++i) {
+                    story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                    List<String> currentLog = p.getLastBuild().getLog(10);
+                    String currentNode = "";
+                    for (String line: currentLog) {
+                        if (line.contains("ran node block foo")) {
+                            assertEquals(firstFoo, currentNode);
+                        }
+                        if (line.contains("ran node block bar")) {
+                            assertEquals(firstBar, currentNode);
+                        }
+                        if (line.contains("Running on")) {
+                            currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                        }
+                    }
+                }
+            }
+        });
+    }
 
+    @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
@@ -793,34 +804,174 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                for (int i = 0; i < 5; ++i) {
+                    DumbSlave slave = story.j.createOnlineSlave();
+                    slave.setLabelString("foo bar");
+                }
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("" +
+                        "stage('first') {\n" +
+                        "   node('foo') {\n" +
+                        "       echo \"ran node block first\"\n" +
+                        "   }\n" +
+                        "}\n" +
+                        "stage('second') {\n" +
+                        "   node('foo') {\n" +
+                        "	    echo \"ran node block second\"\n" +
+                        "   }\n" +
+                        "}\n" +
+                        "", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                List<String> log = p.getLastBuild().getLog(10);
+                String firstNodeFirstStage = "";
+                String firstNodeSecondStage = "";
+                String previousNode = "";
+                for (String line: log) {
+                    if (line.contains("ran node block first")) {
+                        firstNodeFirstStage = previousNode;
+                    }
+                    if (line.contains("ran node block second")) {
+                        firstNodeSecondStage = previousNode;
+                    }
+                    if (line.contains("Running on")) {
+                        previousNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                    }
+                }
+
+                assertEquals(firstNodeFirstStage, firstNodeSecondStage);
+
+                p.setDefinition(new CpsFlowDefinition("" +
+                        "stage('second') {\n" +
+                        "   node('foo') {\n" +
+                        "       echo \"ran node block first\"\n" +
+                        "   }\n" +
+                        "}\n" +
+                        "stage('first') {\n" +
+                        "   node('foo') {\n" +
+                        "	    echo \"ran node block second\"\n" +
+                        "   }\n" +
+                        "}\n" +
+                        "", true));
+
+                for (int i = 0; i < 5; ++i) {
+                    story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                    List<String> currentLog = p.getLastBuild().getLog(10);
+                    String currentNode = "";
+                    for (String line: currentLog) {
+                        if (line.contains("ran node block foo")) {
+                            assertEquals(firstNodeFirstStage, currentNode);
+                        }
+                        if (line.contains("ran node block bar")) {
+                            assertEquals(firstNodeSecondStage, currentNode);
+                        }
+                        if (line.contains("Running on")) {
+                            currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInParallelStages() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                for (int i = 0; i < 5; ++i) {
+                    DumbSlave slave = story.j.createOnlineSlave();
+                    slave.setLabelString("foo bar");
+                }
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("" +
+                        "parallel(first: {\n" +
+                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   node('foo') {\n" +
+                        "       echo \"ran node block first\"\n" +
+                        "   }\n" +
+                        "}, second: {\n" +
+                        "   node('foo') {\n" +
+                        "	    echo \"ran node block second\"\n" +
+                        "       sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   }\n" +
+                        "})\n" +
+                        "", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                List<String> log1 = p.getLastBuild().getLog(30);
+                List<String> usedNodes1 = new ArrayList<>();
+                for (String line: log1) {
+                    if (line.contains("Running on")) {
+                        String usedNode = line.replaceAll("(.*Running on [^ ]*).*", "$1");
+                        usedNodes1.add(usedNode);
+                    }
+                }
+
+                // update script to force reversed order for node blocks; shall still pick the same nodes
+                p.setDefinition(new CpsFlowDefinition("" +
+                        "parallel(first: {\n" +
+                        "   node('foo') {\n" +
+                        "       echo \"ran node block first\"\n" +
+                        "       sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   }\n" +
+                        "}, second: {\n" +
+                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   node('foo') {\n" +
+                        "	    echo \"ran node block second\"\n" +
+                        "   }\n" +
+                        "})\n" +
+                        "", true));
+
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                List<String> log2 = p.getLastBuild().getLog(30);
+                List<String> usedNodes2 = new ArrayList<>();
+
+                for (String line: log2) {
+                    if (line.contains("Running on")) {
+                        String usedNode = line.replaceAll("(.*Running on [^ ]*).*", "$1");
+                        usedNodes2.add(usedNode);
+                    }
+                }
+                assertThat(usedNodes1, containsInAnyOrder(usedNodes2.toArray()));
+            }
+        });
+    }
+
+    @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() {
-		story.addStep(new Statement() {
-			@Override public void evaluate() throws Throwable {
-				for (int i = 0; i < 5; ++i) {
-					story.j.createOnlineSlave();
-				}
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                for (int i = 0; i < 5; ++i) {
+                    story.j.createOnlineSlave();
+                }
 
-				WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-				p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node {echo \"ran node block ${i}\"}}", true));
-				story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node {echo \"ran node block ${i}\"}}", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
 
-				List<String> log = p.getLastBuild().getLog(100);
-				String firstNode = "";
-				for (String line: log) {
-					if (line.contains("Running on")) {
-						String currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
-						if (firstNode == "") {
-							firstNode = currentNode;
-						} else {
-							assertEquals(firstNode, currentNode);
-						}
-					}
-				}
-			}
-		});
-	}
+                List<String> log = p.getLastBuild().getLog(100);
+                String firstNode = "";
+                for (String line: log) {
+                    if (line.contains("Running on")) {
+                        String currentNode = line.replaceAll("Running on ([^ ]*)", "$1");
+                        if (firstNode == "") {
+                            firstNode = currentNode;
+                        } else {
+                            assertEquals(firstNode, currentNode);
+                        }
+                    }
+                }
+            }
+        });
+    }
 
-	@Issue("JENKINS-26132")
+    @Issue("JENKINS-26132")
     @Test public void taskDisplayName() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
