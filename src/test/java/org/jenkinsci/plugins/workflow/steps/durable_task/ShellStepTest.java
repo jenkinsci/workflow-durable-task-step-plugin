@@ -1,32 +1,55 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsScope;
+import com.cloudbees.plugins.credentials.domains.Domain;
+import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import com.google.common.base.Predicate;
-import hudson.EnvVars;
 import hudson.FilePath;
+import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.console.AnnotatedLargeText;
+import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
+import hudson.model.BuildListener;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.remoting.Channel;
 import hudson.model.Slave;
+import hudson.model.TaskListener;
+import hudson.remoting.Command;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
-import static org.hamcrest.Matchers.containsString;
+import org.apache.commons.io.FileUtils;
+import static org.hamcrest.Matchers.*;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
+import org.jenkinsci.plugins.workflow.log.FileLogStorage;
+import org.jenkinsci.plugins.workflow.log.LogStorage;
+import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
@@ -37,7 +60,9 @@ import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
 import org.junit.Assume;
+import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -235,6 +260,203 @@ public class ShellStepTest {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+
+    @Issue("JENKINS-38381")
+    @Test public void remoteLogger() throws Exception {
+        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
+        final String credentialsId = "creds";
+        final String username = "bob";
+        final String password = "s3cr3t";
+        UsernamePasswordCredentialsImpl c = new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, credentialsId, "sample", username, password);
+        CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
+        j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+            "node('master') {\n" +
+            "  sh 'pwd'\n" +
+            "}\n" +
+            "node('remote') {\n" +
+            "  sh 'pwd'\n" +
+            "  sh 'echo on agent'\n" +
+            "  withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
+            "    sh 'set +x; echo curl -u $USERPASS http://server/'\n" +
+            "  }\n" +
+            "}", true));
+        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        j.assertLogContains("+ pwd [master]", b);
+        j.assertLogContains("+ PWD [master → remote]", b);
+        j.assertLogContains("ON AGENT [master → remote]", b);
+        j.assertLogNotContains(password, b);
+        j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
+        j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
+    }
+    @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
+        @Override public LogStorage forBuild(FlowExecutionOwner b) {
+            final LogStorage base;
+            try {
+                base = FileLogStorage.forFile(new File(b.getRootDir(), "special.log"));
+            } catch (IOException x) {
+                return new BrokenLogStorage(x);
+            }
+            return new LogStorage() {
+                @Override public BuildListener overallListener() throws IOException, InterruptedException {
+                    return new RemotableBuildListener(base.overallListener());
+                }
+                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
+                    return new RemotableBuildListener(base.nodeListener(node));
+                }
+                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
+                    return base.overallLog(build, complete);
+                }
+                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
+                    return base.stepLog(node, complete);
+                }
+            };
+        }
+    }
+    private static class RemotableBuildListener implements BuildListener {
+        private static final long serialVersionUID = 1;
+        /** actual implementation */
+        private final TaskListener delegate;
+        /** records allocation & deserialization history; e.g., {@code master → agent} */
+        private final String id;
+        private transient PrintStream logger;
+        RemotableBuildListener(TaskListener delegate) {
+            this(delegate, "master");
+        }
+        private RemotableBuildListener(TaskListener delegate, String id) {
+            this.delegate = delegate;
+            this.id = id;
+        }
+        @Override public PrintStream getLogger() {
+            if (logger == null) {
+                final OutputStream os = delegate.getLogger();
+                logger = new PrintStream(new LineTransformationOutputStream() {
+                    @Override protected void eol(byte[] b, int len) throws IOException {
+                        for (int i = 0; i < len - 1; i++) { // all but NL
+                            os.write(id.equals("master") ? b[i] : Character.toUpperCase(b[i]));
+                        }
+                        os.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
+                        os.write(b[len - 1]); // NL
+                    }
+                }, true);
+            }
+            return logger;
+        }
+        private Object writeReplace() {
+            /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:
+            Thread.dumpStack();
+            */
+            String name = Channel.current().getName();
+            return new RemotableBuildListener(delegate, id + " → " + name);
+        }
+    }
+
+    @Ignore("TODO too flaky to run in CI")
+    @Issue("JENKINS-38381")
+    @Test public void remoteVoluminousLogger() throws Exception {
+        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
+        DumbSlave remote = j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+            "node('remote') {\n" +
+            "  sh 'echo one; sleep 1; echo two'\n" +
+            "}", true));
+        // Priming builds:
+        j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        try {
+            DurableTaskStep.USE_WATCHING = false;
+            j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        } finally {
+            DurableTaskStep.USE_WATCHING = true;
+        }
+        // Now check Remoting usage:
+        Thread.sleep(1000); // TODO waiting for GC?
+        p.setDefinition(new CpsFlowDefinition(
+            "node('remote') {\n" +
+            "  sh 'set +x; for i in 0 1 2 3 4 5 6 7 8 9; do for j in 0 1 2 3 4 5 6 7 8 9; do for k in 0 1 2 3 4 5 6 7 8 9; do echo ijk=$i$j$k; sleep .01; done; done; done'\n" +
+            "}", true));
+        AtomicInteger cnt = new AtomicInteger();
+        ((Channel) remote.getChannel()).addListener(new Channel.Listener() {
+            @Override public void onRead(Channel channel, Command cmd, long blockSize) {
+                cnt.incrementAndGet();
+            }
+            @Override public void onWrite(Channel channel, Command cmd, long blockSize) {
+                cnt.incrementAndGet();
+            }
+        });
+        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        j.assertLogNotContains("ijk=567", b);
+        assertThat(FileUtils.readFileToString(new File(b.getRootDir(), "log-remote")), containsString("ijk=567"));
+        Thread.sleep(1000); // ditto
+        int watchCount = cnt.getAndSet(0);
+        try {
+            DurableTaskStep.USE_WATCHING = false;
+            b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            j.assertLogContains("ijk=567", b);
+        } finally {
+            DurableTaskStep.USE_WATCHING = true;
+        }
+        int oldCount = cnt.getAndSet(0);
+        System.out.println("Using watching: " + watchCount + " packets sent/received");
+        System.out.println("Not using watching: " + oldCount + " packets sent/received");
+        assertThat("at least 2× reduction in Remoting traffic by packet count", 1.0 * oldCount / watchCount, greaterThan(2.0));
+    }
+    @TestExtension("remoteVoluminousLogger") public static class ExternalLogFile implements LogStorageFactory {
+        @Override public LogStorage forBuild(FlowExecutionOwner b) {
+            final LogStorage base;
+            final File mainLog;
+            try {
+                mainLog = new File(b.getRootDir(), "log");
+                base = FileLogStorage.forFile(mainLog);
+            } catch (IOException x) {
+                return new BrokenLogStorage(x);
+            }
+            return new LogStorage() {
+                @Override public BuildListener overallListener() throws IOException, InterruptedException {
+                    return new ExternalBuildListener(mainLog, null);
+                }
+                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
+                    return new ExternalBuildListener(mainLog, node.getId());
+                }
+                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
+                    return base.overallLog(build, complete);
+                }
+                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
+                    return base.stepLog(node, complete);
+                }
+            };
+        }
+    }
+    private static class ExternalBuildListener implements BuildListener {
+        private static final long serialVersionUID = 1;
+        private final File log;
+        private final String node;
+        private transient PrintStream logger;
+        ExternalBuildListener(File log, String node) {
+            this.log = log;
+            this.node = node;
+        }
+        @Override public PrintStream getLogger() {
+            if (logger == null) {
+                LogStorage storage = FileLogStorage.forFile(log);
+                TaskListener listener;
+                try {
+                    listener = node == null ? storage.overallListener() : storage.nodeListener(new FlowNode(null, node) {
+                        @Override protected String getTypeDisplayName() {return null;}
+                    });
+                } catch (Exception x) {
+                    throw new RuntimeException(x);
+                }
+                logger = listener.getLogger();
+            }
+            return logger;
+        }
+        private Object writeReplace() {
+            String name = Channel.current().getName();
+            return new ExternalBuildListener(new File(log + "-" + name), node);
+        }
     }
 
     @Issue("JENKINS-31096")
