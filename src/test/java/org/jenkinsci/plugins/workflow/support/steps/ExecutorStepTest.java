@@ -918,6 +918,7 @@ public class ExecutorStepTest {
         });
     }
 
+    /** Ensure node reuse works from within parallel block without using stages */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
         story.addStep(new Statement() {
@@ -963,6 +964,79 @@ public class ExecutorStepTest {
                         "   sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block second\"\n" +
+                        "   }\n" +
+                        "})\n" +
+                        "", true));
+
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                List<String> log2 = p.getLastBuild().getLog(30);
+                List<String> usedNodes2 = new ArrayList<>();
+
+                for (String line: log2) {
+                    if (line.contains("Running on")) {
+                        String usedNode = line.replaceAll("(.*Running on [^ ]*).*", "$1");
+                        usedNodes2.add(usedNode);
+                    }
+                }
+                assertThat(usedNodes1, containsInAnyOrder(usedNodes2.toArray()));
+            }
+        });
+    }
+
+    /** Ensure node reuse works from within parallel blocks which use the same stage names */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                for (int i = 0; i < 5; ++i) {
+                    DumbSlave slave = story.j.createOnlineSlave();
+                    slave.setLabelString("foo bar");
+                }
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("" +
+                        "parallel(first: {\n" +
+                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   stage('stage1') {\n" +
+                        "       node('foo') {\n" +
+                        "           echo \"ran node block first\"\n" +
+                        "        }\n" +
+                        "   }\n" +
+                        "}, second: {\n" +
+                        "   stage('stage1') {\n" +
+                        "       node('foo') {\n" +
+                        "	        echo \"ran node block second\"\n" +
+                        "           sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "        }\n" +
+                        "   }\n" +
+                        "})\n" +
+                        "", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                List<String> log1 = p.getLastBuild().getLog(30);
+                List<String> usedNodes1 = new ArrayList<>();
+                for (String line: log1) {
+                    if (line.contains("Running on")) {
+                        String usedNode = line.replaceAll("(.*Running on [^ ]*).*", "$1");
+                        usedNodes1.add(usedNode);
+                    }
+                }
+
+                // update script to force reversed order for node blocks; shall still pick the same nodes
+                p.setDefinition(new CpsFlowDefinition("" +
+                        "parallel(first: {\n" +
+                        "   stage('stage1') {\n" +
+                        "       node('foo') {\n" +
+                        "           echo \"ran node block first\"\n" +
+                        "           sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "       }\n" +
+                        "   }\n" +
+                        "}, second: {\n" +
+                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "       stage('stage1') {\n" +
+                        "       node('foo') {\n" +
+                        "    	    echo \"ran node block second\"\n" +
+                        "       }\n" +
                         "   }\n" +
                         "})\n" +
                         "", true));

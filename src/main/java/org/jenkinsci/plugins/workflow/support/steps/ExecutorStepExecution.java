@@ -486,12 +486,63 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return getDisplayName();
         }
 
+        static String findThreadName(FlowNode flowNode){
+            ThreadNameAction tna = flowNode.getPersistentAction(ThreadNameAction.class);
+
+            if (tna != null) {
+                return tna.getThreadName();
+            }
+            return null;
+        }
+
+        static String findStageName(FlowNode flowNode){
+            LabelAction la = flowNode.getPersistentAction(LabelAction.class);
+
+            if (la != null) {
+                return la.getDisplayName();
+            }
+            return null;
+        }
+
+        /**
+         * Similar to {@link #getEnclosingLabel()}.
+         * However instead of returning the innermost label including labels inside node blocks this one
+         * concatenates all labels found outside the current (node) block
+         * */
+        private @CheckForNull String concatenateAllEnclosingLabels() {
+            if (!context.isReady()) {
+                return null;
+            }
+            FlowNode executorStepNode;
+            try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
+                executorStepNode = context.get(FlowNode.class);
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, null, x);
+                return null;
+            }
+
+            StringBuilder labelName = new StringBuilder();
+            for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
+                String threadName = findThreadName(node);
+                String stageName = findStageName(node);
+                String currentLabelName = threadName != null ? threadName: stageName;
+                if (threadName != null && stageName != null) {
+                    LOGGER.log(FINE, "\"findLabelAndParseLog(): Got both thread: {0} and stage: $stageName. Will take thread name ({0}).", threadName);
+                }
+                if (currentLabelName != null) {
+                    labelName.append("#");
+                    labelName.append(currentLabelName);
+                }
+            }
+            return labelName.toString();
+        }
+
         @Override
         public String getAffinityKey() {
-            String enclosingLabel = getEnclosingLabel();
+            String enclosingLabels = concatenateAllEnclosingLabels();
             String ownerTaskName = getOwnerTask().getName();
-            if (enclosingLabel != null) {
-                return ownerTaskName + '#' + enclosingLabel;
+            if (enclosingLabels != null) {
+                return ownerTaskName + enclosingLabels;
             } else {
                 return ownerTaskName;
             }
