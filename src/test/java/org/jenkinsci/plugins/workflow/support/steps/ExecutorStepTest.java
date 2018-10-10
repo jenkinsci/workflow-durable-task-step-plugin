@@ -82,6 +82,7 @@ import org.apache.tools.ant.util.JavaEnvUtils;
 import static org.hamcrest.Matchers.*;
 import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
+import org.jenkinsci.plugins.workflow.actions.ExecutorAction;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
@@ -914,6 +915,34 @@ public class ExecutorStepTest {
         @Override public Authentication authenticate(Queue.Task task) {
             return ACL.SYSTEM;
         }
+    }
+
+    @Issue("JENKINS-44193")
+    @Test
+    public void executionActionIsPresent() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "executionActionIsPresent");
+                p.setDefinition(new CpsFlowDefinition(
+                    "node() {\n" +
+                    "    echo \"123\"\n" +
+                    "}", true));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+
+                // Wait until the build completes.
+                story.j.waitForCompletion(b);
+
+                FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
+                List<ExecutorAction> actions = new ArrayList<ExecutorAction>();
+                for (FlowNode n : walker) {
+                    ExecutorAction a = n.getAction(ExecutorAction.class);
+                    if (a != null) {
+                        actions.add(a);
+                    }
+                }
+                assertEquals(1, actions.size());
+            }
+        });
     }
 
 }
