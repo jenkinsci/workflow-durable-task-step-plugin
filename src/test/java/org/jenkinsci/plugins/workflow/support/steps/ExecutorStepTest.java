@@ -788,19 +788,19 @@ public class ExecutorStepTest {
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
-                for (int i = 0; i < 5; ++i) {
+                for (int i = 0; i < 3; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
                 }
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("" +
-                        "stage('first') {\n" +
+                        "stage('1') {\n" +
                         "   node('foo') {\n" +
                         "       echo \"ran node block first\"\n" +
                         "   }\n" +
                         "}\n" +
-                        "stage('second') {\n" +
+                        "stage('2') {\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block second\"\n" +
                         "   }\n" +
@@ -808,14 +808,17 @@ public class ExecutorStepTest {
                         "", true));
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
                 Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
+                // if nodeMapping contains only one entry this test actually will not test anything reasonable
+                // possibly the number of dumb slaves has to be adjusted in that case
+                assertEquals(nodeMapping1.size(), 2);
 
                 p.setDefinition(new CpsFlowDefinition("" +
-                        "stage('second') {\n" +
+                        "stage('2') {\n" +
                         "   node('foo') {\n" +
                         "       echo \"ran node block second\"\n" +
                         "   }\n" +
                         "}\n" +
-                        "stage('first') {\n" +
+                        "stage('1') {\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block first\"\n" +
                         "   }\n" +
@@ -834,19 +837,19 @@ public class ExecutorStepTest {
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
-                for (int i = 0; i < 5; ++i) {
+                for (int i = 0; i < 3; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
                 }
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("" +
-                        "parallel(first: {\n" +
+                        "parallel(1: {\n" +
                         "   sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "   node('foo') {\n" +
                         "       echo \"ran node block first\"\n" +
                         "   }\n" +
-                        "}, second: {\n" +
+                        "}, 2: {\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block second\"\n" +
                         "       sleep time: 100, unit: 'MILLISECONDS'\n" +
@@ -856,14 +859,18 @@ public class ExecutorStepTest {
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
                 Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
+                // if nodeMapping contains only one entry this test actually will not test anything reasonable
+                // possibly the number of dumb slaves has to be adjusted in that case
+                assertEquals(nodeMapping1.size(), 2);
+
                 // update script to force reversed order for node blocks; shall still pick the same nodes
                 p.setDefinition(new CpsFlowDefinition("" +
-                        "parallel(first: {\n" +
+                        "parallel(1: {\n" +
                         "   node('foo') {\n" +
                         "       echo \"ran node block first\"\n" +
                         "       sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "   }\n" +
-                        "}, second: {\n" +
+                        "}, 2: {\n" +
                         "   sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block second\"\n" +
@@ -883,21 +890,21 @@ public class ExecutorStepTest {
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
-                for (int i = 0; i < 5; ++i) {
+                for (int i = 0; i < 3; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
                 }
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("" +
-                        "parallel(first: {\n" +
+                        "parallel(1: {\n" +
                         "   sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "           echo \"ran node block first\"\n" +
                         "        }\n" +
                         "   }\n" +
-                        "}, second: {\n" +
+                        "}, 2: {\n" +
                         "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "	        echo \"ran node block second\"\n" +
@@ -909,16 +916,20 @@ public class ExecutorStepTest {
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
                 Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
+                // if nodeMapping contains only one entry this test actually will not test anything reasonable
+                // possibly the number of dumb slaves has to be adjusted in that case
+                assertEquals(nodeMapping1.size(), 2);
+
                 // update script to force reversed order for node blocks; shall still pick the same nodes
                 p.setDefinition(new CpsFlowDefinition("" +
-                        "parallel(first: {\n" +
+                        "parallel(1: {\n" +
                         "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "           echo \"ran node block first\"\n" +
                         "           sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "       }\n" +
                         "   }\n" +
-                        "}, second: {\n" +
+                        "}, 2: {\n" +
                         "   sleep time: 100, unit: 'MILLISECONDS'\n" +
                         "       stage('stage1') {\n" +
                         "       node('foo') {\n" +
