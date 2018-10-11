@@ -168,8 +168,9 @@ public abstract class DurableTaskStep extends Step {
     public static long WATCHING_RECURRENCE_PERIOD = /* 5m */300_000;
 
     /** If set to false, disables {@link Execution#watching} mode. */
-    @SuppressWarnings("FieldMayBeFinal")
-    private static boolean USE_WATCHING = !"false".equals(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING"));
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable only for tests")
+    @Restricted(NoExternalUse.class)
+    public static boolean USE_WATCHING = !"false".equals(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING"));
 
     /**
      * Represents one task that is believed to still be running.
