@@ -10,13 +10,18 @@ import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.MarkupText;
 import hudson.console.AnnotatedLargeText;
+import hudson.console.ConsoleAnnotator;
+import hudson.console.ConsoleLogFilter;
+import hudson.console.ConsoleNote;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
 import hudson.model.BuildListener;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
@@ -30,10 +35,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -55,7 +63,11 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
@@ -456,6 +468,80 @@ public class ShellStepTest {
         private Object writeReplace() {
             String name = Channel.current().getName();
             return new ExternalBuildListener(new File(log + "-" + name), node);
+        }
+    }
+
+    @Ignore("TODO fails to load console note created on agent")
+    @Issue("JENKINS-54133")
+    @Test public void remoteConsoleNotes() throws Exception {
+        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
+        j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+            "node('master') {\n" +
+            "  markUp {\n" +
+            "    sh 'echo hello from master'\n" +
+            "  }\n" +
+            "}\n" +
+            "node('remote') {\n" +
+            "  markUp {\n" +
+            "    sh 'echo hello from agent'\n" +
+            "  }\n" +
+            "}", true));
+        logging.recordPackage(ConsoleNote.class, Level.FINE);
+        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        StringWriter w = new StringWriter();
+        b.getLogText().writeHtmlTo(0, w);
+        assertThat(w.toString(), containsString("<b>hello</b> from master"));
+        assertThat(w.toString(), containsString("<b>hello</b> from agent"));
+    }
+    public static final class MarkUpStep extends Step {
+        @DataBoundConstructor public MarkUpStep() {}
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return new Exec(context);
+        }
+        private static final class Exec extends StepExecution {
+            Exec(StepContext context) {
+                super(context);
+            }
+            @Override public boolean start() throws Exception {
+                getContext().newBodyInvoker().
+                    withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), new Filter())).
+                    withCallback(BodyExecutionCallback.wrap(getContext())).
+                    start();
+                return false;
+            }
+        }
+        private static final class Filter extends ConsoleLogFilter implements Serializable {
+            @SuppressWarnings("rawtypes")
+            @Override public OutputStream decorateLogger(Run _ignore, final OutputStream logger) throws IOException, InterruptedException {
+                return new LineTransformationOutputStream() {
+                    @Override protected void eol(byte[] b, int len) throws IOException {
+                        if (b.length >= 5 && b[0] == 'h' && b[1] == 'e' && b[2] == 'l' && b[3] == 'l' && b[4] == 'o') {
+                            new HelloNote().encodeTo(logger);
+                        }
+                        logger.write(b, 0, len);
+                    }
+                };
+            }
+        }
+        private static final class HelloNote extends ConsoleNote<Object> {
+            @SuppressWarnings("rawtypes") // TODO pending 2.145 generics fixes
+            @Override public ConsoleAnnotator annotate(Object context, MarkupText text, int charPos) {
+                text.addMarkup(0, 5, "<b>", "</b>");
+                return null;
+            }
+        }
+        @TestExtension public static final class DescriptorImpl extends StepDescriptor {
+            @Override public String getFunctionName() {
+                return "markUp";
+            }
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Collections.emptySet();
+            }
+            @Override public boolean takesImplicitBlockArgument() {
+                return true;
+            }
         }
     }
 
