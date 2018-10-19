@@ -30,6 +30,7 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -45,6 +46,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
+import javax.annotation.CheckForNull;
+import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
 import static org.hamcrest.Matchers.*;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -85,6 +88,7 @@ import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 
 public class ShellStepTest {
 
@@ -471,7 +475,6 @@ public class ShellStepTest {
         }
     }
 
-    @Ignore("TODO fails to load console note created on agent")
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
@@ -487,38 +490,61 @@ public class ShellStepTest {
             "  markUp {\n" +
             "    sh 'echo hello from agent'\n" +
             "  }\n" +
+            "  markUp(smart: true) {\n" +
+            "    sh 'echo hello from halfway in between'\n" +
+            "  }\n" +
             "}", true));
         logging.recordPackage(ConsoleNote.class, Level.FINE);
         WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        b.getLogText().writeRawLogTo(0, System.err);
         StringWriter w = new StringWriter();
         b.getLogText().writeHtmlTo(0, w);
-        assertThat(w.toString(), containsString("<b>hello</b> from master"));
-        assertThat(w.toString(), containsString("<b>hello</b> from agent"));
+        assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
+        assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
+        assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
     }
     public static final class MarkUpStep extends Step {
+        @DataBoundSetter public boolean smart;
         @DataBoundConstructor public MarkUpStep() {}
         @Override public StepExecution start(StepContext context) throws Exception {
-            return new Exec(context);
+            return new Exec(context, smart);
         }
         private static final class Exec extends StepExecution {
-            Exec(StepContext context) {
+            final boolean smart;
+            Exec(StepContext context, boolean smart) {
                 super(context);
+                this.smart = smart;
             }
             @Override public boolean start() throws Exception {
                 getContext().newBodyInvoker().
-                    withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), new Filter())).
+                    withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), new Filter(smart))).
                     withCallback(BodyExecutionCallback.wrap(getContext())).
                     start();
                 return false;
             }
         }
         private static final class Filter extends ConsoleLogFilter implements Serializable {
+            private final @CheckForNull byte[] note;
+            Filter(boolean smart) throws IOException {
+                JenkinsJVM.checkJenkinsJVM();
+                if (smart) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    new HelloNote().encodeTo(baos);
+                    note = baos.toByteArray();
+                } else {
+                    note = null;
+                }
+            }
             @SuppressWarnings("rawtypes")
             @Override public OutputStream decorateLogger(Run _ignore, final OutputStream logger) throws IOException, InterruptedException {
                 return new LineTransformationOutputStream() {
                     @Override protected void eol(byte[] b, int len) throws IOException {
                         if (b.length >= 5 && b[0] == 'h' && b[1] == 'e' && b[2] == 'l' && b[3] == 'l' && b[4] == 'o') {
-                            new HelloNote().encodeTo(logger);
+                            if (note != null) {
+                                logger.write(note);
+                            } else {
+                                new HelloNote().encodeTo(logger);
+                            }
                         }
                         logger.write(b, 0, len);
                     }
