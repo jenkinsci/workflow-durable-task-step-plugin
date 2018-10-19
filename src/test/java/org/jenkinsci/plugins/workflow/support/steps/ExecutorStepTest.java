@@ -911,14 +911,10 @@ public class ExecutorStepTest {
         story.then(r -> {
             WorkflowJob p = r.jenkins.getItemByFullName("p1", WorkflowJob.class);
             WorkflowRun b = p.getBuildByNumber(1);
-            SemaphoreStep.waitForStart("wait/1", b);
             SemaphoreStep.success("wait/1", null);
-            while (b.isBuilding()) {
-                // This assertion fails before the fix for JENKINS-53837.
-                r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
-                Thread.sleep(100);
-            }
+            r.waitForCompletion(b);
             r.assertBuildStatusSuccess(b);
+            r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
         });
     }
 
@@ -952,21 +948,22 @@ public class ExecutorStepTest {
     public static class PipelineOnlyTaskDispatcher extends QueueTaskDispatcher {
         @Override
         public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
-            final Queue.Task[] t = new Queue.Task[]{item.task};
-            while (!(t[0] instanceof Item) && (t[0] != null)) {
-                final Queue.Task ownerTask = t[0].getOwnerTask();
-                if (t[0] == ownerTask) {
+            Queue.Task t = item.task;
+            while (!(t instanceof Item) && (t != null)) {
+                final Queue.Task ownerTask = t.getOwnerTask();
+                if (t == ownerTask) {
                     break;
                 }
-                t[0] = ownerTask;
+                t = ownerTask;
             }
-            if (t[0] instanceof WorkflowJob) {
+            if (t instanceof WorkflowJob) {
                 return null;
             }
+            final Queue.Task finalT = t;
             return new CauseOfBlockage() {
                 @Override
                 public String getShortDescription() {
-                    return "Non-Pipeline tasks are forbidden! Not building: " + t[0];
+                    return "Non-Pipeline tasks are forbidden! Not building: " + finalT;
                 }
             };
         }
