@@ -240,6 +240,8 @@ public abstract class DurableTaskStep extends Step {
         private boolean watching; // serialized default is false
         /** Only used when {@link #watching}, if after {@link #WATCHING_RECURRENCE_PERIOD} comes around twice {@link #exited} has yet to be called. */
         private transient boolean awaitingAsynchExit;
+        /** The first throwable used to stop the task */
+        private transient volatile Throwable causeOfStoppage;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -351,6 +353,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void stop(final Throwable cause) throws Exception {
+            causeOfStoppage = cause;
             FilePath workspace = getWorkspace();
             if (workspace != null) {
                 listener().getLogger().println("Sending interrupt signal to process");
@@ -504,13 +507,20 @@ public abstract class DurableTaskStep extends Step {
                 return;
             }
             recurrencePeriod = 0;
-            if (returnStatus || exitCode == 0) {
+            Throwable originalCause = causeOfStoppage;
+            if ((returnStatus && originalCause == null) || exitCode == 0) {
                 getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output, StandardCharsets.UTF_8) : null);
             } else {
                 if (returnStdout) {
                     listener().getLogger().write(output); // diagnostic
                 }
-                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                if (originalCause != null) {
+                    // JENKINS-28822: Use the previous cause instead of throwing a new AbortException
+                    listener().getLogger().println("script returned exit code " + exitCode);
+                    getContext().onFailure(originalCause);
+                } else {
+                    getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                }
             }
         }
 
