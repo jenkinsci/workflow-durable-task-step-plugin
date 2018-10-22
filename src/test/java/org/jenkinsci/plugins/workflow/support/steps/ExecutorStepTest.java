@@ -31,6 +31,7 @@ import hudson.init.InitMilestone;
 import hudson.init.Initializer;
 import hudson.model.Computer;
 import hudson.model.Executor;
+import hudson.model.Item;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -38,6 +39,8 @@ import hudson.model.Run;
 import hudson.model.Slave;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
+import hudson.model.queue.CauseOfBlockage;
+import hudson.model.queue.QueueTaskDispatcher;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
@@ -47,6 +50,8 @@ import hudson.slaves.JNLPLauncher;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
+import hudson.slaves.WorkspaceList;
+import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -66,15 +71,20 @@ import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
-import org.hamcrest.Matchers;
+import static org.hamcrest.Matchers.*;
 import org.jboss.marshalling.ObjectResolver;
+import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
+import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -82,6 +92,7 @@ import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
+import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
@@ -92,6 +103,7 @@ import org.junit.AfterClass;
 import static org.junit.Assert.*;
 import org.junit.Assume;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -99,11 +111,11 @@ import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
+import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.recipes.LocalData;
-
-import javax.annotation.Nullable;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -111,9 +123,8 @@ public class ExecutorStepTest {
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
-    /* Currently too noisy due to unrelated warnings; might clear up if test dependencies updated:
-    @Rule public LoggerRule logging = new LoggerRule().record(ExecutorStepExecution.class, Level.FINE);
-    */
+    // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
+    @Rule public LoggerRule logging = new LoggerRule();
 
     /**
      * Executes a shell script build on a slave.
@@ -205,18 +216,15 @@ public class ExecutorStepTest {
     private void startJnlpProc() throws Exception {
         killJnlpProc();
         ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", story.j.getURL() + "computer/dumbo/slave-agent.jnlp");
-        try {
-            ProcessBuilder.class.getMethod("inheritIO").invoke(pb);
-        } catch (NoSuchMethodException x) {
-            // prior to Java 7
-        }
+        pb.redirectErrorStream(true);
         System.err.println("Running: " + pb.command());
         jnlpProc = pb.start();
+        new StreamCopyThread("jnlp", jnlpProc.getInputStream(), System.err).start();
     }
     // TODO @After does not seem to work at all in RestartableJenkinsRule
     @AfterClass public static void killJnlpProc() {
         if (jnlpProc != null) {
-            jnlpProc.destroy();
+            jnlpProc.destroyForcibly();
             jnlpProc = null;
         }
     }
@@ -226,11 +234,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
                 // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
@@ -274,16 +278,51 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-52165")
+    @Test public void shellOutputAcrossRestart() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+        // for comparison: DurableTaskStep.USE_WATCHING = false;
+        int count = 3_000;
+        story.then(r -> {
+            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+            r.jenkins.addNode(s);
+            startJnlpProc();
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("\n<<<" + (count / 3) + ">>>\n", b);
+            s.toComputer().disconnect(null);
+        });
+        story.then(r -> {
+            WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+            startJnlpProc();
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
+            FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
+            String log = IOUtils.toString(shNode.getAction(LogAction.class).getLogText().readAll());
+            for (int i = 0; i < count; i++) {
+                assertThat(log, containsString("\n<<<" + i + ">>>\n"));
+            }
+            Matcher m = Pattern.compile("<<<\\d+>>>").matcher(log);
+            int seen = 0;
+            while (m.find()) {
+                seen++;
+            }
+            System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
+            killJnlpProc();
+        });
+    }
+
     @Test public void buildShellScriptAcrossDisconnect() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                long origWatchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
+                DurableTaskStep.WATCHING_RECURRENCE_PERIOD = /* 5s */5_000;
+                try {
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
@@ -320,8 +359,89 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
+                } finally {
+                    DurableTaskStep.WATCHING_RECURRENCE_PERIOD = origWatchingRecurrencePeriod;
+                }
             }
         });
+    }
+
+    @Ignore("TODO currently fails with: hudson.remoting.RequestAbortedException: java.nio.channels.ClosedChannelException")
+    @Issue("JENKINS-41854")
+    @Test
+    public void contextualizeFreshFilePathAfterAgentReconnection() throws Exception {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        story.addStep(new Statement() {
+            @SuppressWarnings("SleepWhileInLoop")
+            @Override
+            public void evaluate() throws Throwable {
+                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
+                LOGGER.setLevel(Level.FINE);
+                Handler handler = new ConsoleHandler();
+                handler.setLevel(Level.ALL);
+                LOGGER.addHandler(handler);
+                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                story.j.jenkins.addNode(s);
+                startJnlpProc();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                File f1 = new File(story.j.jenkins.getRootDir(), "f1");
+                File f2 = new File(story.j.jenkins.getRootDir(), "f2");
+                new FileOutputStream(f1).close();
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('dumbo') {\n" +
+                                "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
+                                "    sh 'echo Back again'\n" +
+                                "    echo 'OK, done'\n" +
+                                "}", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                while (!f2.isFile()) {
+                    Thread.sleep(100);
+                }
+                assertTrue(b.isBuilding());
+                Computer computer = s.toComputer();
+                assertNotNull(computer);
+                FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
+                List<WorkspaceAction> actions = new ArrayList<>();
+                for (FlowNode node : walker) {
+                    WorkspaceAction action = node.getAction(WorkspaceAction.class);
+                    if (action != null) {
+                        actions.add(action);
+                    }
+                }
+                assertEquals(1, actions.size());
+                String workspacePath = actions.get(0).getWorkspace().getRemote();
+                assertWorkspaceLocked(computer, workspacePath);
+                killJnlpProc();
+                while (computer.isOnline()) {
+                    Thread.sleep(100);
+                }
+                startJnlpProc();
+                while (computer.isOffline()) {
+                    Thread.sleep(100);
+                }
+                assertWorkspaceLocked(computer, workspacePath);
+                assertTrue(f2.isFile());
+                assertTrue(f1.delete());
+                while (f2.isFile()) {
+                    Thread.sleep(100);
+                }
+                story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
+                story.j.assertLogContains("finished waiting", b);
+                story.j.assertLogContains("Back again", b);
+                story.j.assertLogContains("OK, done", b);
+                killJnlpProc();
+            }
+        });
+    }
+
+    private static void assertWorkspaceLocked(Computer computer, String workspacePath) throws InterruptedException {
+        FilePath proposed = new FilePath(computer.getChannel(), workspacePath);
+        WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(proposed);
+        try {
+            assertNotEquals(workspacePath, lease.path.getRemote());
+        } finally {
+            lease.release();
+        }
     }
 
     @Test public void buildShellScriptQuick() throws Exception {
@@ -641,7 +761,7 @@ public class ExecutorStepTest {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getBuildByNumber(1);
-                assertThat(patchedFiles, Matchers.containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
+                assertThat(patchedFiles, containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
                 /* TODO this seems to randomly not include the expected items:
                 assertThat(patchedFields, Matchers.containsInAnyOrder(
                     // But not FileMonitoringController.controlDir, since this old version is still using location-independent .id.
@@ -736,6 +856,7 @@ public class ExecutorStepTest {
     @Issue("SECURITY-675")
     @Test public void authentication() {
         story.then(r -> {
+            logging.record(ExecutorStepExecution.class, Level.FINE);
             Slave s = r.createSlave("remote", null, null);
             r.waitOnline(s);
             r.jenkins.setNumExecutors(0);
@@ -747,6 +868,7 @@ public class ExecutorStepTest {
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
             p.setDefinition(new CpsFlowDefinition("timeout(time: 5, unit: 'SECONDS') {node {error 'should not be allowed'}}", true));
             r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
+            assertThat(Queue.getInstance().getItems(), emptyArray());
             // What about when there is a fallback authenticator?
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new FallbackAuthenticator());
             r.assertBuildStatus(Result.ABORTED, p.scheduleBuild2(0));
@@ -764,6 +886,30 @@ public class ExecutorStepTest {
             b3.doStop();
         });
     }
+
+    /**
+     * @see PipelineOnlyTaskDispatcher
+     */
+    @Issue("JENKINS-53837")
+    @Test public void queueTaskOwnerCorrectWhenRestarting() {
+        story.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p1");
+            p.setDefinition(new CpsFlowDefinition("node {\n" +
+                    "  semaphore('wait')\n" +
+                    "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+        });
+        story.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p1", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            SemaphoreStep.success("wait/1", null);
+            r.waitForCompletion(b);
+            r.assertBuildStatusSuccess(b);
+            r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
+        });
+    }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
@@ -772,6 +918,31 @@ public class ExecutorStepTest {
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return ACL.SYSTEM;
+        }
+    }
+
+    @TestExtension("queueTaskOwnerCorrectWhenRestarting")
+    public static class PipelineOnlyTaskDispatcher extends QueueTaskDispatcher {
+        @Override
+        public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
+            Queue.Task t = item.task;
+            while (!(t instanceof Item) && (t != null)) {
+                final Queue.Task ownerTask = t.getOwnerTask();
+                if (t == ownerTask) {
+                    break;
+                }
+                t = ownerTask;
+            }
+            if (t instanceof WorkflowJob) {
+                return null;
+            }
+            final Queue.Task finalT = t;
+            return new CauseOfBlockage() {
+                @Override
+                public String getShortDescription() {
+                    return "Non-Pipeline tasks are forbidden! Not building: " + finalT;
+                }
+            };
         }
     }
 
