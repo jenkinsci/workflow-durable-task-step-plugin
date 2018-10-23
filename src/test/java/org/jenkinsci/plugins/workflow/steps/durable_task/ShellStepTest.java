@@ -522,7 +522,7 @@ public class ShellStepTest {
                 "}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForCompletion(b);
-        // Fails with Result.FAILURE as of commit a224295d12.
+        // Fails with Result.FAILURE as of commit 3bd3498ba3.
         j.assertBuildStatus(Result.ABORTED, b);
         j.assertLogContains("Timeout has been exceeded", b);
     }
@@ -539,7 +539,7 @@ public class ShellStepTest {
                 "}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForCompletion(b);
-        // Succeeds as of commit a224295d12.
+        // Succeeds as of commit 3bd3498ba3.
         j.assertBuildStatus(Result.ABORTED, b);
         j.assertLogContains("Timeout has been exceeded", b);
     }
