@@ -522,7 +522,7 @@ public class ShellStepTest {
                 "}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForCompletion(b);
-        // Fails with Result.FAILURE as of commit 3bd3498ba3.
+        // Would have failed with Result.FAILURE before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
         j.assertBuildStatus(Result.ABORTED, b);
         j.assertLogContains("Timeout has been exceeded", b);
     }
@@ -539,7 +539,7 @@ public class ShellStepTest {
                 "}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForCompletion(b);
-        // Succeeds as of commit 3bd3498ba3.
+        // Would have succeeded before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
         j.assertBuildStatus(Result.ABORTED, b);
         j.assertLogContains("Timeout has been exceeded", b);
     }
