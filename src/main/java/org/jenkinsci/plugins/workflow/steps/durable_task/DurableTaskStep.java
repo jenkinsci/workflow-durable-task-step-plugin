@@ -467,14 +467,7 @@ public abstract class DurableTaskStep extends Step {
                             if (controller.writeLog(workspace, listener.getLogger())) {
                                 LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                             }
-                            if (returnStatus || exitCode == 0) {
-                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), StandardCharsets.UTF_8) : null);
-                            } else {
-                                if (returnStdout) {
-                                    listener.getLogger().write(controller.getOutput(workspace, launcher())); // diagnostic
-                                }
-                                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
-                            }
+                            handleExit(exitCode, () -> controller.getOutput(workspace, launcher()));
                             recurrencePeriod = 0;
                             controller.cleanup(workspace);
                         }
@@ -508,12 +501,20 @@ public abstract class DurableTaskStep extends Step {
                 return;
             }
             recurrencePeriod = 0;
+            handleExit(exitCode, () -> output);
+        }
+
+        @FunctionalInterface
+        private interface OutputSupplier {
+            byte[] produce() throws IOException, InterruptedException;
+        }
+        private void handleExit(int exitCode, OutputSupplier output) throws IOException, InterruptedException {
             Throwable originalCause = causeOfStoppage;
             if ((returnStatus && originalCause == null) || exitCode == 0) {
-                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output, StandardCharsets.UTF_8) : null);
+                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output.produce(), StandardCharsets.UTF_8) : null);
             } else {
                 if (returnStdout) {
-                    listener().getLogger().write(output); // diagnostic
+                    listener().getLogger().write(output.produce()); // diagnostic
                 }
                 if (originalCause != null) {
                     // JENKINS-28822: Use the previous cause instead of throwing a new AbortException
