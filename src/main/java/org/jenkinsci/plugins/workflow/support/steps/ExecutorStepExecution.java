@@ -527,7 +527,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 String stageName = findStageName(node);
                 String currentLabelName = threadName != null ? threadName: stageName;
                 if (threadName != null && stageName != null) {
-                    LOGGER.log(FINE, "\"findLabelAndParseLog(): Got both thread: {0} and stage: $stageName. Will take thread name ({0}).", threadName);
+                    LOGGER.log(FINE, "\"concatenateAllEnclosingLabels(): Got both thread: {0} and stage: {1}. Will take thread name ({0}).",
+                            new Object[]{threadName, stageName});
                 }
                 if (currentLabelName != null) {
                     labelName.append("#");
