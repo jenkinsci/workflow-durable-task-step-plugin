@@ -25,7 +25,6 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import com.google.common.base.Predicate;
-import com.sun.corba.se.spi.orbutil.threadpool.Work;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.init.InitMilestone;
