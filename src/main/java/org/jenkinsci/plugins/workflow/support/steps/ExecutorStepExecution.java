@@ -372,7 +372,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public Queue.Task getOwnerTask() {
-            Run<?,?> r = run();
+            Run<?,?> r = runForDisplay();
             if (r != null && r.getParent() instanceof Queue.Task) {
                 return (Queue.Task) r.getParent();
             } else {
