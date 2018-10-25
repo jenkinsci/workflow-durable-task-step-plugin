@@ -75,6 +75,8 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.annotation.Nullable;
+
+import hudson.util.VersionNumber;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -713,10 +715,14 @@ public class ExecutorStepTest {
         });
     }
 
+    /**
+     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeFromPreviousRun() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
+                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
                 for (int i = 0; i < 5; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
@@ -766,10 +772,14 @@ public class ExecutorStepTest {
     }
 
 
+    /**
+     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
+                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
                 for (int i = 0; i < 1; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
@@ -795,10 +805,14 @@ public class ExecutorStepTest {
         });
     }
 
+    /**
+     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
+                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
                 for (int i = 0; i < 3; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
@@ -843,11 +857,16 @@ public class ExecutorStepTest {
         });
     }
 
-    /** Ensure node reuse works from within parallel block without using stages */
+    /**
+     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+     *
+     * Ensure node reuse works from within parallel block without using stages
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
+                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
                 for (int i = 0; i < 3; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
@@ -896,11 +915,16 @@ public class ExecutorStepTest {
         });
     }
 
-    /** Ensure node reuse works from within parallel blocks which use the same stage names */
+    /**
+     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+     *
+     * Ensure node reuse works from within parallel blocks which use the same stage names
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
+                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
                 for (int i = 0; i < 3; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo bar");
@@ -958,10 +982,14 @@ public class ExecutorStepTest {
         });
     }
 
+    /**
+    * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+    */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
+                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
                 for (int i = 0; i < 5; ++i) {
                     DumbSlave slave = story.j.createOnlineSlave();
                     slave.setLabelString("foo");
