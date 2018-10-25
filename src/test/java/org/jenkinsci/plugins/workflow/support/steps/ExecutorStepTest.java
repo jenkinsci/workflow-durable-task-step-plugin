@@ -91,16 +91,18 @@ import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
+import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
-import org.jenkinsci.plugins.workflow.support.actions.LogActionImpl;
 import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
@@ -128,27 +130,6 @@ public class ExecutorStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
     @Rule public LoggerRule logging = new LoggerRule();
-
-    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
-        FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
-        List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
-        for (FlowNode n : walker) {
-            WorkspaceAction a = n.getAction(WorkspaceAction.class);
-            QueueItemAction q = n.getAction(QueueItemAction.class);
-            LogActionImpl l = n.getAction(LogActionImpl.class);
-            String logText;
-            StringWriter writer = new StringWriter();
-            if (l != null) {
-                l.getLogText().writeLogTo(0, writer);
-            }
-            logText = writer.toString();
-            if (a != null) {
-                String labels = logText;
-                actions.add(a);
-            }
-        }
-        return actions;
-    }
 
     /**
      * Executes a shell script build on a slave.
@@ -715,6 +696,19 @@ public class ExecutorStepTest {
         });
     }
 
+
+    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
+        FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
+        List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+        for (FlowNode n : walker) {
+            WorkspaceAction a = n.getAction(WorkspaceAction.class);
+            if (a != null) {
+                actions.add(a);
+            }
+        }
+        return actions;
+    }
+
     /**
      * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
      */
@@ -747,28 +741,34 @@ public class ExecutorStepTest {
         });
     }
 
-    private Map<String, String> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
+    private Map<String, StringWriter> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
-        Map<String, String> nodeNameToLogText = new HashMap<>();
-        StringBuilder previousLogText = new StringBuilder();
+        Map<String, StringWriter> workspaceActionToLogText = new HashMap<>();
         for (FlowNode n : walker) {
-            WorkspaceAction a = n.getAction(WorkspaceAction.class);
-            LogActionImpl l = n.getAction(LogActionImpl.class);
-            StringWriter writer = new StringWriter();
-            if (a != null) {
-                nodeNameToLogText.put(a.getNode(), previousLogText.toString());
-                previousLogText = new StringBuilder();
-            } else if (l != null) {
-                // do not store the log for the workspace action...
-                l.getLogText().writeLogTo(0, writer);
-            }
-            String logText = writer.toString();
-            if (!logText.equals("")) {
-                // will be in reverse order - but doesn't matter
-                previousLogText.append(logText);
+            if (n instanceof StepAtomNode) {
+                StepAtomNode atomNode = (StepAtomNode) n;
+                if (atomNode.getDescriptor() instanceof EchoStep.DescriptorImpl) {
+                    // we're searching for the echo only...
+                    LogAction l = atomNode.getAction(LogAction.class);
+                    if (l != null) {
+                        // Only store the log if there was no workspace action involved... (e.g. from echo)
+                        List<? extends BlockStartNode> enclosingBlocks = atomNode.getEnclosingBlocks();
+                        for (BlockStartNode startNode : enclosingBlocks) {
+                            WorkspaceAction a = startNode.getAction(WorkspaceAction.class);
+                            if (a != null) {
+                                String nodeName = a.getNode();
+                                if (!workspaceActionToLogText.containsKey(nodeName)) {
+                                    workspaceActionToLogText.put(nodeName, new StringWriter());
+                                }
+                                StringWriter writer = workspaceActionToLogText.get(nodeName);
+                                l.getLogText().writeLogTo(0, writer);
+                            }
+                        }
+                    }
+                }
             }
         }
-        return nodeNameToLogText;
+        return workspaceActionToLogText;
     }
 
 
@@ -795,12 +795,14 @@ public class ExecutorStepTest {
                                 "}\n" +
                                 "", true));
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
+                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
                 WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
+                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                assertThat(nodeMapping1, equalTo(nodeMapping2));
+                for (String nodeName: nodeMapping1.keySet()) {
+                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+                }
             }
         });
     }
@@ -832,7 +834,7 @@ public class ExecutorStepTest {
                         "}\n" +
                         "", true));
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
+                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
                 // if nodeMapping contains only one entry this test actually will not test anything reasonable
                 // possibly the number of dumb slaves has to be adjusted in that case
                 assertEquals(nodeMapping1.size(), 2);
@@ -850,9 +852,11 @@ public class ExecutorStepTest {
                         "}\n" +
                         "", true));
                 WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
+                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                assertThat(nodeMapping1, equalTo(nodeMapping2));
+                for (String nodeName: nodeMapping1.keySet()) {
+                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+                }
             }
         });
     }
@@ -887,7 +891,7 @@ public class ExecutorStepTest {
                         "})\n" +
                         "", true));
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
+                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
                 // if nodeMapping contains only one entry this test actually will not test anything reasonable
                 // possibly the number of dumb slaves has to be adjusted in that case
@@ -908,9 +912,11 @@ public class ExecutorStepTest {
                         "})\n" +
                         "", true));
                 WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
+                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                assertThat(nodeMapping1, equalTo(nodeMapping2));
+                for (String nodeName: nodeMapping1.keySet()) {
+                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+                }
             }
         });
     }
@@ -949,7 +955,7 @@ public class ExecutorStepTest {
                         "})\n" +
                         "", true));
                 WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
+                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
                 // if nodeMapping contains only one entry this test actually will not test anything reasonable
                 // possibly the number of dumb slaves has to be adjusted in that case
@@ -975,9 +981,11 @@ public class ExecutorStepTest {
                         "", true));
 
                 WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
+                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                assertThat(nodeMapping1, equalTo(nodeMapping2));
+                for (String nodeName: nodeMapping1.keySet()) {
+                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+                }
             }
         });
     }
@@ -998,7 +1006,7 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
                 WorkflowRun run = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, String> nodeMapping = mapNodeNameToLogText(run);
+                Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
 
                 // if the node was reused every time we'll only have one node mapping entry
                 assertEquals(nodeMapping.size(), 1);
