@@ -508,6 +508,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Similar to {@link #getEnclosingLabel()}.
          * However instead of returning the innermost label including labels inside node blocks this one
          * concatenates all labels found outside the current (node) block
+         *
+         * As {@link FlowNode#getEnclosingBlocks()} will return the blocks sorted from inner to outer blocks
+         * this method will create a string like
+         * <code>#innerblock#outerblock for</code> for a script like
+         * <pre>
+         *     {@code
+         *     parallel(outerblock: {
+         *         stage('innerblock') {
+         *             node {
+         *                 // .. do something here
+         *             }
+         *         }
+         *     }
+         *     }
+         * </pre>
+         *
          * */
         private @CheckForNull String concatenateAllEnclosingLabels() {
             if (!context.isReady()) {
