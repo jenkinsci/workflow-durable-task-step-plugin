@@ -603,6 +603,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
+            listener.getLogger().flush();
             execution.exited(code, output);
         }
 
