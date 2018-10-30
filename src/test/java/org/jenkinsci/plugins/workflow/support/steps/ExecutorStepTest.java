@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
@@ -78,6 +79,9 @@ import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -566,6 +570,45 @@ public class ExecutorStepTest {
                 b.getExecutor().interrupt();
                 story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+            }
+        });
+    }
+
+    @Test public void detailsExported() throws Exception {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('" + s.getNodeName() + "') {\n"
+                        + "semaphore 'wait'\n"
+                        + "    sleep 10\n"
+                        + "}"));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+                JenkinsRule.WebClient wc = story.j.createWebClient();
+                Page page = wc
+                        .goTo("computer/" + s.getNodeName()
+                                + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
+
+                JSONObject propertiesJSON = (JSONObject) (new JsonSlurper()).parseText(page.getWebResponse().getContentAsString());
+                JSONArray executors = propertiesJSON.getJSONArray("executors");
+                JSONObject executor = executors.getJSONObject(0);
+                JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
+
+                assertEquals(1, currentExecutable.get("number"));
+
+                assertEquals("part of " + b.getFullDisplayName(),
+                        currentExecutable.get("displayName"));
+
+                assertEquals("part of " + p.getFullDisplayName() + " #1",
+                        currentExecutable.get("fullDisplayName"));
+
+                assertEquals(story.j.getURL().toString() + "job/" + p.getName() + "/1/",
+                        currentExecutable.get("url"));
             }
         });
     }
