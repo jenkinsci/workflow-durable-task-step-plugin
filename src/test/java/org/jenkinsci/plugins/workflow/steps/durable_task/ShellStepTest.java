@@ -10,13 +10,18 @@ import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.MarkupText;
 import hudson.console.AnnotatedLargeText;
+import hudson.console.ConsoleAnnotator;
+import hudson.console.ConsoleLogFilter;
+import hudson.console.ConsoleNote;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
 import hudson.model.BuildListener;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
@@ -25,18 +30,24 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
+import javax.annotation.CheckForNull;
+import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
 import static org.hamcrest.Matchers.*;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -55,7 +66,11 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
@@ -73,6 +88,7 @@ import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 
 public class ShellStepTest {
 
@@ -456,6 +472,102 @@ public class ShellStepTest {
         private Object writeReplace() {
             String name = Channel.current().getName();
             return new ExternalBuildListener(new File(log + "-" + name), node);
+        }
+    }
+
+    @Issue("JENKINS-54133")
+    @Test public void remoteConsoleNotes() throws Exception {
+        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
+        j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+            "node('master') {\n" +
+            "  markUp {\n" +
+            "    sh 'echo hello from master'\n" +
+            "  }\n" +
+            "}\n" +
+            "node('remote') {\n" +
+            "  markUp {\n" +
+            "    sh 'echo hello from agent'\n" +
+            "  }\n" +
+            "  markUp(smart: true) {\n" +
+            "    sh 'echo hello from halfway in between'\n" +
+            "  }\n" +
+            "}", true));
+        logging.recordPackage(ConsoleNote.class, Level.FINE);
+        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        b.getLogText().writeRawLogTo(0, System.err);
+        StringWriter w = new StringWriter();
+        b.getLogText().writeHtmlTo(0, w);
+        assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
+        assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
+        assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
+    }
+    public static final class MarkUpStep extends Step {
+        @DataBoundSetter public boolean smart;
+        @DataBoundConstructor public MarkUpStep() {}
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return new Exec(context, smart);
+        }
+        private static final class Exec extends StepExecution {
+            final boolean smart;
+            Exec(StepContext context, boolean smart) {
+                super(context);
+                this.smart = smart;
+            }
+            @Override public boolean start() throws Exception {
+                getContext().newBodyInvoker().
+                    withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), new Filter(smart))).
+                    withCallback(BodyExecutionCallback.wrap(getContext())).
+                    start();
+                return false;
+            }
+        }
+        private static final class Filter extends ConsoleLogFilter implements Serializable {
+            private final @CheckForNull byte[] note;
+            Filter(boolean smart) throws IOException {
+                JenkinsJVM.checkJenkinsJVM();
+                if (smart) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    new HelloNote().encodeTo(baos);
+                    note = baos.toByteArray();
+                } else {
+                    note = null;
+                }
+            }
+            @SuppressWarnings("rawtypes")
+            @Override public OutputStream decorateLogger(Run _ignore, final OutputStream logger) throws IOException, InterruptedException {
+                return new LineTransformationOutputStream() {
+                    @Override protected void eol(byte[] b, int len) throws IOException {
+                        if (b.length >= 5 && b[0] == 'h' && b[1] == 'e' && b[2] == 'l' && b[3] == 'l' && b[4] == 'o') {
+                            if (note != null) {
+                                logger.write(note);
+                            } else {
+                                new HelloNote().encodeTo(logger);
+                            }
+                        }
+                        logger.write(b, 0, len);
+                    }
+                };
+            }
+        }
+        private static final class HelloNote extends ConsoleNote<Object> {
+            @SuppressWarnings("rawtypes") // TODO pending 2.145 generics fixes
+            @Override public ConsoleAnnotator annotate(Object context, MarkupText text, int charPos) {
+                text.addMarkup(0, 5, "<b>", "</b>");
+                return null;
+            }
+        }
+        @TestExtension public static final class DescriptorImpl extends StepDescriptor {
+            @Override public String getFunctionName() {
+                return "markUp";
+            }
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Collections.emptySet();
+            }
+            @Override public boolean takesImplicitBlockArgument() {
+                return true;
+            }
         }
     }
 
