@@ -555,6 +555,13 @@ public class ShellStepTest {
                         }
                         logger.write(b, 0, len);
                     }
+                    @Override public void close() throws IOException {
+                        super.close();
+                        logger.close();
+                    }
+                    @Override public void flush() throws IOException {
+                        logger.flush();
+                    }
                 };
             }
         }
