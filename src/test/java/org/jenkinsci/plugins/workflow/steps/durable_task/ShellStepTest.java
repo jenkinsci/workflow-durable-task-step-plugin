@@ -356,6 +356,13 @@ public class ShellStepTest {
                         os.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
                         os.write(b[len - 1]); // NL
                     }
+                    @Override public void flush() throws IOException {
+                        os.flush();
+                    }
+                    @Override public void close() throws IOException {
+                        super.close();
+                        os.close();
+                    }
                 }, true);
             }
             return logger;
