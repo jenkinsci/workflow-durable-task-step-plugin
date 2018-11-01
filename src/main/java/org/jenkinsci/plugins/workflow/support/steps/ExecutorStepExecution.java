@@ -8,7 +8,6 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
-import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
@@ -414,14 +413,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 LOGGER.log(FINE, null, x);
                 return Jenkins.getActiveInstance().getACL();
             }
-        }
-
-        @Override public void checkPermission(Permission p) throws AccessDeniedException {
-            getACL().checkPermission(p);
-        }
-
-        @Override public boolean hasPermission(Permission p) {
-            return getACL().hasPermission(p);
         }
 
         @Override public void checkAbortPermission() {
