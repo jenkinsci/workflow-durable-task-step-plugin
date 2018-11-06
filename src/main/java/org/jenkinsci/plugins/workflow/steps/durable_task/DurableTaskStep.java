@@ -174,6 +174,10 @@ public abstract class DurableTaskStep extends Step {
     @Restricted(NoExternalUse.class)
     public static boolean USE_WATCHING = Boolean.parseBoolean(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING", Main.isUnitTest ? "true" : /* JENKINS-52165 turn back on by default */ "false"));
 
+    /** How many seconds to wait before interrupting remote calls */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable for script console access")
+    public static long REMOTE_TIMEOUT = Integer.parseInt(System.getProperty(DurableTaskStep.class.getName() + ".REMOTE_TIMEOUT", "10"));
+
     private static ScheduledThreadPoolExecutor threadPool;
     private static synchronized ScheduledThreadPoolExecutor threadPool() {
         if (threadPool == null) {
@@ -311,7 +315,7 @@ public abstract class DurableTaskStep extends Step {
                 }
             }
             boolean directory;
-            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
+            try (Timeout timeout = Timeout.limit(REMOTE_TIMEOUT, TimeUnit.SECONDS)) {
                 directory = ws.isDirectory();
             } catch (Exception x) {
                 getWorkspaceProblem(x);
@@ -451,7 +455,7 @@ public abstract class DurableTaskStep extends Step {
                 return; // slave not yet ready, wait for another day
             }
             TaskListener listener = listener();
-            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
+            try (Timeout timeout = Timeout.limit(REMOTE_TIMEOUT, TimeUnit.SECONDS)) {
                 if (watching) {
                     Integer exitCode = controller.exitStatus(workspace, launcher(), listener);
                     if (exitCode == null) {
