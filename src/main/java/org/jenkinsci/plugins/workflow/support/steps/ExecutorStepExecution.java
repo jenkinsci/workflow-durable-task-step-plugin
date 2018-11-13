@@ -64,8 +64,8 @@ import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
-import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -75,6 +75,7 @@ import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
@@ -414,14 +415,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
-        @Override public void checkPermission(Permission p) throws AccessDeniedException {
-            getACL().checkPermission(p);
-        }
-
-        @Override public boolean hasPermission(Permission p) {
-            return getACL().hasPermission(p);
-        }
-
         @Override public void checkAbortPermission() {
             checkPermission(Item.CANCEL);
         }
@@ -745,7 +738,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Occupies {@link Executor} while workflow uses this slave.
          */
         @ExportedBean
-        private final class PlaceholderExecutable implements ContinuableExecutable {
+        private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
 
             @Override public void run() {
                 final TaskListener listener;
@@ -865,8 +858,31 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return PlaceholderTask.this;
             }
 
+            @Exported
+            public Integer getNumber() {
+                Run<?, ?> r = getParent().runForDisplay();
+                return r != null ? r.getNumber() : null;
+            }
+
+            @Exported
+            public String getFullDisplayName() {
+                return getParent().getFullDisplayName();
+            }
+
+            @Exported
+            public String getDisplayName() {
+                return getParent().getDisplayName();
+            }
+
+            @Exported
             @Override public long getEstimatedDuration() {
                 return getParent().getEstimatedDuration();
+            }
+
+            @Exported
+            public Long getTimestamp() {
+                Run<?, ?> r = getParent().runForDisplay();
+                return r != null ? r.getStartTimeInMillis() : null;
             }
 
             @Override public boolean willContinue() {
@@ -880,9 +896,23 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return Executor.of(this);
             }
 
-            @Restricted(NoExternalUse.class) // for Jelly
+            @Restricted(NoExternalUse.class) // for Jelly and toString
             public String getUrl() {
                 return PlaceholderTask.this.getUrl(); // we hope this has a console.jelly
+            }
+
+            @Exported(name="url")
+            public String getAbsoluteUrl() {
+                Run<?,?> r = runForDisplay();
+                if (r == null) {
+                    return "";
+                }
+                Jenkins j = Jenkins.getInstance();
+                String base = "";
+                if (j != null) {
+                    base = Util.removeTrailingSlash(j.getRootUrl()) + "/";
+                }
+                return base + r.getUrl();
             }
 
             @Override public String toString() {
@@ -890,6 +920,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             private static final long serialVersionUID = 1L;
+
+            @Override
+            public ACL getACL() {
+                return getParent().getACL();
+            }
+
+            @Override
+            public void checkPermission(Permission permission) throws AccessDeniedException {
+                getACL().checkPermission(permission);
+            }
+
+            @Override
+            public boolean hasPermission(Permission permission) {
+                return getACL().hasPermission(permission);
+            }
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12

@@ -33,6 +33,7 @@ import hudson.Functions;
 import hudson.Launcher;
 import hudson.Main;
 import hudson.Util;
+import hudson.init.Terminator;
 import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
@@ -173,6 +174,21 @@ public abstract class DurableTaskStep extends Step {
     @Restricted(NoExternalUse.class)
     public static boolean USE_WATCHING = Boolean.parseBoolean(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING", Main.isUnitTest ? "true" : /* JENKINS-52165 turn back on by default */ "false"));
 
+    private static ScheduledThreadPoolExecutor threadPool;
+    private static synchronized ScheduledThreadPoolExecutor threadPool() {
+        if (threadPool == null) {
+            threadPool = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
+            threadPool.setKeepAliveTime(1, TimeUnit.MINUTES);
+            threadPool.allowCoreThreadTimeOut(true);
+        }
+        return threadPool;
+    }
+    @Terminator public static synchronized void shutDownThreadPool() {
+        if (threadPool != null) {
+            threadPool.shutdownNow();
+            threadPool = null;
+        }
+    }
     /**
      * Represents one task that is believed to still be running.
      * <p>This step has two modes, based on pulling or pushing log content from an agent.
@@ -205,12 +221,6 @@ public abstract class DurableTaskStep extends Step {
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
-
-        private static final ScheduledThreadPoolExecutor THREAD_POOL = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
-        static {
-            THREAD_POOL.setKeepAliveTime(1, TimeUnit.MINUTES);
-            THREAD_POOL.allowCoreThreadTimeOut(true);
-        }
 
         /** Used only during {@link #start}. */
         private transient final DurableTaskStep step;
@@ -418,7 +428,7 @@ public abstract class DurableTaskStep extends Step {
                 LOGGER.log(Level.WARNING, null, x);
             } finally {
                 if (recurrencePeriod > 0) {
-                    task = THREAD_POOL.schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+                    task = threadPool().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
                 }
             }
         }
@@ -541,7 +551,7 @@ public abstract class DurableTaskStep extends Step {
 
         private void setupTimer(long initialRecurrencePeriod) {
             recurrencePeriod = initialRecurrencePeriod;
-            task = THREAD_POOL.schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+            task = threadPool().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;
@@ -603,6 +613,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
+            listener.getLogger().flush();
             execution.exited(code, output);
         }
 

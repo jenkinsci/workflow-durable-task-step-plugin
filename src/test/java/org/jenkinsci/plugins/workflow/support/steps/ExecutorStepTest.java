@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
@@ -44,7 +45,6 @@ import hudson.model.queue.QueueTaskDispatcher;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
-import hudson.security.Permission;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
@@ -83,6 +83,9 @@ import hudson.util.VersionNumber;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -290,6 +293,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-52165")
     @Test public void shellOutputAcrossRestart() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        Assume.assumeThat("TODO no longer asserts anything, just informational. There is no way for FileMonitoringTask.Watcher to know when content has been written through to the sink other than by periodically flushing output and declining to write lastLocation until after this completes. This applies both to buffered on-master logs, and to typical cloud sinks.", System.getenv("JENKINS_URL"), nullValue());
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         // for comparison: DurableTaskStep.USE_WATCHING = false;
         int count = 3_000;
@@ -310,14 +314,18 @@ public class ExecutorStepTest {
             // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
             FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
             String log = IOUtils.toString(shNode.getAction(LogAction.class).getLogText().readAll());
+            int lost = 0;
             for (int i = 0; i < count; i++) {
-                assertThat(log, containsString("\n<<<" + i + ">>>\n"));
+                if (!log.contains("\n<<<" + i + ">>>\n")) {
+                    lost++;
+                }
             }
             Matcher m = Pattern.compile("<<<\\d+>>>").matcher(log);
             int seen = 0;
             while (m.find()) {
                 seen++;
             }
+            System.out.printf("Lost content: %.02f%%%n", lost * 100.0 / count);
             System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
             killJnlpProc();
         });
@@ -574,6 +582,45 @@ public class ExecutorStepTest {
                 b.getExecutor().interrupt();
                 story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+            }
+        });
+    }
+
+    @Test public void detailsExported() throws Exception {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('" + s.getNodeName() + "') {\n"
+                        + "semaphore 'wait'\n"
+                        + "    sleep 10\n"
+                        + "}"));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+                JenkinsRule.WebClient wc = story.j.createWebClient();
+                Page page = wc
+                        .goTo("computer/" + s.getNodeName()
+                                + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
+
+                JSONObject propertiesJSON = (JSONObject) (new JsonSlurper()).parseText(page.getWebResponse().getContentAsString());
+                JSONArray executors = propertiesJSON.getJSONArray("executors");
+                JSONObject executor = executors.getJSONObject(0);
+                JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
+
+                assertEquals(1, currentExecutable.get("number"));
+
+                assertEquals("part of " + b.getFullDisplayName(),
+                        currentExecutable.get("displayName"));
+
+                assertEquals("part of " + p.getFullDisplayName() + " #1",
+                        currentExecutable.get("fullDisplayName"));
+
+                assertEquals(story.j.getURL().toString() + "job/" + p.getName() + "/1/",
+                        currentExecutable.get("url"));
             }
         });
     }
@@ -1207,15 +1254,8 @@ public class ExecutorStepTest {
             r.waitOnline(s);
             r.jenkins.setNumExecutors(0);
             r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
-            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategyWithNode().
-                    grant(Jenkins.ADMINISTER).everywhere().to("admin").
-                    // TODO pending fix of JENKINS-46652 in baseline, we must grant BUILD on master but then go back and deny it on remote:
-                            grant(Computer.BUILD).everywhere().to("dev"));
-            Authentication dev = User.get("dev").impersonate();
-            assertTrue(r.jenkins.getACL().hasPermission(dev, Computer.BUILD));
-            assertTrue(r.jenkins.toComputer().getACL().hasPermission(dev, Computer.BUILD));
-            assertFalse(s.getACL().hasPermission(dev, Computer.BUILD));
-            assertFalse(s.toComputer().getACL().hasPermission(dev, Computer.BUILD));
+            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().
+                grant(Jenkins.ADMINISTER).everywhere().to("admin"));
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
             // First check that if the build is run as dev, they are not allowed to use this agent:
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
@@ -1263,24 +1303,9 @@ public class ExecutorStepTest {
         });
     }
 
-    // Pending direct support in MockAuthorizationStrategy for granting node permissions:
-    private static class MockAuthorizationStrategyWithNode extends MockAuthorizationStrategy {
-        @Override public ACL getACL(Node node) {
-            final ACL stock = super.getACL(node);
-            if (node.getNodeName().equals("remote")) {
-                return new ACL() {
-                    @Override public boolean hasPermission(Authentication a, Permission permission) {
-                        return stock.hasPermission(a, permission) && !(a.getName().equals("dev") && permission.equals(Computer.BUILD));
-                    }
-                };
-            } else {
-                return stock;
-            }
-        }
-    }
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
-            return task instanceof WorkflowJob ? User.get("dev").impersonate() : null;
+            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
         }
     }
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
