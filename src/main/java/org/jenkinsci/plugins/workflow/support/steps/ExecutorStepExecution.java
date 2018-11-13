@@ -64,7 +64,7 @@ import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
-import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
@@ -599,13 +599,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private String computeEnclosingLabel(FlowNode executorStepNode, List<FlowNode> heads) {
             for (FlowNode runningNode : heads) {
                 // See if this step is inside our node {} block, and track the associated label.
+                boolean match = false;
                 String enclosingLabel = null;
-                // Just in case we're asking for the enclosing label from within a node step. See JENKINS-36547
-                boolean match = runningNode.equals(executorStepNode);
-                Iterator<? extends BlockStartNode> it = runningNode.iterateEnclosingBlocks().iterator();
+                Iterator<FlowNode> it = FlowScanningUtils.fetchEnclosingBlocks(runningNode);
                 int count = 0;
                 while (it.hasNext()) {
-                    BlockStartNode n = it.next();
+                    FlowNode n = it.next();
                     if (enclosingLabel == null) {
                         ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {
