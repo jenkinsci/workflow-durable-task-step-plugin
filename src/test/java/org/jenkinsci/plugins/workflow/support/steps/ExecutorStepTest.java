@@ -150,10 +150,10 @@ public class ExecutorStepTest {
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
-                    "node('" + s.getNodeName() + "') {\n" +
-                    "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
-                    "    semaphore 'wait'\n" +
-                    "}", true));
+                        "node('" + s.getNodeName() + "') {\n" +
+                                "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
+                                "    semaphore 'wait'\n" +
+                                "}", true));
 
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
@@ -205,9 +205,9 @@ public class ExecutorStepTest {
                 // be the equivalent, but it uses input redirection which is
                 // not supported.  So instead use ping.
                 p.setDefinition(new CpsFlowDefinition(
-                    "node('" + s.getNodeName() + "') {\n" +
-                    "    isUnix() ? sh('(sleep 5; touch " + fullPathToTestFile + ") &') : bat('start /B cmd.exe /C \"ping localhost -n 5 && copy NUL " + fullPathToTestFile + "\"')\n" +
-                    "}", true));
+                        "node('" + s.getNodeName() + "') {\n" +
+                                "    isUnix() ? sh('(sleep 5; touch " + fullPathToTestFile + ") &') : bat('start /B cmd.exe /C \"ping localhost -n 5 && copy NUL " + fullPathToTestFile + "\"')\n" +
+                                "}", true));
                 WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
 
                 // Wait until the build completes.
@@ -254,10 +254,10 @@ public class ExecutorStepTest {
                 File f2 = new File(story.j.jenkins.getRootDir(), "f2");
                 new FileOutputStream(f1).close();
                 p.setDefinition(new CpsFlowDefinition(
-                    "node('dumbo') {\n" +
-                    "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
-                    "    echo 'OK, done'\n" +
-                    "}", true));
+                        "node('dumbo') {\n" +
+                                "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
+                                "    echo 'OK, done'\n" +
+                                "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 while (!f2.isFile()) {
                     Thread.sleep(100);
@@ -331,43 +331,43 @@ public class ExecutorStepTest {
                 long origWatchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
                 DurableTaskStep.WATCHING_RECURRENCE_PERIOD = /* 5s */5_000;
                 try {
-                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
-                story.j.jenkins.addNode(s);
-                startJnlpProc();
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                File f1 = new File(story.j.jenkins.getRootDir(), "f1");
-                File f2 = new File(story.j.jenkins.getRootDir(), "f2");
-                new FileOutputStream(f1).close();
-                p.setDefinition(new CpsFlowDefinition(
-                    "node('dumbo') {\n" +
-                    "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
-                    "    echo 'OK, done'\n" +
-                    "}", true));
-                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                while (!f2.isFile()) {
-                    Thread.sleep(100);
-                }
-                assertTrue(b.isBuilding());
-                Computer c = s.toComputer();
-                assertNotNull(c);
-                killJnlpProc();
-                while (c.isOnline()) {
-                    Thread.sleep(100);
-                }
-                startJnlpProc();
-                while (c.isOffline()) {
-                    Thread.sleep(100);
-                }
-                assertTrue(f2.isFile());
-                assertTrue(f1.delete());
-                while (f2.isFile()) {
-                    Thread.sleep(100);
-                }
-                story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
-                story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
-                story.j.assertLogContains("OK, done", b);
-                killJnlpProc();
+                    logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+                    DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                    story.j.jenkins.addNode(s);
+                    startJnlpProc();
+                    WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                    File f1 = new File(story.j.jenkins.getRootDir(), "f1");
+                    File f2 = new File(story.j.jenkins.getRootDir(), "f2");
+                    new FileOutputStream(f1).close();
+                    p.setDefinition(new CpsFlowDefinition(
+                            "node('dumbo') {\n" +
+                                    "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
+                                    "    echo 'OK, done'\n" +
+                                    "}", true));
+                    WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                    while (!f2.isFile()) {
+                        Thread.sleep(100);
+                    }
+                    assertTrue(b.isBuilding());
+                    Computer c = s.toComputer();
+                    assertNotNull(c);
+                    killJnlpProc();
+                    while (c.isOnline()) {
+                        Thread.sleep(100);
+                    }
+                    startJnlpProc();
+                    while (c.isOffline()) {
+                        Thread.sleep(100);
+                    }
+                    assertTrue(f2.isFile());
+                    assertTrue(f1.delete());
+                    while (f2.isFile()) {
+                        Thread.sleep(100);
+                    }
+                    story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
+                    story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
+                    story.j.assertLogContains("OK, done", b);
+                    killJnlpProc();
                 } finally {
                     DurableTaskStep.WATCHING_RECURRENCE_PERIOD = origWatchingRecurrencePeriod;
                 }
@@ -461,9 +461,9 @@ public class ExecutorStepTest {
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
-                    "node('" + s.getNodeName() + "') {\n" +
-                    "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
-                    "}", true));
+                        "node('" + s.getNodeName() + "') {\n" +
+                                "    isUnix() ? sh('echo ONSLAVE=$ONSLAVE') : bat('echo ONSLAVE=%ONSLAVE%')\n" +
+                                "}", true));
 
                 WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
                 story.j.assertLogContains("ONSLAVE=true", b);
@@ -480,14 +480,14 @@ public class ExecutorStepTest {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                         "node('slave') {\n" + // this locks the WS
-                        "    echo(/default=${pwd()}/)\n" +
-                        "    ws {\n" + // and this locks a second one
-                        "        echo(/before=${pwd()}/)\n" +
-                        "        semaphore 'wait'\n" +
-                        "        echo(/after=${pwd()}/)\n" +
-                        "    }\n" +
-                        "}"
-                , true));
+                                "    echo(/default=${pwd()}/)\n" +
+                                "    ws {\n" + // and this locks a second one
+                                "        echo(/before=${pwd()}/)\n" +
+                                "        semaphore 'wait'\n" +
+                                "        echo(/after=${pwd()}/)\n" +
+                                "    }\n" +
+                                "}"
+                        , true));
                 p.save();
                 WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b1);
@@ -556,9 +556,9 @@ public class ExecutorStepTest {
                 DumbSlave dumbo = story.j.createSlave("dumbo", null, null); // unlike in buildShellScriptAcrossRestart, we *want* this to die after restart
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
-                    "node('dumbo') {\n" +
-                    "  semaphore 'wait'\n" +
-                    "}"));
+                        "node('dumbo') {\n" +
+                                "  semaphore 'wait'\n" +
+                                "}"));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
                 dumbo.getComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getUnknown(), "not about to reconnect"));
@@ -881,16 +881,23 @@ public class ExecutorStepTest {
                 }
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+
+                // 1: the second branch shall request the node first and wait inside the node block for the
+                // first branch to acquire the node
                 p.setDefinition(new CpsFlowDefinition("" +
+                        "def secondBranchReady = false\n" +
+                        "def firstBranchDone = false\n" +
                         "parallel(1: {\n" +
-                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   waitUntil { secondBranchReady }\n" +
                         "   node('foo') {\n" +
                         "       echo \"ran node block first\"\n" +
                         "   }\n" +
+                        "   firstBranchDone = true\n" +
                         "}, 2: {\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block second\"\n" +
-                        "       sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "       secondBranchReady = true\n" +
+                        "       waitUntil { firstBranchDone }\n" +
                         "   }\n" +
                         "})\n" +
                         "", true));
@@ -901,18 +908,22 @@ public class ExecutorStepTest {
                 // possibly the number of dumb slaves has to be adjusted in that case
                 assertEquals(nodeMapping1.size(), 2);
 
-                // update script to force reversed order for node blocks; shall still pick the same nodes
+                // 2: update script to force reversed order for node blocks; shall still pick the same nodes
                 p.setDefinition(new CpsFlowDefinition("" +
+                        "def firstBranchReady = false\n" +
+                        "def secondBranchDone = false\n" +
                         "parallel(1: {\n" +
                         "   node('foo') {\n" +
                         "       echo \"ran node block first\"\n" +
-                        "       sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "       firstBranchReady = true\n" +
+                        "       waitUntil { secondBranchDone }\n" +
                         "   }\n" +
                         "}, 2: {\n" +
-                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   waitUntil { firstBranchReady }\n" +
                         "   node('foo') {\n" +
                         "	    echo \"ran node block second\"\n" +
                         "   }\n" +
+                        "   secondBranchDone = true\n" +
                         "})\n" +
                         "", true));
                 WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
@@ -942,18 +953,22 @@ public class ExecutorStepTest {
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("" +
+                        "def secondBranchReady = false\n" +
+                        "def firstBranchDone = false\n" +
                         "parallel(1: {\n" +
-                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "   waitUntil { secondBranchReady }\n" +
                         "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "           echo \"ran node block first\"\n" +
                         "        }\n" +
                         "   }\n" +
+                        "   firstBranchDone = true\n" +
                         "}, 2: {\n" +
                         "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "	        echo \"ran node block second\"\n" +
-                        "           sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "           secondBranchReady = true\n" +
+                        "           waitUntil { firstBranchDone }\n" +
                         "        }\n" +
                         "   }\n" +
                         "})\n" +
@@ -967,20 +982,24 @@ public class ExecutorStepTest {
 
                 // update script to force reversed order for node blocks; shall still pick the same nodes
                 p.setDefinition(new CpsFlowDefinition("" +
+                        "def firstBranchReady = false\n" +
+                        "def secondBranchDone = false\n" +
                         "parallel(1: {\n" +
                         "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "           echo \"ran node block first\"\n" +
-                        "           sleep time: 100, unit: 'MILLISECONDS'\n" +
+                        "           firstBranchReady = true\n" +
+                        "           waitUntil { secondBranchDone }\n" +
                         "       }\n" +
                         "   }\n" +
                         "}, 2: {\n" +
-                        "   sleep time: 100, unit: 'MILLISECONDS'\n" +
-                        "       stage('stage1') {\n" +
+                        "   waitUntil { firstBranchReady }\n" +
+                        "   stage('stage1') {\n" +
                         "       node('foo') {\n" +
                         "    	    echo \"ran node block second\"\n" +
                         "       }\n" +
                         "   }\n" +
+                        "   secondBranchDone = true\n" +
                         "})\n" +
                         "", true));
 
@@ -995,8 +1014,8 @@ public class ExecutorStepTest {
     }
 
     /**
-    * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-    */
+     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() {
         story.addStep(new Statement() {
@@ -1024,28 +1043,28 @@ public class ExecutorStepTest {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
-                    "stage('one') {\n" +
-                    "  node {\n" +
-                    "    semaphore 'one'\n" +
-                    "    stage('two') {\n" +
-                    "      semaphore 'two'\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}\n" +
-                    "stage('three') {\n" +
-                    "  node {\n" +
-                    "    semaphore 'three'\n" +
-                    "  }\n" +
-                    "  parallel a: {\n" +
-                    "    node {\n" +
-                    "      semaphore 'a'\n" +
-                    "    }\n" +
-                    "  }, b: {\n" +
-                    "    node {\n" +
-                    "      semaphore 'b'\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}", true));
+                        "stage('one') {\n" +
+                                "  node {\n" +
+                                "    semaphore 'one'\n" +
+                                "    stage('two') {\n" +
+                                "      semaphore 'two'\n" +
+                                "    }\n" +
+                                "  }\n" +
+                                "}\n" +
+                                "stage('three') {\n" +
+                                "  node {\n" +
+                                "    semaphore 'three'\n" +
+                                "  }\n" +
+                                "  parallel a: {\n" +
+                                "    node {\n" +
+                                "      semaphore 'a'\n" +
+                                "    }\n" +
+                                "  }, b: {\n" +
+                                "    node {\n" +
+                                "      semaphore 'b'\n" +
+                                "    }\n" +
+                                "  }\n" +
+                                "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
                 assertEquals(Collections.singletonList(n(b, "one")), currentLabels());
@@ -1189,9 +1208,9 @@ public class ExecutorStepTest {
             r.jenkins.setNumExecutors(0);
             r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
             r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategyWithNode().
-                grant(Jenkins.ADMINISTER).everywhere().to("admin").
-                // TODO pending fix of JENKINS-46652 in baseline, we must grant BUILD on master but then go back and deny it on remote:
-                grant(Computer.BUILD).everywhere().to("dev"));
+                    grant(Jenkins.ADMINISTER).everywhere().to("admin").
+                    // TODO pending fix of JENKINS-46652 in baseline, we must grant BUILD on master but then go back and deny it on remote:
+                            grant(Computer.BUILD).everywhere().to("dev"));
             Authentication dev = User.get("dev").impersonate();
             assertTrue(r.jenkins.getACL().hasPermission(dev, Computer.BUILD));
             assertTrue(r.jenkins.toComputer().getACL().hasPermission(dev, Computer.BUILD));
