@@ -38,8 +38,10 @@ import java.io.PrintStream;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -50,11 +52,16 @@ import javax.annotation.CheckForNull;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
 import static org.hamcrest.Matchers.*;
+
+import org.hamcrest.Matchers;
+import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
+import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
@@ -127,6 +134,34 @@ public class ShellStepTest {
 
         assertTrue(found);
     }
+
+    /**
+     * Failure in the shell script should mark the step as red
+     */
+    @Test
+    public void stepDescription() throws Exception {
+        // job setup
+        WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
+        foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ? "node {" +
+                "bat 'echo first';" +
+                "bat returnStdout: true, script: 'echo second';" +
+        "}" : "node {" +
+                "sh 'echo first'; " +
+                "sh returnStdout: true, script: 'echo second'" +
+        "}", true));
+
+        WorkflowRun b = j.buildAndAssertSuccess(foo);
+
+        ArrayList<String> args = new ArrayList<>();
+        List<FlowNode> shellStepNodes = new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate(Functions.isWindows() ? "bat" : "sh"));
+        assertThat(shellStepNodes, Matchers.hasSize(2));
+        for(FlowNode n : shellStepNodes) {
+            args.add(ArgumentsAction.getStepArgumentsAsString(n));
+        }
+
+        assertArrayEquals(new String[] { "first", "second" }, args.toArray());
+    }
+
 
     /**
      * Abort a running workflow to ensure that the process is terminated.
