@@ -53,7 +53,6 @@ import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
 import static org.hamcrest.Matchers.*;
 
-import org.hamcrest.Matchers;
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
@@ -135,9 +134,7 @@ public class ShellStepTest {
         assertTrue(found);
     }
 
-    /**
-     * Failure in the shell script should mark the step as red
-     */
+    @Issue("JENKINS-52943")
     @Test
     public void stepDescription() throws Exception {
         // job setup
@@ -154,12 +151,12 @@ public class ShellStepTest {
 
         ArrayList<String> args = new ArrayList<>();
         List<FlowNode> shellStepNodes = new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate(Functions.isWindows() ? "bat" : "sh"));
-        assertThat(shellStepNodes, Matchers.hasSize(2));
+        assertThat(shellStepNodes, hasSize(2));
         for(FlowNode n : shellStepNodes) {
             args.add(ArgumentsAction.getStepArgumentsAsString(n));
         }
 
-        assertArrayEquals(new String[] { "first", "second" }, args.toArray());
+        assertThat(args, containsInAnyOrder("echo first", "echo second"));
     }
 
 
