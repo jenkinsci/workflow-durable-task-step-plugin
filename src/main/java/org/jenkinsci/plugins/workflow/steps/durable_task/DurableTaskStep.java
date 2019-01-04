@@ -65,6 +65,8 @@ import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.Handler;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -95,6 +97,7 @@ public abstract class DurableTaskStep extends Step {
     private boolean returnStdout;
     private String encoding;
     private boolean returnStatus;
+    private String label;
 
     protected abstract DurableTask task();
 
@@ -121,8 +124,19 @@ public abstract class DurableTaskStep extends Step {
     @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
         this.returnStatus = returnStatus;
     }
+    
+    @DataBoundSetter public void setLabel(String label) {
+        this.label = label;
+    }
+    
+    public String getLabel() {
+        return label;
+    }
 
     @Override public StepExecution start(StepContext context) throws Exception {
+        if (this.label != null && !this.label.isEmpty()) {
+            context.get(FlowNode.class).addAction(new LabelAction(this.label));
+        }
         return new Execution(context, this);
     }
 
