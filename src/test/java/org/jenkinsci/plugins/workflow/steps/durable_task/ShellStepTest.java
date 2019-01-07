@@ -51,6 +51,8 @@ import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
+
 import static org.hamcrest.Matchers.*;
 
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
@@ -340,7 +342,27 @@ public class ShellStepTest {
         }
 
         assertTrue(found);
+    }
+    
+    @Test public void labelShortened() throws Exception {
+        String singleLabel= StringUtils.repeat("0123456789", 10);
+        String label = singleLabel + singleLabel;
         
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: '" + label + "') : bat(script: 'echo', label: '" + label + "')}", true));
+        
+        WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
+
+        boolean found = false;
+        FlowGraphTable t = new FlowGraphTable(b.getExecution());
+        t.build();
+        for (Row r : t.getRows()) {
+            if (r.getDisplayName().equals(singleLabel)) {
+                found = true;
+            }
+        }
+
+        assertTrue(found);
     }
 
     @Issue("JENKINS-38381")
