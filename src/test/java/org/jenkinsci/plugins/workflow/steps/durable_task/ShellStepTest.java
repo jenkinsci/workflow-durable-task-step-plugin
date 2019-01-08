@@ -51,6 +51,8 @@ import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
+
 import static org.hamcrest.Matchers.*;
 
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
@@ -276,6 +278,8 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
+        assertEquals("", s.getLabel());
+        
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
         s = new StepConfigTester(j).configRoundTrip(s);
@@ -283,6 +287,8 @@ public class ShellStepTest {
         assertTrue(s.isReturnStdout());
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
+        assertEquals("", s.getLabel());
+        
         s.setReturnStdout(false);
         s.setEncoding("UTF-8");
         s.setReturnStatus(true);
@@ -291,6 +297,15 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
+        assertEquals("", s.getLabel());
+        
+        s.setLabel("Round Trip Test");
+        s = new StepConfigTester(j).configRoundTrip(s);
+        assertEquals("echo hello", s.getScript());
+        assertFalse(s.isReturnStdout());
+        assertEquals("UTF-8", s.getEncoding());
+        assertTrue(s.isReturnStatus());
+        assertEquals("Round Trip Test", s.getLabel());
     }
 
     @Issue("JENKINS-26133")
@@ -308,6 +323,46 @@ public class ShellStepTest {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+    }
+    
+    
+    @Test public void label() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: 'Step with label') : bat(script: 'echo', label: 'Step with label')}", true));
+        
+        WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
+
+        boolean found = false;
+        FlowGraphTable t = new FlowGraphTable(b.getExecution());
+        t.build();
+        for (Row r : t.getRows()) {
+            if (r.getDisplayName().equals("Step with label")) {
+                found = true;
+            }
+        }
+
+        assertTrue(found);
+    }
+    
+    @Test public void labelShortened() throws Exception {
+        String singleLabel= StringUtils.repeat("0123456789", 10);
+        String label = singleLabel + singleLabel;
+        
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: '" + label + "') : bat(script: 'echo', label: '" + label + "')}", true));
+        
+        WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
+
+        boolean found = false;
+        FlowGraphTable t = new FlowGraphTable(b.getExecution());
+        t.build();
+        for (Row r : t.getRows()) {
+            if (r.getDisplayName().equals(singleLabel)) {
+                found = true;
+            }
+        }
+
+        assertTrue(found);
     }
 
     @Issue("JENKINS-38381")
