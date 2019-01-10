@@ -5,6 +5,7 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
+import hudson.Functions;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
@@ -667,12 +668,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         throw new IllegalStateException("running task without associated executor thread");
                     }
                     Computer computer = exec.getOwner();
+                    listener = context.get(TaskListener.class);
+                    for (Computer.TerminationRequest tr : computer.getTerminatedBy()) {
+                        Functions.printStackTrace(tr, listener.getLogger());
+                    }
                     // Set up context for other steps inside this one.
                     Node node = computer.getNode();
                     if (node == null) {
                         throw new IllegalStateException("running computer lacks a node");
                     }
-                    listener = context.get(TaskListener.class);
                     launcher = node.createLauncher(listener);
                     r = context.get(Run.class);
                     if (cookie == null) {
