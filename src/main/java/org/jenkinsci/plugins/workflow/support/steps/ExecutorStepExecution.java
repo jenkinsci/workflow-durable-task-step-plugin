@@ -5,7 +5,6 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
-import hudson.Functions;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
@@ -662,21 +661,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 final TaskListener listener;
                 Launcher launcher;
                 final Run<?, ?> r;
+                Computer computer = null;
                 try {
                     Executor exec = Executor.currentExecutor();
                     if (exec == null) {
                         throw new IllegalStateException("running task without associated executor thread");
                     }
-                    Computer computer = exec.getOwner();
-                    listener = context.get(TaskListener.class);
-                    for (Computer.TerminationRequest tr : computer.getTerminatedBy()) {
-                        Functions.printStackTrace(tr, listener.getLogger());
-                    }
+                    computer = exec.getOwner();
                     // Set up context for other steps inside this one.
                     Node node = computer.getNode();
                     if (node == null) {
                         throw new IllegalStateException("running computer lacks a node");
                     }
+                    listener = context.get(TaskListener.class);
                     launcher = node.createLauncher(listener);
                     r = context.get(Run.class);
                     if (cookie == null) {
@@ -728,6 +725,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         LOGGER.log(FINE, "resuming {0}", cookie);
                     }
                 } catch (Exception x) {
+                    if (computer != null) {
+                        for (Computer.TerminationRequest tr : computer.getTerminatedBy()) {
+                            x.addSuppressed(tr);
+                        }
+                    }
                     context.onFailure(x);
                     return;
                 }
