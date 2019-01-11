@@ -29,6 +29,7 @@ import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.security.AccessControlled;
 import hudson.security.Permission;
+import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -658,15 +659,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
 
             @Override public void run() {
-                final TaskListener listener;
+                TaskListener listener = null;
                 Launcher launcher;
                 final Run<?, ?> r;
+                Computer computer = null;
                 try {
                     Executor exec = Executor.currentExecutor();
                     if (exec == null) {
                         throw new IllegalStateException("running task without associated executor thread");
                     }
-                    Computer computer = exec.getOwner();
+                    computer = exec.getOwner();
                     // Set up context for other steps inside this one.
                     Node node = computer.getNode();
                     if (node == null) {
@@ -724,6 +726,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         LOGGER.log(FINE, "resuming {0}", cookie);
                     }
                 } catch (Exception x) {
+                    if (computer != null) {
+                        for (Computer.TerminationRequest tr : computer.getTerminatedBy()) {
+                            x.addSuppressed(tr);
+                        }
+                        if (listener != null) {
+                            OfflineCause oc = computer.getOfflineCause();
+                            if (oc != null) {
+                                listener.getLogger().println(computer.getDisplayName() + " was marked offline: " + oc);
+                            }
+                        }
+                    }
                     context.onFailure(x);
                     return;
                 }
@@ -738,6 +751,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     assert runningTask.execution == null;
                     assert runningTask.launcher == null;
                     runningTask.launcher = launcher;
+                    TaskListener _listener = listener;
                     runningTask.execution = new AsynchronousExecution() {
                         @Override public void interrupt(boolean forShutdown) {
                             if (forShutdown) {
@@ -753,7 +767,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                     } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
                                         Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
                                         if (thisExecutor != null) {
-                                            thisExecutor.recordCauseOfInterruption(r, listener);
+                                            thisExecutor.recordCauseOfInterruption(r, _listener);
                                         }
                                         completed(null);
                                     }
