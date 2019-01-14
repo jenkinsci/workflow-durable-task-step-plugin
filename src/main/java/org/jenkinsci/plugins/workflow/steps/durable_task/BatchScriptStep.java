@@ -29,6 +29,8 @@ import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.WindowsBatchScript;
 import org.kohsuke.stapler.DataBoundConstructor;
 
+import java.util.Map;
+
 /**
  * Asynchronous batch script execution.
  */
@@ -59,6 +61,11 @@ public class BatchScriptStep extends DurableTaskStep {
 
         @Override public String getFunctionName() {
             return "bat";
+        }
+
+        @Override public String argumentsToString(Map<String, Object> namedArgs) {
+            Object script = namedArgs.get("script");
+            return script instanceof String ? (String) script : null;
         }
 
     }

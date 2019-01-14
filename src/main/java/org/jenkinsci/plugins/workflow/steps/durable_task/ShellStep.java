@@ -33,6 +33,8 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 
+import java.util.Map;
+
 /**
  * Runs a Bourne shell script asynchronously on a slave.
  */
@@ -70,6 +72,11 @@ public final class ShellStep extends DurableTaskStep {
 
         @Override public String getFunctionName() {
             return "sh";
+        }
+
+        @Override public String argumentsToString(Map<String, Object> namedArgs) {
+            Object script = namedArgs.get("script");
+            return script instanceof String ? (String) script : null;
         }
 
     }
