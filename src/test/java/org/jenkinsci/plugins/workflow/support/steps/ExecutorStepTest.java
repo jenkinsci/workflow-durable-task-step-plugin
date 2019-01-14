@@ -827,7 +827,6 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
         story.then(r -> {
-            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
             for (int i = 0; i < 1; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
@@ -860,7 +859,6 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
         story.then(r -> {
-            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
             for (int i = 0; i < 3; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
@@ -914,7 +912,6 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
         story.then(r -> {
-            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
             for (int i = 0; i < 3; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
@@ -983,7 +980,6 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
         story.then(r -> {
-            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
             for (int i = 0; i < 3; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
@@ -1056,7 +1052,6 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() {
         story.then(r -> {
-            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
             for (int i = 0; i < 5; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo");
