@@ -33,7 +33,7 @@
     </parent>
     <groupId>org.jenkins-ci.plugins.workflow</groupId>
     <artifactId>workflow-durable-task-step</artifactId>
-    <version>2.28</version>
+    <version>${revision}${changelist}</version>
     <packaging>hpi</packaging>
     <name>Pipeline: Nodes and Processes</name>
     <url>https://wiki.jenkins.io/display/JENKINS/Pipeline+Nodes+and+Processes+Plugin</url>
@@ -47,7 +47,7 @@
         <connection>scm:git:git://github.com/jenkinsci/${project.artifactId}-plugin.git</connection>
         <developerConnection>scm:git:git@github.com:jenkinsci/${project.artifactId}-plugin.git</developerConnection>
         <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
-        <tag>workflow-durable-task-step-2.28</tag>
+        <tag>${scmTag}</tag>
     </scm>
     <repositories>
         <repository>
@@ -62,7 +62,7 @@
         </pluginRepository>
     </pluginRepositories>
     <properties>
-        <revision>2.28</revision>
+        <revision>2.29</revision>
         <changelist>-SNAPSHOT</changelist>
         <jenkins.version>2.121.1</jenkins.version>
         <java.level>8</java.level>
