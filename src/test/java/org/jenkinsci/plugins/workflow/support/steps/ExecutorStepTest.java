@@ -765,30 +765,28 @@ public class ExecutorStepTest {
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeFromPreviousRun() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
-                for (int i = 0; i < 5; ++i) {
-                    DumbSlave slave = story.j.createOnlineSlave();
-                    slave.setLabelString("foo bar");
-                }
-
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
-                        "}\n", true));
-
-                WorkflowRun run = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                List<WorkspaceAction> workspaceActions = getWorkspaceActions(run);
-                assertEquals(workspaceActions.size(), 1);
-
-                String firstNode = workspaceActions.get(0).getNode();
-                assertNotEquals(firstNode, "");
-
-                WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                workspaceActions = getWorkspaceActions(run2);
-                assertEquals(workspaceActions.size(), 1);
-                assertEquals(workspaceActions.get(0).getNode(), firstNode);
+        story.then(r -> {
+            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
+            for (int i = 0; i < 5; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
             }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
+                    "}\n", true));
+
+            WorkflowRun run = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            List<WorkspaceAction> workspaceActions = getWorkspaceActions(run);
+            assertEquals(workspaceActions.size(), 1);
+
+            String firstNode = workspaceActions.get(0).getNode();
+            assertNotEquals(firstNode, "");
+
+            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            workspaceActions = getWorkspaceActions(run2);
+            assertEquals(workspaceActions.size(), 1);
+            assertEquals(workspaceActions.get(0).getNode(), firstNode);
         });
     }
 
@@ -828,32 +826,30 @@ public class ExecutorStepTest {
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
-                for (int i = 0; i < 1; ++i) {
-                    DumbSlave slave = story.j.createOnlineSlave();
-                    slave.setLabelString("foo bar");
-                }
+        story.then(r -> {
+            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
+            for (int i = 0; i < 1; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
 
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition(
-                        "node('foo') {\n" +
-                                "   echo \"ran node block foo\"\n" +
-                                "}\n" +
-                                "node('bar') {\n" +
-                                "	echo \"ran node block bar\"\n" +
-                                "}\n" +
-                                "", true));
-                WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition(
+                    "node('foo') {\n" +
+                            "   echo \"ran node block foo\"\n" +
+                            "}\n" +
+                            "node('bar') {\n" +
+                            "	echo \"ran node block bar\"\n" +
+                            "}\n" +
+                            "", true));
+            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
-                WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                for (String nodeName: nodeMapping1.keySet()) {
-                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-                }
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
             }
         });
     }
@@ -863,51 +859,49 @@ public class ExecutorStepTest {
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
-                for (int i = 0; i < 3; ++i) {
-                    DumbSlave slave = story.j.createOnlineSlave();
-                    slave.setLabelString("foo bar");
-                }
+        story.then(r -> {
+            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
+            for (int i = 0; i < 3; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
 
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("" +
-                        "stage('1') {\n" +
-                        "   node('foo') {\n" +
-                        "       echo \"ran node block first\"\n" +
-                        "   }\n" +
-                        "}\n" +
-                        "stage('2') {\n" +
-                        "   node('foo') {\n" +
-                        "	    echo \"ran node block second\"\n" +
-                        "   }\n" +
-                        "}\n" +
-                        "", true));
-                WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
-                // if nodeMapping contains only one entry this test actually will not test anything reasonable
-                // possibly the number of dumb slaves has to be adjusted in that case
-                assertEquals(nodeMapping1.size(), 2);
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "stage('1') {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "stage('2') {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "", true));
+            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
 
-                p.setDefinition(new CpsFlowDefinition("" +
-                        "stage('2') {\n" +
-                        "   node('foo') {\n" +
-                        "       echo \"ran node block second\"\n" +
-                        "   }\n" +
-                        "}\n" +
-                        "stage('1') {\n" +
-                        "   node('foo') {\n" +
-                        "	    echo \"ran node block first\"\n" +
-                        "   }\n" +
-                        "}\n" +
-                        "", true));
-                WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "stage('2') {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "stage('1') {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "", true));
+            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                for (String nodeName: nodeMapping1.keySet()) {
-                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-                }
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
             }
         });
     }
@@ -919,66 +913,64 @@ public class ExecutorStepTest {
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
-                for (int i = 0; i < 3; ++i) {
-                    DumbSlave slave = story.j.createOnlineSlave();
-                    slave.setLabelString("foo bar");
-                }
+        story.then(r -> {
+            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
+            for (int i = 0; i < 3; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
 
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
 
-                // 1: the second branch shall request the node first and wait inside the node block for the
-                // first branch to acquire the node
-                p.setDefinition(new CpsFlowDefinition("" +
-                        "def secondBranchReady = false\n" +
-                        "def firstBranchDone = false\n" +
-                        "parallel(1: {\n" +
-                        "   waitUntil { secondBranchReady }\n" +
-                        "   node('foo') {\n" +
-                        "       echo \"ran node block first\"\n" +
-                        "   }\n" +
-                        "   firstBranchDone = true\n" +
-                        "}, 2: {\n" +
-                        "   node('foo') {\n" +
-                        "	    echo \"ran node block second\"\n" +
-                        "       secondBranchReady = true\n" +
-                        "       waitUntil { firstBranchDone }\n" +
-                        "   }\n" +
-                        "})\n" +
-                        "", true));
-                WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            // 1: the second branch shall request the node first and wait inside the node block for the
+            // first branch to acquire the node
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def secondBranchReady = false\n" +
+                    "def firstBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   waitUntil { secondBranchReady }\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "   firstBranchDone = true\n" +
+                    "}, 2: {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "       secondBranchReady = true\n" +
+                    "       waitUntil { firstBranchDone }\n" +
+                    "   }\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
-                // if nodeMapping contains only one entry this test actually will not test anything reasonable
-                // possibly the number of dumb slaves has to be adjusted in that case
-                assertEquals(nodeMapping1.size(), 2);
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
 
-                // 2: update script to force reversed order for node blocks; shall still pick the same nodes
-                p.setDefinition(new CpsFlowDefinition("" +
-                        "def firstBranchReady = false\n" +
-                        "def secondBranchDone = false\n" +
-                        "parallel(1: {\n" +
-                        "   node('foo') {\n" +
-                        "       echo \"ran node block first\"\n" +
-                        "       firstBranchReady = true\n" +
-                        "       waitUntil { secondBranchDone }\n" +
-                        "   }\n" +
-                        "}, 2: {\n" +
-                        "   waitUntil { firstBranchReady }\n" +
-                        "   node('foo') {\n" +
-                        "	    echo \"ran node block second\"\n" +
-                        "   }\n" +
-                        "   secondBranchDone = true\n" +
-                        "})\n" +
-                        "", true));
-                WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+            // 2: update script to force reversed order for node blocks; shall still pick the same nodes
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def firstBranchReady = false\n" +
+                    "def secondBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "       firstBranchReady = true\n" +
+                    "       waitUntil { secondBranchDone }\n" +
+                    "   }\n" +
+                    "}, 2: {\n" +
+                    "   waitUntil { firstBranchReady }\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "   secondBranchDone = true\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                for (String nodeName: nodeMapping1.keySet()) {
-                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-                }
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
             }
         });
     }
@@ -990,72 +982,70 @@ public class ExecutorStepTest {
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
-                for (int i = 0; i < 3; ++i) {
-                    DumbSlave slave = story.j.createOnlineSlave();
-                    slave.setLabelString("foo bar");
-                }
+        story.then(r -> {
+            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
+            for (int i = 0; i < 3; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
 
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("" +
-                        "def secondBranchReady = false\n" +
-                        "def firstBranchDone = false\n" +
-                        "parallel(1: {\n" +
-                        "   waitUntil { secondBranchReady }\n" +
-                        "   stage('stage1') {\n" +
-                        "       node('foo') {\n" +
-                        "           echo \"ran node block first\"\n" +
-                        "        }\n" +
-                        "   }\n" +
-                        "   firstBranchDone = true\n" +
-                        "}, 2: {\n" +
-                        "   stage('stage1') {\n" +
-                        "       node('foo') {\n" +
-                        "	        echo \"ran node block second\"\n" +
-                        "           secondBranchReady = true\n" +
-                        "           waitUntil { firstBranchDone }\n" +
-                        "        }\n" +
-                        "   }\n" +
-                        "})\n" +
-                        "", true));
-                WorkflowRun run1 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def secondBranchReady = false\n" +
+                    "def firstBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   waitUntil { secondBranchReady }\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "           echo \"ran node block first\"\n" +
+                    "        }\n" +
+                    "   }\n" +
+                    "   firstBranchDone = true\n" +
+                    "}, 2: {\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "	        echo \"ran node block second\"\n" +
+                    "           secondBranchReady = true\n" +
+                    "           waitUntil { firstBranchDone }\n" +
+                    "        }\n" +
+                    "   }\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
-                // if nodeMapping contains only one entry this test actually will not test anything reasonable
-                // possibly the number of dumb slaves has to be adjusted in that case
-                assertEquals(nodeMapping1.size(), 2);
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
 
-                // update script to force reversed order for node blocks; shall still pick the same nodes
-                p.setDefinition(new CpsFlowDefinition("" +
-                        "def firstBranchReady = false\n" +
-                        "def secondBranchDone = false\n" +
-                        "parallel(1: {\n" +
-                        "   stage('stage1') {\n" +
-                        "       node('foo') {\n" +
-                        "           echo \"ran node block first\"\n" +
-                        "           firstBranchReady = true\n" +
-                        "           waitUntil { secondBranchDone }\n" +
-                        "       }\n" +
-                        "   }\n" +
-                        "}, 2: {\n" +
-                        "   waitUntil { firstBranchReady }\n" +
-                        "   stage('stage1') {\n" +
-                        "       node('foo') {\n" +
-                        "    	    echo \"ran node block second\"\n" +
-                        "       }\n" +
-                        "   }\n" +
-                        "   secondBranchDone = true\n" +
-                        "})\n" +
-                        "", true));
+            // update script to force reversed order for node blocks; shall still pick the same nodes
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def firstBranchReady = false\n" +
+                    "def secondBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "           echo \"ran node block first\"\n" +
+                    "           firstBranchReady = true\n" +
+                    "           waitUntil { secondBranchDone }\n" +
+                    "       }\n" +
+                    "   }\n" +
+                    "}, 2: {\n" +
+                    "   waitUntil { firstBranchReady }\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "    	    echo \"ran node block second\"\n" +
+                    "       }\n" +
+                    "   }\n" +
+                    "   secondBranchDone = true\n" +
+                    "})\n" +
+                    "", true));
 
-                WorkflowRun run2 = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
-                for (String nodeName: nodeMapping1.keySet()) {
-                    assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-                }
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
             }
         });
     }
@@ -1065,22 +1055,20 @@ public class ExecutorStepTest {
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
-                for (int i = 0; i < 5; ++i) {
-                    DumbSlave slave = story.j.createOnlineSlave();
-                    slave.setLabelString("foo");
-                }
-
-                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
-                WorkflowRun run = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-                Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
-
-                // if the node was reused every time we'll only have one node mapping entry
-                assertEquals(nodeMapping.size(), 1);
+        story.then(r -> {
+            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
+            for (int i = 0; i < 5; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo");
             }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
+            WorkflowRun run = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
+
+            // if the node was reused every time we'll only have one node mapping entry
+            assertEquals(nodeMapping.size(), 1);
         });
     }
 
