@@ -846,6 +846,10 @@ public class ExecutorStepTest {
         });
     }
 
+    /**
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
         story.then(r -> {
@@ -896,11 +900,13 @@ public class ExecutorStepTest {
 
     /**
      * Ensure node reuse works from within parallel block without using stages
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
         story.then(r -> {
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 4; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
             }
@@ -962,11 +968,13 @@ public class ExecutorStepTest {
 
     /**
      * Ensure node reuse works from within parallel blocks which use the same stage names
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
         story.then(r -> {
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 4; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
             }
