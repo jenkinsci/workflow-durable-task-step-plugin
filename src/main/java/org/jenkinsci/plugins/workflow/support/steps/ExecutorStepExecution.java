@@ -489,7 +489,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return null;
         }
 
-        static String findStageName(FlowNode flowNode){
+        static String findLabelName(FlowNode flowNode){
             LabelAction la = flowNode.getPersistentAction(LabelAction.class);
 
             if (la != null) {
@@ -535,7 +535,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             if (executorStepNode != null) {
                 for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
                     String threadName = findThreadName(node);
-                    String stageName = findStageName(node);
+                    String stageName = findLabelName(node);
                     String currentLabelName = threadName != null ? threadName: stageName;
                     if (threadName != null && stageName != null) {
                         LOGGER.log(FINE, "\"concatenateAllEnclosingLabels(): Got both thread: {0} and stage: {1}. Will take thread name ({0}).",
