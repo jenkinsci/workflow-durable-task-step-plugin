@@ -772,14 +772,14 @@ public class ExecutorStepTest {
             p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
                     "}\n", true));
 
-            WorkflowRun run = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run = r.buildAndAssertSuccess(p);
             List<WorkspaceAction> workspaceActions = getWorkspaceActions(run);
             assertEquals(workspaceActions.size(), 1);
 
             String firstNode = workspaceActions.get(0).getNode();
             assertNotEquals(firstNode, "");
 
-            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
             workspaceActions = getWorkspaceActions(run2);
             assertEquals(workspaceActions.size(), 1);
             assertEquals(workspaceActions.get(0).getNode(), firstNode);
@@ -834,10 +834,10 @@ public class ExecutorStepTest {
                             "	echo \"ran node block bar\"\n" +
                             "}\n" +
                             "", true));
-            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
-            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
             for (String nodeName: nodeMapping1.keySet()) {
@@ -871,7 +871,7 @@ public class ExecutorStepTest {
                     "   }\n" +
                     "}\n" +
                     "", true));
-            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
             // possibly the number of dumb slaves has to be adjusted in that case
@@ -889,7 +889,7 @@ public class ExecutorStepTest {
                     "   }\n" +
                     "}\n" +
                     "", true));
-            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
             for (String nodeName: nodeMapping1.keySet()) {
@@ -932,7 +932,7 @@ public class ExecutorStepTest {
                     "   }\n" +
                     "})\n" +
                     "", true));
-            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
@@ -957,7 +957,7 @@ public class ExecutorStepTest {
                     "   secondBranchDone = true\n" +
                     "})\n" +
                     "", true));
-            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
             for (String nodeName: nodeMapping1.keySet()) {
@@ -1001,7 +1001,7 @@ public class ExecutorStepTest {
                     "   }\n" +
                     "})\n" +
                     "", true));
-            WorkflowRun run1 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
 
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
@@ -1031,7 +1031,7 @@ public class ExecutorStepTest {
                     "})\n" +
                     "", true));
 
-            WorkflowRun run2 = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
 
             for (String nodeName: nodeMapping1.keySet()) {
@@ -1050,7 +1050,7 @@ public class ExecutorStepTest {
 
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
-            WorkflowRun run = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            WorkflowRun run = r.buildAndAssertSuccess(p);
             Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
 
             // if the node was reused every time we'll only have one node mapping entry
