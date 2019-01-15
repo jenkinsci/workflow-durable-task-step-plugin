@@ -766,7 +766,6 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodeFromPreviousRun() {
         story.then(r -> {
-            Assume.assumeFalse("Needs Jenkins version >= 2.145", Jenkins.getVersion().isOlderThan(new VersionNumber("2.145")));
             for (int i = 0; i < 5; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
