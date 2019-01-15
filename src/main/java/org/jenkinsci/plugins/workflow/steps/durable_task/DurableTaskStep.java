@@ -174,7 +174,7 @@ public abstract class DurableTaskStep extends Step {
     @Restricted(NoExternalUse.class)
     public static boolean USE_WATCHING = Boolean.parseBoolean(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING", Main.isUnitTest ? "true" : /* JENKINS-52165 turn back on by default */ "false"));
 
-    /** How many seconds to wait before interrupting remote calls */
+    /** How many seconds to wait before interrupting remote calls and before forcing cleanup when the step is stopped */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable for script console access")
     public static long REMOTE_TIMEOUT = Integer.parseInt(System.getProperty(DurableTaskStep.class.getName() + ".REMOTE_TIMEOUT", "10"));
 
@@ -378,7 +378,7 @@ public abstract class DurableTaskStep extends Step {
                         stopTask = null;
                         if (recurrencePeriod > 0) {
                             recurrencePeriod = 0;
-                            listener().getLogger().println("After 10s process did not stop");
+                            listener().getLogger().println("After " + REMOTE_TIMEOUT + "s process did not stop");
                             getContext().onFailure(cause);
                             try {
                                 FilePath workspace = getWorkspace();
@@ -390,7 +390,7 @@ public abstract class DurableTaskStep extends Step {
                             }
                         }
                     }
-                }, 10, TimeUnit.SECONDS);
+                }, REMOTE_TIMEOUT, TimeUnit.SECONDS);
                 controller.stop(workspace, launcher());
             } else {
                 listener().getLogger().println("Could not connect to " + node + " to send interrupt signal to process");
