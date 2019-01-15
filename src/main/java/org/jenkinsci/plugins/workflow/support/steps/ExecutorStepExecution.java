@@ -532,17 +532,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 LOGGER.log(Level.FINE, null, x);
             }
 
-            for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
-                String threadName = findThreadName(node);
-                String stageName = findStageName(node);
-                String currentLabelName = threadName != null ? threadName: stageName;
-                if (threadName != null && stageName != null) {
-                    LOGGER.log(FINE, "\"concatenateAllEnclosingLabels(): Got both thread: {0} and stage: {1}. Will take thread name ({0}).",
-                            new Object[]{threadName, stageName});
-                }
-                if (currentLabelName != null) {
-                    labelName.append("#");
-                    labelName.append(currentLabelName);
+            if (executorStepNode != null) {
+                for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
+                    String threadName = findThreadName(node);
+                    String stageName = findStageName(node);
+                    String currentLabelName = threadName != null ? threadName: stageName;
+                    if (threadName != null && stageName != null) {
+                        LOGGER.log(FINE, "\"concatenateAllEnclosingLabels(): Got both thread: {0} and stage: {1}. Will take thread name ({0}).",
+                                new Object[]{threadName, stageName});
+                    }
+                    if (currentLabelName != null) {
+                        labelName.append("#");
+                        labelName.append(currentLabelName);
+                    }
                 }
             }
 
