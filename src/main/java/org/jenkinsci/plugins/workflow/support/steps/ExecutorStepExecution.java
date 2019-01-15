@@ -548,11 +548,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return labelName.toString();
         }
 
-        /*
-        * TODO: @Override
-        * once the core dependency was updated to a version >= 2.145 (preferably LTS)
-        * the @Override annotation shall be added
-        */
+        /**
+        * Provide unique key which will be used to prioritize the list of possible build agents to use
+        * */
+        @Override
         public String getAffinityKey() {
             String enclosingLabels = concatenateAllEnclosingLabels();
             String ownerTaskName = getOwnerTask().getName();
