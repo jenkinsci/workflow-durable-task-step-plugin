@@ -760,9 +760,6 @@ public class ExecutorStepTest {
         return actions;
     }
 
-    /**
-     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeFromPreviousRun() {
         story.then(r -> {
@@ -820,9 +817,6 @@ public class ExecutorStepTest {
     }
 
 
-    /**
-     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
         story.then(r -> {
@@ -852,9 +846,6 @@ public class ExecutorStepTest {
         });
     }
 
-    /**
-     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
         story.then(r -> {
@@ -904,8 +895,6 @@ public class ExecutorStepTest {
     }
 
     /**
-     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-     *
      * Ensure node reuse works from within parallel block without using stages
      */
     @Issue("JENKINS-36547")
@@ -972,8 +961,6 @@ public class ExecutorStepTest {
     }
 
     /**
-     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-     *
      * Ensure node reuse works from within parallel blocks which use the same stage names
      */
     @Issue("JENKINS-36547")
@@ -1045,9 +1032,6 @@ public class ExecutorStepTest {
         });
     }
 
-    /**
-     * Needs at least Jenkins version 2.145 which supports {@link ExecutorStepExecution.PlaceholderTask#getAffinityKey()}
-     */
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() {
         story.then(r -> {
