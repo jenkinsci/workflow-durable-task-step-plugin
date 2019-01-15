@@ -518,20 +518,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          *     }
          * </pre>
          *
+         * In case there's no context available or we get a timeout we'll just return <code>baseLabel</code>
+         *
          * */
-        private @CheckForNull String concatenateAllEnclosingLabels() {
+        private String concatenateAllEnclosingLabels(StringBuilder labelName) {
             if (!context.isReady()) {
-                return null;
+                return labelName.toString();
             }
-            FlowNode executorStepNode;
+            FlowNode executorStepNode = null;
             try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
                 executorStepNode = context.get(FlowNode.class);
             } catch (Exception x) {
                 LOGGER.log(Level.FINE, null, x);
-                return null;
             }
 
-            StringBuilder labelName = new StringBuilder();
             for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
                 String threadName = findThreadName(node);
                 String stageName = findStageName(node);
@@ -545,6 +545,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     labelName.append(currentLabelName);
                 }
             }
+
             return labelName.toString();
         }
 
@@ -553,13 +554,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         * */
         @Override
         public String getAffinityKey() {
-            String enclosingLabels = concatenateAllEnclosingLabels();
-            String ownerTaskName = getOwnerTask().getName();
-            if (enclosingLabels != null) {
-                return ownerTaskName + enclosingLabels;
-            } else {
-                return ownerTaskName;
-            }
+            StringBuilder ownerTaskName = new StringBuilder(getOwnerTask().getName());
+            return concatenateAllEnclosingLabels(ownerTaskName);
         }
 
         /** hash code of list of heads */
