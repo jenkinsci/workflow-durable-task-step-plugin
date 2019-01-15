@@ -786,6 +786,11 @@ public class ExecutorStepTest {
         });
     }
 
+    /**
+     * @param workflowRun The run to analyze
+     * @return Map containing node names as key and the log text for all steps executed on that very node as value
+     * @throws java.io.IOException Will be thrown in case there something went wrong while reading the log
+     */
     private Map<String, StringWriter> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
         Map<String, StringWriter> workspaceActionToLogText = new HashMap<>();
