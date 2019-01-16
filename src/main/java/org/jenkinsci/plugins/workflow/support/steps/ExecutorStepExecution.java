@@ -480,6 +480,71 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return getDisplayName();
         }
 
+        static String findLabelName(FlowNode flowNode){
+            LabelAction la = flowNode.getPersistentAction(LabelAction.class);
+
+            if (la != null) {
+                return la.getDisplayName();
+            }
+            return null;
+        }
+
+        /**
+         * Similar to {@link #getEnclosingLabel()}.
+         * However instead of returning the innermost label including labels inside node blocks this one
+         * concatenates all labels found outside the current (node) block
+         *
+         * As {@link FlowNode#getEnclosingBlocks()} will return the blocks sorted from inner to outer blocks
+         * this method will create a string like
+         * <code>#innerblock#outerblock for</code> for a script like
+         * <pre>
+         *     {@code
+         *     parallel(outerblock: {
+         *         stage('innerblock') {
+         *             node {
+         *                 // .. do something here
+         *             }
+         *         }
+         *     }
+         *     }
+         * </pre>
+         *
+         * In case there's no context available or we get a timeout we'll just return <code>baseLabel</code>
+         *
+         * */
+        private String concatenateAllEnclosingLabels(StringBuilder labelName) {
+            if (!context.isReady()) {
+                return labelName.toString();
+            }
+            FlowNode executorStepNode = null;
+            try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
+                executorStepNode = context.get(FlowNode.class);
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, null, x);
+            }
+
+            if (executorStepNode != null) {
+                for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
+                    String currentLabelName = findLabelName(node);
+                    if (currentLabelName != null) {
+                        labelName.append("#");
+                        labelName.append(currentLabelName);
+                    }
+                }
+            }
+
+            return labelName.toString();
+        }
+
+        /**
+        * Provide unique key which will be used to prioritize the list of possible build agents to use
+        * */
+        @Override
+        public String getAffinityKey() {
+            StringBuilder ownerTaskName = new StringBuilder(getOwnerTask().getName());
+            return concatenateAllEnclosingLabels(ownerTaskName);
+        }
+
         /** hash code of list of heads */
         private transient int lastCheckedHashCode;
         private transient String lastEnclosingLabel;

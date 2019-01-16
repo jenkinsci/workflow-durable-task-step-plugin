@@ -56,6 +56,7 @@ import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
@@ -66,8 +67,10 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -75,6 +78,8 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.annotation.Nullable;
+
+import hudson.util.VersionNumber;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -92,13 +97,16 @@ import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
+import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
@@ -736,6 +744,322 @@ public class ExecutorStepTest {
                 p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}"));
                 story.j.assertLogContains("ran node block #49", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
             }
+        });
+    }
+
+
+    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
+        FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
+        List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+        for (FlowNode n : walker) {
+            WorkspaceAction a = n.getAction(WorkspaceAction.class);
+            if (a != null) {
+                actions.add(a);
+            }
+        }
+        return actions;
+    }
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodeFromPreviousRun() {
+        story.then(r -> {
+            for (int i = 0; i < 5; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
+                    "}\n", true));
+
+            WorkflowRun run = r.buildAndAssertSuccess(p);
+            List<WorkspaceAction> workspaceActions = getWorkspaceActions(run);
+            assertEquals(workspaceActions.size(), 1);
+
+            String firstNode = workspaceActions.get(0).getNode();
+            assertNotEquals(firstNode, "");
+
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            workspaceActions = getWorkspaceActions(run2);
+            assertEquals(workspaceActions.size(), 1);
+            assertEquals(workspaceActions.get(0).getNode(), firstNode);
+        });
+    }
+
+    /**
+     * @param workflowRun The run to analyze
+     * @return Map containing node names as key and the log text for all steps executed on that very node as value
+     * @throws java.io.IOException Will be thrown in case there something went wrong while reading the log
+     */
+    private Map<String, StringWriter> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
+        FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
+        Map<String, StringWriter> workspaceActionToLogText = new HashMap<>();
+        for (FlowNode n : walker) {
+            if (n instanceof StepAtomNode) {
+                StepAtomNode atomNode = (StepAtomNode) n;
+                if (atomNode.getDescriptor() instanceof EchoStep.DescriptorImpl) {
+                    // we're searching for the echo only...
+                    LogAction l = atomNode.getAction(LogAction.class);
+                    if (l != null) {
+                        // Only store the log if there was no workspace action involved... (e.g. from echo)
+                        List<? extends BlockStartNode> enclosingBlocks = atomNode.getEnclosingBlocks();
+                        for (BlockStartNode startNode : enclosingBlocks) {
+                            WorkspaceAction a = startNode.getAction(WorkspaceAction.class);
+                            if (a != null) {
+                                String nodeName = a.getNode();
+                                if (!workspaceActionToLogText.containsKey(nodeName)) {
+                                    workspaceActionToLogText.put(nodeName, new StringWriter());
+                                }
+                                StringWriter writer = workspaceActionToLogText.get(nodeName);
+                                l.getLogText().writeLogTo(0, writer);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return workspaceActionToLogText;
+    }
+
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
+        story.then(r -> {
+            for (int i = 0; i < 1; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition(
+                    "node('foo') {\n" +
+                            "   echo \"ran node block foo\"\n" +
+                            "}\n" +
+                            "node('bar') {\n" +
+                            "	echo \"ran node block bar\"\n" +
+                            "}\n" +
+                            "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    /**
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
+        story.then(r -> {
+            for (int i = 0; i < 3; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "stage('1') {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "stage('2') {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
+
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "stage('2') {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "stage('1') {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "", true));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    /**
+     * Ensure node reuse works from within parallel block without using stages
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInParallelStages() {
+        story.then(r -> {
+            for (int i = 0; i < 4; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+
+            // 1: the second branch shall request the node first and wait inside the node block for the
+            // first branch to acquire the node
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def secondBranchReady = false\n" +
+                    "def firstBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   waitUntil { secondBranchReady }\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "   firstBranchDone = true\n" +
+                    "}, 2: {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "       secondBranchReady = true\n" +
+                    "       waitUntil { firstBranchDone }\n" +
+                    "   }\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
+
+            // 2: update script to force reversed order for node blocks; shall still pick the same nodes
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def firstBranchReady = false\n" +
+                    "def secondBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "       firstBranchReady = true\n" +
+                    "       waitUntil { secondBranchDone }\n" +
+                    "   }\n" +
+                    "}, 2: {\n" +
+                    "   waitUntil { firstBranchReady }\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "   secondBranchDone = true\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    /**
+     * Ensure node reuse works from within parallel blocks which use the same stage names
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
+        story.then(r -> {
+            for (int i = 0; i < 4; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def secondBranchReady = false\n" +
+                    "def firstBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   waitUntil { secondBranchReady }\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "           echo \"ran node block first\"\n" +
+                    "        }\n" +
+                    "   }\n" +
+                    "   firstBranchDone = true\n" +
+                    "}, 2: {\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "	        echo \"ran node block second\"\n" +
+                    "           secondBranchReady = true\n" +
+                    "           waitUntil { firstBranchDone }\n" +
+                    "        }\n" +
+                    "   }\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
+
+            // update script to force reversed order for node blocks; shall still pick the same nodes
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def firstBranchReady = false\n" +
+                    "def secondBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "           echo \"ran node block first\"\n" +
+                    "           firstBranchReady = true\n" +
+                    "           waitUntil { secondBranchDone }\n" +
+                    "       }\n" +
+                    "   }\n" +
+                    "}, 2: {\n" +
+                    "   waitUntil { firstBranchReady }\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "    	    echo \"ran node block second\"\n" +
+                    "       }\n" +
+                    "   }\n" +
+                    "   secondBranchDone = true\n" +
+                    "})\n" +
+                    "", true));
+
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodeInSameRun() {
+        story.then(r -> {
+            for (int i = 0; i < 5; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
+            WorkflowRun run = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
+
+            // if the node was reused every time we'll only have one node mapping entry
+            assertEquals(nodeMapping.size(), 1);
         });
     }
 
