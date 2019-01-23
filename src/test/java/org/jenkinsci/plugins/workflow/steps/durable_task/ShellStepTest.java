@@ -25,7 +25,6 @@ import hudson.model.Run;
 import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
-import hudson.remoting.Command;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
@@ -45,12 +44,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
 import jenkins.util.JenkinsJVM;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 
 import static org.hamcrest.Matchers.*;
@@ -85,7 +82,6 @@ import static org.junit.Assert.*;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -367,6 +363,8 @@ public class ShellStepTest {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        DurableTaskStep.USE_WATCHING = true;
+        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
@@ -393,6 +391,9 @@ public class ShellStepTest {
         j.assertLogNotContains(password, b);
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
+        } finally {
+            DurableTaskStep.USE_WATCHING = false;
+        }
     }
     @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
@@ -463,114 +464,10 @@ public class ShellStepTest {
         }
     }
 
-    @Ignore("TODO too flaky to run in CI")
-    @Issue("JENKINS-38381")
-    @Test public void remoteVoluminousLogger() throws Exception {
-        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
-        DumbSlave remote = j.createSlave("remote", null, null);
-        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition(
-            "node('remote') {\n" +
-            "  sh 'echo one; sleep 1; echo two'\n" +
-            "}", true));
-        // Priming builds:
-        j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        try {
-            DurableTaskStep.USE_WATCHING = false;
-            j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        } finally {
-            DurableTaskStep.USE_WATCHING = true;
-        }
-        // Now check Remoting usage:
-        Thread.sleep(1000); // TODO waiting for GC?
-        p.setDefinition(new CpsFlowDefinition(
-            "node('remote') {\n" +
-            "  sh 'set +x; for i in 0 1 2 3 4 5 6 7 8 9; do for j in 0 1 2 3 4 5 6 7 8 9; do for k in 0 1 2 3 4 5 6 7 8 9; do echo ijk=$i$j$k; sleep .01; done; done; done'\n" +
-            "}", true));
-        AtomicInteger cnt = new AtomicInteger();
-        ((Channel) remote.getChannel()).addListener(new Channel.Listener() {
-            @Override public void onRead(Channel channel, Command cmd, long blockSize) {
-                cnt.incrementAndGet();
-            }
-            @Override public void onWrite(Channel channel, Command cmd, long blockSize) {
-                cnt.incrementAndGet();
-            }
-        });
-        WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        j.assertLogNotContains("ijk=567", b);
-        assertThat(FileUtils.readFileToString(new File(b.getRootDir(), "log-remote")), containsString("ijk=567"));
-        Thread.sleep(1000); // ditto
-        int watchCount = cnt.getAndSet(0);
-        try {
-            DurableTaskStep.USE_WATCHING = false;
-            b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-            j.assertLogContains("ijk=567", b);
-        } finally {
-            DurableTaskStep.USE_WATCHING = true;
-        }
-        int oldCount = cnt.getAndSet(0);
-        System.out.println("Using watching: " + watchCount + " packets sent/received");
-        System.out.println("Not using watching: " + oldCount + " packets sent/received");
-        assertThat("at least 2× reduction in Remoting traffic by packet count", 1.0 * oldCount / watchCount, greaterThan(2.0));
-    }
-    @TestExtension("remoteVoluminousLogger") public static class ExternalLogFile implements LogStorageFactory {
-        @Override public LogStorage forBuild(FlowExecutionOwner b) {
-            final LogStorage base;
-            final File mainLog;
-            try {
-                mainLog = new File(b.getRootDir(), "log");
-                base = FileLogStorage.forFile(mainLog);
-            } catch (IOException x) {
-                return new BrokenLogStorage(x);
-            }
-            return new LogStorage() {
-                @Override public BuildListener overallListener() throws IOException, InterruptedException {
-                    return new ExternalBuildListener(mainLog, null);
-                }
-                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
-                    return new ExternalBuildListener(mainLog, node.getId());
-                }
-                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
-                    return base.overallLog(build, complete);
-                }
-                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
-                    return base.stepLog(node, complete);
-                }
-            };
-        }
-    }
-    private static class ExternalBuildListener implements BuildListener {
-        private static final long serialVersionUID = 1;
-        private final File log;
-        private final String node;
-        private transient PrintStream logger;
-        ExternalBuildListener(File log, String node) {
-            this.log = log;
-            this.node = node;
-        }
-        @Override public PrintStream getLogger() {
-            if (logger == null) {
-                LogStorage storage = FileLogStorage.forFile(log);
-                TaskListener listener;
-                try {
-                    listener = node == null ? storage.overallListener() : storage.nodeListener(new FlowNode(null, node) {
-                        @Override protected String getTypeDisplayName() {return null;}
-                    });
-                } catch (Exception x) {
-                    throw new RuntimeException(x);
-                }
-                logger = listener.getLogger();
-            }
-            return logger;
-        }
-        private Object writeReplace() {
-            String name = Channel.current().getName();
-            return new ExternalBuildListener(new File(log + "-" + name), node);
-        }
-    }
-
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
+        DurableTaskStep.USE_WATCHING = true;
+        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
@@ -596,6 +493,9 @@ public class ShellStepTest {
         assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
         assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
         assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
+        } finally {
+            DurableTaskStep.USE_WATCHING = false;
+        }
     }
     public static final class MarkUpStep extends Step {
         @DataBoundSetter public boolean smart;
