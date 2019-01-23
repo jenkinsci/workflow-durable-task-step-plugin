@@ -31,7 +31,6 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
-import hudson.Main;
 import hudson.Util;
 import hudson.init.Terminator;
 import hudson.model.Node;
@@ -196,7 +195,7 @@ public abstract class DurableTaskStep extends Step {
     /** If set to false, disables {@link Execution#watching} mode. */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable only for tests")
     @Restricted(NoExternalUse.class)
-    public static boolean USE_WATCHING = Boolean.parseBoolean(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING", Main.isUnitTest ? "true" : /* JENKINS-52165 turn back on by default */ "false"));
+    public static boolean USE_WATCHING = Boolean.getBoolean(DurableTaskStep.class.getName() + ".USE_WATCHING"); // JENKINS-52165: turn back on by default
 
     private static ScheduledThreadPoolExecutor threadPool;
     private static synchronized ScheduledThreadPoolExecutor threadPool() {

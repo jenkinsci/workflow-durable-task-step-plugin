@@ -79,7 +79,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.annotation.Nullable;
 
-import hudson.util.VersionNumber;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -293,9 +292,11 @@ public class ExecutorStepTest {
     @Issue("JENKINS-52165")
     @Test public void shellOutputAcrossRestart() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
-        Assume.assumeThat("TODO no longer asserts anything, just informational. There is no way for FileMonitoringTask.Watcher to know when content has been written through to the sink other than by periodically flushing output and declining to write lastLocation until after this completes. This applies both to buffered on-master logs, and to typical cloud sinks.", System.getenv("JENKINS_URL"), nullValue());
+        // TODO does not assert anything in watch mode, just informational.
+        // There is no way for FileMonitoringTask.Watcher to know when content has been written through to the sink
+        // other than by periodically flushing output and declining to write lastLocation until after this completes.
+        // This applies both to buffered on-master logs, and to typical cloud sinks.
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-        // for comparison: DurableTaskStep.USE_WATCHING = false;
         int count = 3_000;
         story.then(r -> {
             DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
@@ -336,9 +337,6 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                long origWatchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
-                DurableTaskStep.WATCHING_RECURRENCE_PERIOD = /* 5s */5_000;
-                try {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
@@ -376,9 +374,6 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
-                } finally {
-                    DurableTaskStep.WATCHING_RECURRENCE_PERIOD = origWatchingRecurrencePeriod;
-                }
             }
         });
     }
