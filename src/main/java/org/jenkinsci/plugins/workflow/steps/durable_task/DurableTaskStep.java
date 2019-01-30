@@ -176,7 +176,7 @@ public abstract class DurableTaskStep extends Step {
 
     /** How many seconds to wait before interrupting remote calls and before forcing cleanup when the step is stopped */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable for script console access")
-    public static long REMOTE_TIMEOUT = Integer.parseInt(System.getProperty(DurableTaskStep.class.getName() + ".REMOTE_TIMEOUT", "10"));
+    public static long REMOTE_TIMEOUT = Integer.parseInt(System.getProperty(DurableTaskStep.class.getName() + ".REMOTE_TIMEOUT", "20"));
 
     private static ScheduledThreadPoolExecutor threadPool;
     private static synchronized ScheduledThreadPoolExecutor threadPool() {
