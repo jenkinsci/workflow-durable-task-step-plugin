@@ -15,9 +15,11 @@ import java.util.Collections;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.DynamicContext;
 import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
+import org.jenkinsci.plugins.workflow.support.pickles.PickleDynamicContext;
 
 public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
 
@@ -63,7 +65,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
                         EnvironmentExpander.constant(Collections.singletonMap("WORKSPACE", workspace.getRemote()))),
-                    workspace)
+                    DynamicContext.merge(getContext().get(DynamicContext.class), new PickleDynamicContext(workspace)))
                 .withCallback(new Callback(lease))
                 .start();
         return false;
