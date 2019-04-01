@@ -373,7 +373,9 @@ public class ExecutorStepTest {
             @SuppressWarnings("SleepWhileInLoop")
             @Override
             public void evaluate() throws Throwable {
-                logging.record(DurableTaskStep.class, Level.FINE).record(PickleDynamicContext.class, Level.FINE);
+                logging.record(DurableTaskStep.class, Level.FINE).
+                        record(PickleDynamicContext.class, Level.FINE).
+                        record(WorkspaceList.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
