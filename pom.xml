@@ -62,7 +62,7 @@
         </pluginRepository>
     </pluginRepositories>
     <properties>
-        <revision>2.30</revision>
+        <revision>2.31</revision>
         <changelist>-SNAPSHOT</changelist>
         <jenkins.version>2.171-rc28097.27e3d514650a</jenkins.version> <!-- TODO https://github.com/jenkinsci/jenkins/pull/3955 -->
         <java.level>8</java.level>
