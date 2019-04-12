@@ -32,12 +32,15 @@ import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.Util;
+import hudson.init.Terminator;
 import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
+import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
+import hudson.util.NamingThreadFactory;
 import hudson.util.StreamTaskListener;
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -48,7 +51,9 @@ import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -56,10 +61,13 @@ import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.Handler;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -87,9 +95,12 @@ public abstract class DurableTaskStep extends Step {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
+    private static final int MAX_LABEL_LENGTH = 100;
+
     private boolean returnStdout;
     private String encoding;
     private boolean returnStatus;
+    private String label;
 
     protected abstract DurableTask task();
 
@@ -116,15 +127,26 @@ public abstract class DurableTaskStep extends Step {
     @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
         this.returnStatus = returnStatus;
     }
+    
+    @DataBoundSetter public void setLabel(String label) {
+        this.label = label;
+    }
+    
+    public String getLabel() {
+        return label;
+    }
 
     @Override public StepExecution start(StepContext context) throws Exception {
+        if (this.label != null && !this.label.isEmpty()) {
+            context.get(FlowNode.class).addAction(new LabelAction(StringUtils.left(label, MAX_LABEL_LENGTH)));
+        }
         return new Execution(context, this);
     }
 
     public abstract static class DurableTaskStepDescriptor extends StepDescriptor {
 
         @Restricted(DoNotUse.class)
-        public FormValidation doCheckEncoding(@QueryParameter boolean returnStdout, @QueryParameter String encoding) {
+        public FormValidation doCheckEncoding(@QueryParameter String encoding) {
             if (encoding.isEmpty()) {
                 return FormValidation.ok();
             }
@@ -139,6 +161,13 @@ public abstract class DurableTaskStep extends Step {
         public FormValidation doCheckReturnStatus(@QueryParameter boolean returnStdout, @QueryParameter boolean returnStatus) {
             if (returnStdout && returnStatus) {
                 return FormValidation.error("You may not select both returnStdout and returnStatus.");
+            }
+            return FormValidation.ok();
+        }
+        
+        public FormValidation doCheckLabel(@QueryParameter String label) {
+            if (label != null && label.length() > MAX_LABEL_LENGTH) {
+                return FormValidation.error("Label size exceeds maximum of " + MAX_LABEL_LENGTH + " characters.");
             }
             return FormValidation.ok();
         }
@@ -167,8 +196,30 @@ public abstract class DurableTaskStep extends Step {
     /** If set to false, disables {@link Execution#watching} mode. */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable only for tests")
     @Restricted(NoExternalUse.class)
-    public static boolean USE_WATCHING = !"false".equals(System.getProperty(DurableTaskStep.class.getName() + ".USE_WATCHING"));
+    public static boolean USE_WATCHING = Boolean.getBoolean(DurableTaskStep.class.getName() + ".USE_WATCHING"); // JENKINS-52165: turn back on by default
 
+    /** How many seconds to wait before interrupting remote calls and before forcing cleanup when the step is stopped */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable for script console access")
+    public static long REMOTE_TIMEOUT = Integer.parseInt(System.getProperty(DurableTaskStep.class.getName() + ".REMOTE_TIMEOUT", "20"));
+
+    private static ScheduledThreadPoolExecutor threadPool;
+    private static synchronized ScheduledExecutorService threadPool() {
+        if (USE_WATCHING) {
+            return Timer.get();
+        }
+        if (threadPool == null) {
+            threadPool = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
+            threadPool.setKeepAliveTime(1, TimeUnit.MINUTES);
+            threadPool.allowCoreThreadTimeOut(true);
+        }
+        return threadPool;
+    }
+    @Terminator public static synchronized void shutDownThreadPool() {
+        if (threadPool != null) {
+            threadPool.shutdownNow();
+            threadPool = null;
+        }
+    }
     /**
      * Represents one task that is believed to still be running.
      * <p>This step has two modes, based on pulling or pushing log content from an agent.
@@ -231,6 +282,8 @@ public abstract class DurableTaskStep extends Step {
         private boolean watching; // serialized default is false
         /** Only used when {@link #watching}, if after {@link #WATCHING_RECURRENCE_PERIOD} comes around twice {@link #exited} has yet to be called. */
         private transient boolean awaitingAsynchExit;
+        /** The first throwable used to stop the task */
+        private transient volatile Throwable causeOfStoppage;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -289,7 +342,7 @@ public abstract class DurableTaskStep extends Step {
                 }
             }
             boolean directory;
-            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
+            try (Timeout timeout = Timeout.limit(REMOTE_TIMEOUT, TimeUnit.SECONDS)) {
                 directory = ws.isDirectory();
             } catch (Exception x) {
                 getWorkspaceProblem(x);
@@ -342,6 +395,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void stop(final Throwable cause) throws Exception {
+            causeOfStoppage = cause;
             FilePath workspace = getWorkspace();
             if (workspace != null) {
                 listener().getLogger().println("Sending interrupt signal to process");
@@ -351,7 +405,7 @@ public abstract class DurableTaskStep extends Step {
                         stopTask = null;
                         if (recurrencePeriod > 0) {
                             recurrencePeriod = 0;
-                            listener().getLogger().println("After 10s process did not stop");
+                            listener().getLogger().println("After " + REMOTE_TIMEOUT + "s process did not stop");
                             getContext().onFailure(cause);
                             try {
                                 FilePath workspace = getWorkspace();
@@ -363,7 +417,7 @@ public abstract class DurableTaskStep extends Step {
                             }
                         }
                     }
-                }, 10, TimeUnit.SECONDS);
+                }, REMOTE_TIMEOUT, TimeUnit.SECONDS);
                 controller.stop(workspace, launcher());
             } else {
                 listener().getLogger().println("Could not connect to " + node + " to send interrupt signal to process");
@@ -401,9 +455,11 @@ public abstract class DurableTaskStep extends Step {
             task = null;
             try (WithThreadName naming = new WithThreadName(": checking " + remote + " on " + node)) {
                 check();
+            } catch (Exception x) { // TODO use ErrorLoggingScheduledThreadPoolExecutor from core if it becomes public
+                LOGGER.log(Level.WARNING, null, x);
             } finally {
                 if (recurrencePeriod > 0) {
-                    task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+                    task = threadPool().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
                 }
             }
         }
@@ -426,7 +482,7 @@ public abstract class DurableTaskStep extends Step {
                 return; // slave not yet ready, wait for another day
             }
             TaskListener listener = listener();
-            try (Timeout timeout = Timeout.limit(10, TimeUnit.SECONDS)) {
+            try (Timeout timeout = Timeout.limit(REMOTE_TIMEOUT, TimeUnit.SECONDS)) {
                 if (watching) {
                     Integer exitCode = controller.exitStatus(workspace, launcher(), listener);
                     if (exitCode == null) {
@@ -452,14 +508,7 @@ public abstract class DurableTaskStep extends Step {
                             if (controller.writeLog(workspace, listener.getLogger())) {
                                 LOGGER.log(Level.FINE, "last-minute output in {0} on {1}", new Object[] {remote, node});
                             }
-                            if (returnStatus || exitCode == 0) {
-                                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(controller.getOutput(workspace, launcher()), StandardCharsets.UTF_8) : null);
-                            } else {
-                                if (returnStdout) {
-                                    listener.getLogger().write(controller.getOutput(workspace, launcher())); // diagnostic
-                                }
-                                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
-                            }
+                            handleExit(exitCode, () -> controller.getOutput(workspace, launcher()));
                             recurrencePeriod = 0;
                             controller.cleanup(workspace);
                         }
@@ -493,13 +542,28 @@ public abstract class DurableTaskStep extends Step {
                 return;
             }
             recurrencePeriod = 0;
-            if (returnStatus || exitCode == 0) {
-                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output, StandardCharsets.UTF_8) : null);
+            handleExit(exitCode, () -> output);
+        }
+
+        @FunctionalInterface
+        private interface OutputSupplier {
+            byte[] produce() throws IOException, InterruptedException;
+        }
+        private void handleExit(int exitCode, OutputSupplier output) throws IOException, InterruptedException {
+            Throwable originalCause = causeOfStoppage;
+            if ((returnStatus && originalCause == null) || exitCode == 0) {
+                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output.produce(), StandardCharsets.UTF_8) : null);
             } else {
                 if (returnStdout) {
-                    listener().getLogger().write(output); // diagnostic
+                    listener().getLogger().write(output.produce()); // diagnostic
                 }
-                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                if (originalCause != null) {
+                    // JENKINS-28822: Use the previous cause instead of throwing a new AbortException
+                    listener().getLogger().println("script returned exit code " + exitCode);
+                    getContext().onFailure(originalCause);
+                } else {
+                    getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+                }
             }
         }
 
@@ -518,7 +582,7 @@ public abstract class DurableTaskStep extends Step {
 
         private void setupTimer(long initialRecurrencePeriod) {
             recurrencePeriod = initialRecurrencePeriod;
-            task = Timer.get().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
+            task = threadPool().schedule(this, recurrencePeriod, TimeUnit.MILLISECONDS);
         }
 
         private static final long serialVersionUID = 1L;
@@ -580,6 +644,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
+            listener.getLogger().flush();
             execution.exited(code, output);
         }
 

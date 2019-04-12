@@ -10,40 +10,56 @@ import hudson.EnvVars;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
+import hudson.MarkupText;
 import hudson.console.AnnotatedLargeText;
+import hudson.console.ConsoleAnnotator;
+import hudson.console.ConsoleLogFilter;
+import hudson.console.ConsoleNote;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
 import hudson.model.BuildListener;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
-import hudson.remoting.Command;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
-import org.apache.commons.io.FileUtils;
+import javax.annotation.CheckForNull;
+import jenkins.util.JenkinsJVM;
+import org.apache.commons.lang.StringUtils;
+
 import static org.hamcrest.Matchers.*;
+
+import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
+import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
@@ -55,14 +71,17 @@ import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -73,6 +92,7 @@ import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 
 public class ShellStepTest {
 
@@ -111,6 +131,32 @@ public class ShellStepTest {
 
         assertTrue(found);
     }
+
+    @Issue("JENKINS-52943")
+    @Test
+    public void stepDescription() throws Exception {
+        // job setup
+        WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
+        foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ? "node {" +
+                "bat 'echo first';" +
+                "bat returnStdout: true, script: 'echo second';" +
+        "}" : "node {" +
+                "sh 'echo first'; " +
+                "sh returnStdout: true, script: 'echo second'" +
+        "}", true));
+
+        WorkflowRun b = j.buildAndAssertSuccess(foo);
+
+        ArrayList<String> args = new ArrayList<>();
+        List<FlowNode> shellStepNodes = new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate(Functions.isWindows() ? "bat" : "sh"));
+        assertThat(shellStepNodes, hasSize(2));
+        for(FlowNode n : shellStepNodes) {
+            args.add(ArgumentsAction.getStepArgumentsAsString(n));
+        }
+
+        assertThat(args, containsInAnyOrder("echo first", "echo second"));
+    }
+
 
     /**
      * Abort a running workflow to ensure that the process is terminated.
@@ -228,6 +274,8 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
+        assertEquals("", s.getLabel());
+        
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
         s = new StepConfigTester(j).configRoundTrip(s);
@@ -235,6 +283,8 @@ public class ShellStepTest {
         assertTrue(s.isReturnStdout());
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
+        assertEquals("", s.getLabel());
+        
         s.setReturnStdout(false);
         s.setEncoding("UTF-8");
         s.setReturnStatus(true);
@@ -243,6 +293,15 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
+        assertEquals("", s.getLabel());
+        
+        s.setLabel("Round Trip Test");
+        s = new StepConfigTester(j).configRoundTrip(s);
+        assertEquals("echo hello", s.getScript());
+        assertFalse(s.isReturnStdout());
+        assertEquals("UTF-8", s.getEncoding());
+        assertTrue(s.isReturnStatus());
+        assertEquals("Round Trip Test", s.getLabel());
     }
 
     @Issue("JENKINS-26133")
@@ -261,9 +320,51 @@ public class ShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
+    
+    
+    @Test public void label() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: 'Step with label') : bat(script: 'echo', label: 'Step with label')}", true));
+        
+        WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
+
+        boolean found = false;
+        FlowGraphTable t = new FlowGraphTable(b.getExecution());
+        t.build();
+        for (Row r : t.getRows()) {
+            if (r.getDisplayName().equals("Step with label")) {
+                found = true;
+            }
+        }
+
+        assertTrue(found);
+    }
+    
+    @Test public void labelShortened() throws Exception {
+        String singleLabel= StringUtils.repeat("0123456789", 10);
+        String label = singleLabel + singleLabel;
+        
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: '" + label + "') : bat(script: 'echo', label: '" + label + "')}", true));
+        
+        WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
+
+        boolean found = false;
+        FlowGraphTable t = new FlowGraphTable(b.getExecution());
+        t.build();
+        for (Row r : t.getRows()) {
+            if (r.getDisplayName().equals(singleLabel)) {
+                found = true;
+            }
+        }
+
+        assertTrue(found);
+    }
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        DurableTaskStep.USE_WATCHING = true;
+        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
@@ -290,6 +391,9 @@ public class ShellStepTest {
         j.assertLogNotContains(password, b);
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
+        } finally {
+            DurableTaskStep.USE_WATCHING = false;
+        }
     }
     @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
@@ -340,6 +444,13 @@ public class ShellStepTest {
                         os.write((" [" + id + "]").getBytes(StandardCharsets.UTF_8));
                         os.write(b[len - 1]); // NL
                     }
+                    @Override public void flush() throws IOException {
+                        os.flush();
+                    }
+                    @Override public void close() throws IOException {
+                        super.close();
+                        os.close();
+                    }
                 }, true);
             }
             return logger;
@@ -353,109 +464,111 @@ public class ShellStepTest {
         }
     }
 
-    @Ignore("TODO too flaky to run in CI")
-    @Issue("JENKINS-38381")
-    @Test public void remoteVoluminousLogger() throws Exception {
+    @Issue("JENKINS-54133")
+    @Test public void remoteConsoleNotes() throws Exception {
+        DurableTaskStep.USE_WATCHING = true;
+        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
-        DumbSlave remote = j.createSlave("remote", null, null);
+        j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition(
+            "node('master') {\n" +
+            "  markUp {\n" +
+            "    sh 'echo hello from master'\n" +
+            "  }\n" +
+            "}\n" +
             "node('remote') {\n" +
-            "  sh 'echo one; sleep 1; echo two'\n" +
+            "  markUp {\n" +
+            "    sh 'echo hello from agent'\n" +
+            "  }\n" +
+            "  markUp(smart: true) {\n" +
+            "    sh 'echo hello from halfway in between'\n" +
+            "  }\n" +
             "}", true));
-        // Priming builds:
-        j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        try {
-            DurableTaskStep.USE_WATCHING = false;
-            j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        } finally {
-            DurableTaskStep.USE_WATCHING = true;
-        }
-        // Now check Remoting usage:
-        Thread.sleep(1000); // TODO waiting for GC?
-        p.setDefinition(new CpsFlowDefinition(
-            "node('remote') {\n" +
-            "  sh 'set +x; for i in 0 1 2 3 4 5 6 7 8 9; do for j in 0 1 2 3 4 5 6 7 8 9; do for k in 0 1 2 3 4 5 6 7 8 9; do echo ijk=$i$j$k; sleep .01; done; done; done'\n" +
-            "}", true));
-        AtomicInteger cnt = new AtomicInteger();
-        ((Channel) remote.getChannel()).addListener(new Channel.Listener() {
-            @Override public void onRead(Channel channel, Command cmd, long blockSize) {
-                cnt.incrementAndGet();
-            }
-            @Override public void onWrite(Channel channel, Command cmd, long blockSize) {
-                cnt.incrementAndGet();
-            }
-        });
+        logging.recordPackage(ConsoleNote.class, Level.FINE);
         WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-        j.assertLogNotContains("ijk=567", b);
-        assertThat(FileUtils.readFileToString(new File(b.getRootDir(), "log-remote")), containsString("ijk=567"));
-        Thread.sleep(1000); // ditto
-        int watchCount = cnt.getAndSet(0);
-        try {
-            DurableTaskStep.USE_WATCHING = false;
-            b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-            j.assertLogContains("ijk=567", b);
+        b.getLogText().writeRawLogTo(0, System.err);
+        StringWriter w = new StringWriter();
+        b.getLogText().writeHtmlTo(0, w);
+        assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
+        assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
+        assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
         } finally {
-            DurableTaskStep.USE_WATCHING = true;
-        }
-        int oldCount = cnt.getAndSet(0);
-        System.out.println("Using watching: " + watchCount + " packets sent/received");
-        System.out.println("Not using watching: " + oldCount + " packets sent/received");
-        assertThat("at least 2× reduction in Remoting traffic by packet count", 1.0 * oldCount / watchCount, greaterThan(2.0));
-    }
-    @TestExtension("remoteVoluminousLogger") public static class ExternalLogFile implements LogStorageFactory {
-        @Override public LogStorage forBuild(FlowExecutionOwner b) {
-            final LogStorage base;
-            final File mainLog;
-            try {
-                mainLog = new File(b.getRootDir(), "log");
-                base = FileLogStorage.forFile(mainLog);
-            } catch (IOException x) {
-                return new BrokenLogStorage(x);
-            }
-            return new LogStorage() {
-                @Override public BuildListener overallListener() throws IOException, InterruptedException {
-                    return new ExternalBuildListener(mainLog, null);
-                }
-                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
-                    return new ExternalBuildListener(mainLog, node.getId());
-                }
-                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
-                    return base.overallLog(build, complete);
-                }
-                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
-                    return base.stepLog(node, complete);
-                }
-            };
+            DurableTaskStep.USE_WATCHING = false;
         }
     }
-    private static class ExternalBuildListener implements BuildListener {
-        private static final long serialVersionUID = 1;
-        private final File log;
-        private final String node;
-        private transient PrintStream logger;
-        ExternalBuildListener(File log, String node) {
-            this.log = log;
-            this.node = node;
+    public static final class MarkUpStep extends Step {
+        @DataBoundSetter public boolean smart;
+        @DataBoundConstructor public MarkUpStep() {}
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return new Exec(context, smart);
         }
-        @Override public PrintStream getLogger() {
-            if (logger == null) {
-                LogStorage storage = FileLogStorage.forFile(log);
-                TaskListener listener;
-                try {
-                    listener = node == null ? storage.overallListener() : storage.nodeListener(new FlowNode(null, node) {
-                        @Override protected String getTypeDisplayName() {return null;}
-                    });
-                } catch (Exception x) {
-                    throw new RuntimeException(x);
-                }
-                logger = listener.getLogger();
+        private static final class Exec extends StepExecution {
+            final boolean smart;
+            Exec(StepContext context, boolean smart) {
+                super(context);
+                this.smart = smart;
             }
-            return logger;
+            @Override public boolean start() throws Exception {
+                getContext().newBodyInvoker().
+                    withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), new Filter(smart))).
+                    withCallback(BodyExecutionCallback.wrap(getContext())).
+                    start();
+                return false;
+            }
         }
-        private Object writeReplace() {
-            String name = Channel.current().getName();
-            return new ExternalBuildListener(new File(log + "-" + name), node);
+        private static final class Filter extends ConsoleLogFilter implements Serializable {
+            private final @CheckForNull byte[] note;
+            Filter(boolean smart) throws IOException {
+                JenkinsJVM.checkJenkinsJVM();
+                if (smart) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    new HelloNote().encodeTo(baos);
+                    note = baos.toByteArray();
+                } else {
+                    note = null;
+                }
+            }
+            @SuppressWarnings("rawtypes")
+            @Override public OutputStream decorateLogger(Run _ignore, final OutputStream logger) throws IOException, InterruptedException {
+                return new LineTransformationOutputStream() {
+                    @Override protected void eol(byte[] b, int len) throws IOException {
+                        if (b.length >= 5 && b[0] == 'h' && b[1] == 'e' && b[2] == 'l' && b[3] == 'l' && b[4] == 'o') {
+                            if (note != null) {
+                                logger.write(note);
+                            } else {
+                                new HelloNote().encodeTo(logger);
+                            }
+                        }
+                        logger.write(b, 0, len);
+                    }
+                    @Override public void close() throws IOException {
+                        super.close();
+                        logger.close();
+                    }
+                    @Override public void flush() throws IOException {
+                        logger.flush();
+                    }
+                };
+            }
+        }
+        private static final class HelloNote extends ConsoleNote<Object> {
+            @SuppressWarnings("rawtypes") // TODO pending 2.145 generics fixes
+            @Override public ConsoleAnnotator annotate(Object context, MarkupText text, int charPos) {
+                text.addMarkup(0, 5, "<b>", "</b>");
+                return null;
+            }
+        }
+        @TestExtension public static final class DescriptorImpl extends StepDescriptor {
+            @Override public String getFunctionName() {
+                return "markUp";
+            }
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Collections.emptySet();
+            }
+            @Override public boolean takesImplicitBlockArgument() {
+                return true;
+            }
         }
     }
 
@@ -508,6 +621,40 @@ public class ShellStepTest {
         
         j.assertLogContains("INJECTED=MYVAR-" + slave.getNodeName(), run);
         
+    }
+
+    @Issue("JENKINS-28822")
+    @Test public void interruptingAbortsBuild() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {\n" +
+                "  timeout(time: 1, unit: 'SECONDS') {" +
+                (Functions.isWindows()
+                        ? "bat 'ping -n 6 127.0.0.1 >nul'\n"
+                        : "sh 'sleep 5'\n") +
+                "  }" +
+                "}", true));
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+        j.waitForCompletion(b);
+        // Would have failed with Result.FAILURE before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
+        j.assertBuildStatus(Result.ABORTED, b);
+        j.assertLogContains("Timeout has been exceeded", b);
+    }
+
+    @Issue("JENKINS-28822")
+    @Test public void interruptingAbortsBuildEvenWithReturnStatus() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node() {\n" +
+                "  timeout(time: 1, unit: 'SECONDS') {\n" +
+                (Functions.isWindows()
+                        ? "bat(returnStatus: true, script: 'ping -n 6 127.0.0.1 >nul')\n"
+                        : "sh(returnStatus: true, script: 'sleep 5')\n") +
+                "  }\n" +
+                "}", true));
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+        j.waitForCompletion(b);
+        // Would have succeeded before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
+        j.assertBuildStatus(Result.ABORTED, b);
+        j.waitForMessage("Timeout has been exceeded", b); // TODO assertLogContains fails unless a sleep is introduced; possible race condition in waitForCompletion
     }
 
     /**

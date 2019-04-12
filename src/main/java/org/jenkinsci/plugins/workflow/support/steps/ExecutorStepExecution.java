@@ -29,6 +29,7 @@ import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.security.AccessControlled;
 import hudson.security.Permission;
+import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -75,6 +76,7 @@ import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
@@ -372,7 +374,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public Queue.Task getOwnerTask() {
-            Run<?,?> r = run();
+            Run<?,?> r = runForDisplay();
             if (r != null && r.getParent() instanceof Queue.Task) {
                 return (Queue.Task) r.getParent();
             } else {
@@ -412,14 +414,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 LOGGER.log(FINE, null, x);
                 return Jenkins.getActiveInstance().getACL();
             }
-        }
-
-        @Override public void checkPermission(Permission p) throws AccessDeniedException {
-            getACL().checkPermission(p);
-        }
-
-        @Override public boolean hasPermission(Permission p) {
-            return getACL().hasPermission(p);
         }
 
         @Override public void checkAbortPermission() {
@@ -484,6 +478,71 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public String getFullDisplayName() {
             return getDisplayName();
+        }
+
+        static String findLabelName(FlowNode flowNode){
+            LabelAction la = flowNode.getPersistentAction(LabelAction.class);
+
+            if (la != null) {
+                return la.getDisplayName();
+            }
+            return null;
+        }
+
+        /**
+         * Similar to {@link #getEnclosingLabel()}.
+         * However instead of returning the innermost label including labels inside node blocks this one
+         * concatenates all labels found outside the current (node) block
+         *
+         * As {@link FlowNode#getEnclosingBlocks()} will return the blocks sorted from inner to outer blocks
+         * this method will create a string like
+         * <code>#innerblock#outerblock for</code> for a script like
+         * <pre>
+         *     {@code
+         *     parallel(outerblock: {
+         *         stage('innerblock') {
+         *             node {
+         *                 // .. do something here
+         *             }
+         *         }
+         *     }
+         *     }
+         * </pre>
+         *
+         * In case there's no context available or we get a timeout we'll just return <code>baseLabel</code>
+         *
+         * */
+        private String concatenateAllEnclosingLabels(StringBuilder labelName) {
+            if (!context.isReady()) {
+                return labelName.toString();
+            }
+            FlowNode executorStepNode = null;
+            try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
+                executorStepNode = context.get(FlowNode.class);
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, null, x);
+            }
+
+            if (executorStepNode != null) {
+                for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
+                    String currentLabelName = findLabelName(node);
+                    if (currentLabelName != null) {
+                        labelName.append("#");
+                        labelName.append(currentLabelName);
+                    }
+                }
+            }
+
+            return labelName.toString();
+        }
+
+        /**
+        * Provide unique key which will be used to prioritize the list of possible build agents to use
+        * */
+        @Override
+        public String getAffinityKey() {
+            StringBuilder ownerTaskName = new StringBuilder(getOwnerTask().getName());
+            return concatenateAllEnclosingLabels(ownerTaskName);
         }
 
         /** hash code of list of heads */
@@ -662,18 +721,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Occupies {@link Executor} while workflow uses this slave.
          */
         @ExportedBean
-        private final class PlaceholderExecutable implements ContinuableExecutable {
+        private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
 
             @Override public void run() {
-                final TaskListener listener;
+                TaskListener listener = null;
                 Launcher launcher;
                 final Run<?, ?> r;
+                Computer computer = null;
                 try {
                     Executor exec = Executor.currentExecutor();
                     if (exec == null) {
                         throw new IllegalStateException("running task without associated executor thread");
                     }
-                    Computer computer = exec.getOwner();
+                    computer = exec.getOwner();
                     // Set up context for other steps inside this one.
                     Node node = computer.getNode();
                     if (node == null) {
@@ -731,6 +791,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         LOGGER.log(FINE, "resuming {0}", cookie);
                     }
                 } catch (Exception x) {
+                    if (computer != null) {
+                        for (Computer.TerminationRequest tr : computer.getTerminatedBy()) {
+                            x.addSuppressed(tr);
+                        }
+                        if (listener != null) {
+                            OfflineCause oc = computer.getOfflineCause();
+                            if (oc != null) {
+                                listener.getLogger().println(computer.getDisplayName() + " was marked offline: " + oc);
+                            }
+                        }
+                    }
                     context.onFailure(x);
                     return;
                 }
@@ -745,6 +816,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     assert runningTask.execution == null;
                     assert runningTask.launcher == null;
                     runningTask.launcher = launcher;
+                    TaskListener _listener = listener;
                     runningTask.execution = new AsynchronousExecution() {
                         @Override public void interrupt(boolean forShutdown) {
                             if (forShutdown) {
@@ -760,7 +832,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                     } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
                                         Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
                                         if (thisExecutor != null) {
-                                            thisExecutor.recordCauseOfInterruption(r, listener);
+                                            thisExecutor.recordCauseOfInterruption(r, _listener);
                                         }
                                         completed(null);
                                     }
@@ -782,8 +854,31 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return PlaceholderTask.this;
             }
 
+            @Exported
+            public Integer getNumber() {
+                Run<?, ?> r = getParent().runForDisplay();
+                return r != null ? r.getNumber() : null;
+            }
+
+            @Exported
+            public String getFullDisplayName() {
+                return getParent().getFullDisplayName();
+            }
+
+            @Exported
+            public String getDisplayName() {
+                return getParent().getDisplayName();
+            }
+
+            @Exported
             @Override public long getEstimatedDuration() {
                 return getParent().getEstimatedDuration();
+            }
+
+            @Exported
+            public Long getTimestamp() {
+                Run<?, ?> r = getParent().runForDisplay();
+                return r != null ? r.getStartTimeInMillis() : null;
             }
 
             @Override public boolean willContinue() {
@@ -797,9 +892,23 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return Executor.of(this);
             }
 
-            @Restricted(NoExternalUse.class) // for Jelly
+            @Restricted(NoExternalUse.class) // for Jelly and toString
             public String getUrl() {
                 return PlaceholderTask.this.getUrl(); // we hope this has a console.jelly
+            }
+
+            @Exported(name="url")
+            public String getAbsoluteUrl() {
+                Run<?,?> r = runForDisplay();
+                if (r == null) {
+                    return "";
+                }
+                Jenkins j = Jenkins.getInstance();
+                String base = "";
+                if (j != null) {
+                    base = Util.removeTrailingSlash(j.getRootUrl()) + "/";
+                }
+                return base + r.getUrl();
             }
 
             @Override public String toString() {
@@ -807,6 +916,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             private static final long serialVersionUID = 1L;
+
+            @Override
+            public ACL getACL() {
+                return getParent().getACL();
+            }
+
+            @Override
+            public void checkPermission(Permission permission) throws AccessDeniedException {
+                getACL().checkPermission(permission);
+            }
+
+            @Override
+            public boolean hasPermission(Permission permission) {
+                return getACL().hasPermission(permission);
+            }
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12

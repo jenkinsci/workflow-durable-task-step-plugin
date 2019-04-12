@@ -24,13 +24,13 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.Functions;
-import hudson.init.InitMilestone;
-import hudson.init.Initializer;
 import hudson.model.Computer;
 import hudson.model.Executor;
+import hudson.model.Item;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -38,10 +38,11 @@ import hudson.model.Run;
 import hudson.model.Slave;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
+import hudson.model.queue.CauseOfBlockage;
+import hudson.model.queue.QueueTaskDispatcher;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
-import hudson.security.Permission;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
@@ -53,18 +54,14 @@ import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -72,30 +69,34 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.annotation.Nullable;
+
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import static org.hamcrest.Matchers.*;
-import org.jboss.marshalling.ObjectResolver;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
+import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
-import org.jenkinsci.plugins.workflow.support.pickles.serialization.RiverReader;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
 import static org.junit.Assert.*;
@@ -112,7 +113,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
-import org.jvnet.hudson.test.recipes.LocalData;
+import org.jvnet.hudson.test.TestExtension;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -212,7 +213,7 @@ public class ExecutorStepTest {
     private static Process jnlpProc;
     private void startJnlpProc() throws Exception {
         killJnlpProc();
-        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", story.j.getURL() + "computer/dumbo/slave-agent.jnlp");
+        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-Djava.awt.headless=true", "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", story.j.getURL() + "computer/dumbo/slave-agent.jnlp");
         pb.redirectErrorStream(true);
         System.err.println("Running: " + pb.command());
         jnlpProc = pb.start();
@@ -278,8 +279,11 @@ public class ExecutorStepTest {
     @Issue("JENKINS-52165")
     @Test public void shellOutputAcrossRestart() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        // TODO does not assert anything in watch mode, just informational.
+        // There is no way for FileMonitoringTask.Watcher to know when content has been written through to the sink
+        // other than by periodically flushing output and declining to write lastLocation until after this completes.
+        // This applies both to buffered on-master logs, and to typical cloud sinks.
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-        // for comparison: DurableTaskStep.USE_WATCHING = false;
         int count = 3_000;
         story.then(r -> {
             DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
@@ -298,14 +302,18 @@ public class ExecutorStepTest {
             // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
             FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
             String log = IOUtils.toString(shNode.getAction(LogAction.class).getLogText().readAll());
+            int lost = 0;
             for (int i = 0; i < count; i++) {
-                assertThat(log, containsString("\n<<<" + i + ">>>\n"));
+                if (!log.contains("\n<<<" + i + ">>>\n")) {
+                    lost++;
+                }
             }
             Matcher m = Pattern.compile("<<<\\d+>>>").matcher(log);
             int seen = 0;
             while (m.find()) {
                 seen++;
             }
+            System.out.printf("Lost content: %.02f%%%n", lost * 100.0 / count);
             System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
             killJnlpProc();
         });
@@ -316,9 +324,6 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
-                long origWatchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
-                DurableTaskStep.WATCHING_RECURRENCE_PERIOD = /* 5s */5_000;
-                try {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
@@ -356,9 +361,6 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 story.j.assertLogContains("OK, done", b);
                 killJnlpProc();
-                } finally {
-                    DurableTaskStep.WATCHING_RECURRENCE_PERIOD = origWatchingRecurrencePeriod;
-                }
             }
         });
     }
@@ -566,6 +568,45 @@ public class ExecutorStepTest {
         });
     }
 
+    @Test public void detailsExported() throws Exception {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node('" + s.getNodeName() + "') {\n"
+                        + "semaphore 'wait'\n"
+                        + "    sleep 10\n"
+                        + "}"));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+                JenkinsRule.WebClient wc = story.j.createWebClient();
+                Page page = wc
+                        .goTo("computer/" + s.getNodeName()
+                                + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
+
+                JSONObject propertiesJSON = (JSONObject) (new JsonSlurper()).parseText(page.getWebResponse().getContentAsString());
+                JSONArray executors = propertiesJSON.getJSONArray("executors");
+                JSONObject executor = executors.getJSONObject(0);
+                JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
+
+                assertEquals(1, currentExecutable.get("number"));
+
+                assertEquals("part of " + b.getFullDisplayName(),
+                        currentExecutable.get("displayName"));
+
+                assertEquals("part of " + p.getFullDisplayName() + " #1",
+                        currentExecutable.get("fullDisplayName"));
+
+                assertEquals(story.j.getURL().toString() + "job/" + p.getName() + "/1/",
+                        currentExecutable.get("url"));
+            }
+        });
+    }
+
     @Test public void tailCall() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
@@ -688,6 +729,322 @@ public class ExecutorStepTest {
         });
     }
 
+
+    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
+        FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
+        List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+        for (FlowNode n : walker) {
+            WorkspaceAction a = n.getAction(WorkspaceAction.class);
+            if (a != null) {
+                actions.add(a);
+            }
+        }
+        return actions;
+    }
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodeFromPreviousRun() {
+        story.then(r -> {
+            for (int i = 0; i < 5; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
+                    "}\n", true));
+
+            WorkflowRun run = r.buildAndAssertSuccess(p);
+            List<WorkspaceAction> workspaceActions = getWorkspaceActions(run);
+            assertEquals(workspaceActions.size(), 1);
+
+            String firstNode = workspaceActions.get(0).getNode();
+            assertNotEquals(firstNode, "");
+
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            workspaceActions = getWorkspaceActions(run2);
+            assertEquals(workspaceActions.size(), 1);
+            assertEquals(workspaceActions.get(0).getNode(), firstNode);
+        });
+    }
+
+    /**
+     * @param workflowRun The run to analyze
+     * @return Map containing node names as key and the log text for all steps executed on that very node as value
+     * @throws java.io.IOException Will be thrown in case there something went wrong while reading the log
+     */
+    private Map<String, StringWriter> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
+        FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
+        Map<String, StringWriter> workspaceActionToLogText = new HashMap<>();
+        for (FlowNode n : walker) {
+            if (n instanceof StepAtomNode) {
+                StepAtomNode atomNode = (StepAtomNode) n;
+                if (atomNode.getDescriptor() instanceof EchoStep.DescriptorImpl) {
+                    // we're searching for the echo only...
+                    LogAction l = atomNode.getAction(LogAction.class);
+                    if (l != null) {
+                        // Only store the log if there was no workspace action involved... (e.g. from echo)
+                        List<? extends BlockStartNode> enclosingBlocks = atomNode.getEnclosingBlocks();
+                        for (BlockStartNode startNode : enclosingBlocks) {
+                            WorkspaceAction a = startNode.getAction(WorkspaceAction.class);
+                            if (a != null) {
+                                String nodeName = a.getNode();
+                                if (!workspaceActionToLogText.containsKey(nodeName)) {
+                                    workspaceActionToLogText.put(nodeName, new StringWriter());
+                                }
+                                StringWriter writer = workspaceActionToLogText.get(nodeName);
+                                l.getLogText().writeLogTo(0, writer);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return workspaceActionToLogText;
+    }
+
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() {
+        story.then(r -> {
+            for (int i = 0; i < 1; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition(
+                    "node('foo') {\n" +
+                            "   echo \"ran node block foo\"\n" +
+                            "}\n" +
+                            "node('bar') {\n" +
+                            "	echo \"ran node block bar\"\n" +
+                            "}\n" +
+                            "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    /**
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
+        story.then(r -> {
+            for (int i = 0; i < 3; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "stage('1') {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "stage('2') {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
+
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "stage('2') {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "stage('1') {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "}\n" +
+                    "", true));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    /**
+     * Ensure node reuse works from within parallel block without using stages
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInParallelStages() {
+        story.then(r -> {
+            for (int i = 0; i < 4; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+
+            // 1: the second branch shall request the node first and wait inside the node block for the
+            // first branch to acquire the node
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def secondBranchReady = false\n" +
+                    "def firstBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   waitUntil { secondBranchReady }\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "   }\n" +
+                    "   firstBranchDone = true\n" +
+                    "}, 2: {\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "       secondBranchReady = true\n" +
+                    "       waitUntil { firstBranchDone }\n" +
+                    "   }\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
+
+            // 2: update script to force reversed order for node blocks; shall still pick the same nodes
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def firstBranchReady = false\n" +
+                    "def secondBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   node('foo') {\n" +
+                    "       echo \"ran node block first\"\n" +
+                    "       firstBranchReady = true\n" +
+                    "       waitUntil { secondBranchDone }\n" +
+                    "   }\n" +
+                    "}, 2: {\n" +
+                    "   waitUntil { firstBranchReady }\n" +
+                    "   node('foo') {\n" +
+                    "	    echo \"ran node block second\"\n" +
+                    "   }\n" +
+                    "   secondBranchDone = true\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    /**
+     * Ensure node reuse works from within parallel blocks which use the same stage names
+     * Please note that any change to the node allocation algorithm may need an increase or decrease
+     * of the number of slaves in order to get a pass
+     */
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
+        story.then(r -> {
+            for (int i = 0; i < 4; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo bar");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def secondBranchReady = false\n" +
+                    "def firstBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   waitUntil { secondBranchReady }\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "           echo \"ran node block first\"\n" +
+                    "        }\n" +
+                    "   }\n" +
+                    "   firstBranchDone = true\n" +
+                    "}, 2: {\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "	        echo \"ran node block second\"\n" +
+                    "           secondBranchReady = true\n" +
+                    "           waitUntil { firstBranchDone }\n" +
+                    "        }\n" +
+                    "   }\n" +
+                    "})\n" +
+                    "", true));
+            WorkflowRun run1 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+
+            // if nodeMapping contains only one entry this test actually will not test anything reasonable
+            // possibly the number of dumb slaves has to be adjusted in that case
+            assertEquals(nodeMapping1.size(), 2);
+
+            // update script to force reversed order for node blocks; shall still pick the same nodes
+            p.setDefinition(new CpsFlowDefinition("" +
+                    "def firstBranchReady = false\n" +
+                    "def secondBranchDone = false\n" +
+                    "parallel(1: {\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "           echo \"ran node block first\"\n" +
+                    "           firstBranchReady = true\n" +
+                    "           waitUntil { secondBranchDone }\n" +
+                    "       }\n" +
+                    "   }\n" +
+                    "}, 2: {\n" +
+                    "   waitUntil { firstBranchReady }\n" +
+                    "   stage('stage1') {\n" +
+                    "       node('foo') {\n" +
+                    "    	    echo \"ran node block second\"\n" +
+                    "       }\n" +
+                    "   }\n" +
+                    "   secondBranchDone = true\n" +
+                    "})\n" +
+                    "", true));
+
+            WorkflowRun run2 = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+
+            for (String nodeName: nodeMapping1.keySet()) {
+                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
+            }
+        });
+    }
+
+    @Issue("JENKINS-36547")
+    @Test public void reuseNodeInSameRun() {
+        story.then(r -> {
+            for (int i = 0; i < 5; ++i) {
+                DumbSlave slave = r.createOnlineSlave();
+                slave.setLabelString("foo");
+            }
+
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
+            p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
+            WorkflowRun run = r.buildAndAssertSuccess(p);
+            Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
+
+            // if the node was reused every time we'll only have one node mapping entry
+            assertEquals(nodeMapping.size(), 1);
+        });
+    }
+
     @Issue("JENKINS-26132")
     @Test public void taskDisplayName() {
         story.addStep(new Statement() {
@@ -751,105 +1108,6 @@ public class ExecutorStepTest {
         });
     }
 
-    @Issue("JENKINS-39134")
-    @LocalData
-    @Test public void serialForm() {
-        story.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                WorkflowJob p = story.j.jenkins.getItemByFullName("p", WorkflowJob.class);
-                WorkflowRun b = p.getBuildByNumber(1);
-                assertThat(patchedFiles, containsInAnyOrder(/* "program.dat", */"3.xml", "3.log", "log"));
-                /* TODO this seems to randomly not include the expected items:
-                assertThat(patchedFields, Matchers.containsInAnyOrder(
-                    // But not FileMonitoringController.controlDir, since this old version is still using location-independent .id.
-                    "private final java.lang.String org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle.path",
-                    "private final java.lang.String org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle.path",
-                    "private java.lang.String org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep$Execution.remote"));
-                */
-                story.j.assertLogContains("simulated later output", story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b)));
-            }
-        });
-    }
-    private static final List<String> patchedFiles = new ArrayList<>();
-    private static final List<String> patchedFields = new ArrayList<>();
-    // TODO @TestExtension("serialForm") ItemListener does not work since we need to run before FlowExecutionList.ItemListenerImpl yet TestExtension does not support ordinal
-    @Initializer(before = InitMilestone.JOB_LOADED) public static void replaceWorkspacePath() throws Exception {
-        final File prj = new File(Jenkins.getInstance().getRootDir(), "jobs/p");
-        final File workspace = new File(prj, "workspace");
-        final String ORIG_WS = "/space/tmp/AbstractStepExecutionImpl-upgrade/jobs/p/workspace";
-        final String newWs = workspace.getAbsolutePath();
-        File controlDir = new File(workspace, ".eb6272d3");
-        if (!controlDir.isDirectory()) {
-            return;
-        }
-        System.err.println("Patching " + controlDir);
-        RiverReader.customResolver = new ObjectResolver() {
-            @Override public Object readResolve(Object replacement) {
-                Class<?> c = replacement.getClass();
-                //System.err.println("replacing " + c.getName());
-                while (c != Object.class) {
-                    for (Field f : c.getDeclaredFields()) {
-                        if (f.getType() == String.class) {
-                            try {
-                                f.setAccessible(true);
-                                Object v = f.get(replacement);
-                                if (ORIG_WS.equals(v)) {
-                                    //System.err.println("patching " + f);
-                                    f.set(replacement, newWs);
-                                    patchedFields.add(f.toString());
-                                } else if (newWs.equals(v)) {
-                                    //System.err.println(f + " was already patched, somehow?");
-                                } else {
-                                    //System.err.println("some other value " + v + " for " + f);
-                                }
-                            } catch (Exception x) {
-                                x.printStackTrace();
-                            }
-                        }
-                    }
-                    c = c.getSuperclass();
-                }
-                return replacement;
-            }
-            @Override public Object writeReplace(Object original) {
-                throw new IllegalStateException();
-            }
-        };
-        Files.walkFileTree(prj.toPath(), new SimpleFileVisitor<Path>() {
-            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                File f = file.toFile();
-                String name = f.getName();
-                if (name.equals("program.dat")) {
-                    /* TODO could not get this to work; stream appeared corrupted:
-                    patchedFiles.add(name);
-                    String origContent = FileUtils.readFileToString(f, StandardCharsets.ISO_8859_1);
-                    String toReplace = String.valueOf((char) Protocol.ID_STRING_SMALL) + String.valueOf((char) ORIG_WS.length()) + ORIG_WS;
-                    int newLen = newWs.length();
-                    String replacement = String.valueOf((char) Protocol.ID_STRING_MEDIUM) +
-                                         String.valueOf((char) (newLen & 0xff00) >> 8) +
-                                         String.valueOf((char) newLen & 0xff) +
-                                         newWs; // TODO breaks if not ASCII
-                    String replacedContent = origContent.replace(toReplace, replacement);
-                    assertNotEquals("failed to replace ‘" + toReplace + "’", replacedContent, origContent);
-                    FileUtils.writeStringToFile(f, replacedContent, StandardCharsets.ISO_8859_1);
-                    */
-                } else {
-                    String origContent = FileUtils.readFileToString(f, StandardCharsets.ISO_8859_1);
-                    String replacedContent = origContent.replace(ORIG_WS, newWs);
-                    if (!replacedContent.equals(origContent)) {
-                        patchedFiles.add(name);
-                        FileUtils.writeStringToFile(f, replacedContent, StandardCharsets.ISO_8859_1);
-                    }
-                }
-                return super.visitFile(file, attrs);
-            }
-        });
-        FilePath controlDirFP = new FilePath(controlDir);
-        controlDirFP.child("jenkins-result.txt").write("0", null);
-        FilePath log = controlDirFP.child("jenkins-log.txt");
-        log.write(log.readToString() + "simulated later output\n", null);
-    }
-
     @Issue("SECURITY-675")
     @Test public void authentication() {
         story.then(r -> {
@@ -858,15 +1116,8 @@ public class ExecutorStepTest {
             r.waitOnline(s);
             r.jenkins.setNumExecutors(0);
             r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
-            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategyWithNode().
-                grant(Jenkins.ADMINISTER).everywhere().to("admin").
-                // TODO pending fix of JENKINS-46652 in baseline, we must grant BUILD on master but then go back and deny it on remote:
-                grant(Computer.BUILD).everywhere().to("dev"));
-            Authentication dev = User.get("dev").impersonate();
-            assertTrue(r.jenkins.getACL().hasPermission(dev, Computer.BUILD));
-            assertTrue(r.jenkins.toComputer().getACL().hasPermission(dev, Computer.BUILD));
-            assertFalse(s.getACL().hasPermission(dev, Computer.BUILD));
-            assertFalse(s.toComputer().getACL().hasPermission(dev, Computer.BUILD));
+            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().
+                grant(Jenkins.ADMINISTER).everywhere().to("admin"));
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
             // First check that if the build is run as dev, they are not allowed to use this agent:
             QueueItemAuthenticatorConfiguration.get().getAuthenticators().add(new MainAuthenticator());
@@ -890,29 +1141,63 @@ public class ExecutorStepTest {
             b3.doStop();
         });
     }
-    // Pending direct support in MockAuthorizationStrategy for granting node permissions:
-    private static class MockAuthorizationStrategyWithNode extends MockAuthorizationStrategy {
-        @Override public ACL getACL(Node node) {
-            final ACL stock = super.getACL(node);
-            if (node.getNodeName().equals("remote")) {
-                return new ACL() {
-                    @Override public boolean hasPermission(Authentication a, Permission permission) {
-                        return stock.hasPermission(a, permission) && !(a.getName().equals("dev") && permission.equals(Computer.BUILD));
-                    }
-                };
-            } else {
-                return stock;
-            }
-        }
+
+    /**
+     * @see PipelineOnlyTaskDispatcher
+     */
+    @Issue("JENKINS-53837")
+    @Test public void queueTaskOwnerCorrectWhenRestarting() {
+        story.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p1");
+            p.setDefinition(new CpsFlowDefinition("node {\n" +
+                    "  semaphore('wait')\n" +
+                    "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+        });
+        story.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p1", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            SemaphoreStep.success("wait/1", null);
+            r.waitForCompletion(b);
+            r.assertBuildStatusSuccess(b);
+            r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
+        });
     }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
-            return task instanceof WorkflowJob ? User.get("dev").impersonate() : null;
+            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
         }
     }
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return ACL.SYSTEM;
+        }
+    }
+
+    @TestExtension("queueTaskOwnerCorrectWhenRestarting")
+    public static class PipelineOnlyTaskDispatcher extends QueueTaskDispatcher {
+        @Override
+        public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
+            Queue.Task t = item.task;
+            while (!(t instanceof Item) && (t != null)) {
+                final Queue.Task ownerTask = t.getOwnerTask();
+                if (t == ownerTask) {
+                    break;
+                }
+                t = ownerTask;
+            }
+            if (t instanceof WorkflowJob) {
+                return null;
+            }
+            final Queue.Task finalT = t;
+            return new CauseOfBlockage() {
+                @Override
+                public String getShortDescription() {
+                    return "Non-Pipeline tasks are forbidden! Not building: " + finalT;
+                }
+            };
         }
     }
 

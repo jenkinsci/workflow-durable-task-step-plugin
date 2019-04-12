@@ -1,46 +1,107 @@
+<!-- TODO figure out how to inline or otherwise share https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/hudson/model/AbstractProject/help-label.html -->
 <div>
-    Computer name, label name, or any other label expression like <code>linux && 64bit</code> to restrict where this step builds.
+    Computer name, label name, or any other label expression like <code>linux &amp;&amp; 64bit</code> to restrict where this step builds.
     May be left blank, in which case any available executor is taken.
-    <!-- TODO figure out how to inline or otherwise share AbstractProject/help-label.html -->
-    <h3>Valid Operators</h3>
-    <p>
-    The following operators are supported, in the order of precedence.
-    <dl>
-        <dt>(expr)</dt>
-        <dd>parenthesis</dd>
 
-        <dt>!expr</dt>
-        <dd>negation</dd>
+  <h3>Supported operators</h3>
+  The following operators are supported, in descending order of precedence:
+  <dl>
+    <dt><tt>(expression)</tt></dt>
+    <dd>
+      parentheses — used to explicitly define the associativity of an expression
+    </dd>
 
-        <dt>expr&amp;&amp;expr</dt>
-        <dd>
-            and
-        </dd>
+    <dt><tt>!expression</tt></dt>
+    <dd>
+      NOT — negation; the result of <tt>expression</tt> must <b>not</b> be true
+    </dd>
 
-        <dt>expr||expr</dt>
-        <dd>
-            or
-        </dd>
+    <dt><tt>a &amp;&amp; b</tt></dt>
+    <dd>
+      AND — <b>both</b> of the expressions <tt>a</tt> and <tt>b</tt> must be
+      true
+    </dd>
 
-        <dt>a -> b</dt>
-        <dd>
-            "implies" operator. Equivalent to <tt>!a|b</tt>.
-            For example, <tt>windows->x64</tt> could be thought of as "if run on a Windows slave,
-            that slave must be 64bit." It still allows Jenkins to run this build on linux.
-        </dd>
+    <dt><tt>a || b</tt></dt>
+    <dd>
+      OR — <b>either</b> of the expressions <tt>a</tt> or <tt>b</tt> may be
+      true
+    </dd>
 
-        <dt>a &lt;-> b</dt>
-        <dd>
-            "if and only if" operator. Equivalent to <tt>a&amp;&amp;b || !a&amp;&amp;!b</tt>.
-            For example, <tt>windows&lt;->sfbay</tt> could be thought of as "if run on a Windows slave,
-            that slave must be in the SF bay area, but if not on Windows, it must not be in the bay area."
-        </dd>
-    </dl>
-    <p>
-    All operators are left-associative (i.e., a->b->c &lt;-> (a->b)->c )
-    An expression can contain whitespace for better readability, and it'll be ignored.
+    <dt><tt>a -> b</tt></dt>
+    <dd>
+      "implies" operator — equivalent to <tt>!a || b</tt>.<br>
+      For example, <tt>windows -> x64</tt> could be thought of as "if a Windows
+      agent is used, then that agent <i>must</i> be 64-bit", while still
+      allowing this block to be executed on any agents that <i>do not</i> have
+      the <tt>windows</tt> label, regardless of whether they have also have an
+      <tt>x64</tt> label
+    </dd>
 
-    <p>
-    Label names or slave names can be quoted if they contain unsafe characters. For example,
-    <tt>"jenkins-solaris (Solaris)" || "Windows 2008"</tt>
+    <dt><tt>a &lt;-> b</tt></dt>
+    <dd>
+      "if and only if" operator — equivalent to <tt>a &amp;&amp; b ||
+      !a &amp;&amp; !b</tt><br>
+      For example, <tt>windows &lt;-> dc2</tt> could be thought of as "if a
+      Windows agent is used, then that agent <i>must</i> be in datacenter 2, but
+      if a non-Windows agent is used, then it <i>must not</i> be in datacenter
+      2"
+    </dd>
+  </dl>
+
+  <h3>Notes</h3>
+  <ul>
+    <li>
+      All operators are left-associative, i.e. <tt>a -> b -> c</tt> is
+      equivalent to <tt>(a -> b) -> c</tt>.
+    </li>
+    <li>
+      Labels or agent names can be surrounded with quotation marks if they
+      contain characters that would conflict with the operator syntax.<br>
+      For example, <tt>"osx (10.11)" || "Windows Server"</tt>.
+    </li>
+    <li>
+      Expressions can be written without whitespace, but including it is
+      recommended for readability; Jenkins will ignore whitespace when
+      evaluating expressions.
+    </li>
+    <li>
+      Matching labels or agent names with wildcards or regular expressions is
+      not supported.
+    </li>
+    <li>
+      An empty expression will always evaluate to <i>true</i>, matching all
+      agents.
+    </li>
+  </ul>
+
+  <h3>Examples</h3>
+  <dl>
+    <dt><tt>master</tt></dt>
+    <dd>This block may be executed only on the Jenkins master<dd>
+
+    <dt><tt>linux-machine-42</tt></dt>
+    <dd>
+      This block may be executed only on the agent with the name
+      <tt>linux-machine-42</tt> (or on any machine that happens to have a label
+      called <tt>linux-machine-42</tt>)
+    </dd>
+
+    <dt><tt>windows &amp;&amp; jdk9</tt></dt>
+    <dd>
+      This block may be executed only on any Windows agent that has
+      version 9 of the Java Development Kit installed (assuming that agents
+      with JDK 9 installed have been given a <tt>jdk9</tt> label)
+    </dd>
+
+    <dt><tt>postgres &amp;&amp; !vm &amp;&amp; (linux || freebsd)</tt></dt>
+    <dd>
+      This block may be executed only any on Linux or FreeBSD agent,
+      so long as they are <i>not</i> a virtual machine, and they have PostgreSQL
+      installed (assuming that each agent has the appropriate labels — in
+      particular, each agent running in a virtual machine must have the
+      <tt>vm</tt> label in order for this example to work as expected)
+    </dd>
+
+  </dl>
 </div>

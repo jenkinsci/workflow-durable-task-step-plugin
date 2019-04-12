@@ -36,5 +36,8 @@ THE SOFTWARE.
         <f:entry field="returnStatus" title="${%Return exit status}">
             <f:checkbox/>
         </f:entry>
+        <f:entry field="label" title="${%Label}">
+            <f:textbox/>
+        </f:entry>
     </f:advanced>
 </j:jelly>
