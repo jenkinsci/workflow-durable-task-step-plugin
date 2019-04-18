@@ -95,7 +95,6 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
-import org.jenkinsci.plugins.workflow.support.pickles.PickleDynamicContext;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.AfterClass;
 import static org.junit.Assert.*;
@@ -374,7 +373,7 @@ public class ExecutorStepTest {
             @Override
             public void evaluate() throws Throwable {
                 logging.record(DurableTaskStep.class, Level.FINE).
-                        record(PickleDynamicContext.class, Level.FINE).
+                        record(FilePathDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);

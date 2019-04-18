@@ -69,12 +69,10 @@ import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
-import org.jenkinsci.plugins.workflow.steps.DynamicContext;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
-import org.jenkinsci.plugins.workflow.support.pickles.PickleDynamicContext;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -785,7 +783,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
                         context.newBodyInvoker()
                                 .withContexts(exec, computer, env,
-                                    DynamicContext.merge(context.get(DynamicContext.class), new PickleDynamicContext(workspace)))
+                                    FilePathDynamicContext.createContextualObject(workspace))
                                 .withCallback(new Callback(cookie, lease))
                                 .start();
                         LOGGER.log(FINE, "started {0}", cookie);
