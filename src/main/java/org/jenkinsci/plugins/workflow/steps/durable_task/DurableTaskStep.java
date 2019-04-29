@@ -58,6 +58,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -321,6 +322,15 @@ public abstract class DurableTaskStep extends Step {
             if (ws == null) {
                 ws = FilePathUtils.find(node, remote);
                 if (ws == null) {
+                    // Part of JENKINS-49707: check whether an agent has been removed.
+                    // (Note that a Computer may be missing because a Node is offline,
+                    // and conversely after removing a Node its Computer may remain for a while.
+                    // Therefore we only fail here if _both_ are absent.)
+                    Jenkins j = Jenkins.getInstanceOrNull();
+                    if (!node.isEmpty() && j != null && j.getNode(node) == null) {
+                        // TODO or FlowInterruptedException?
+                        throw new AbortException("Agent " + node + " was removed");
+                    }
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
