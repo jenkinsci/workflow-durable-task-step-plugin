@@ -334,7 +334,7 @@ public abstract class DurableTaskStep extends Step {
                     // Therefore we only fail here if _both_ are absent.)
                     // ExecutorStepExecution.NodeListener will normally do this first, so this is a fallback.
                     Jenkins j = Jenkins.getInstanceOrNull();
-                    if (!node.isEmpty() && j != null && j.getNode(node) == null) {
+                    if (ExecutorStepExecution.RemovedNodeCause.ENABLED && !node.isEmpty() && j != null && j.getNode(node) == null) {
                         if (removedNodeDiscovered == 0) {
                             LOGGER.fine(() -> "discovered that " + node + " has been removed");
                             removedNodeDiscovered = System.nanoTime();

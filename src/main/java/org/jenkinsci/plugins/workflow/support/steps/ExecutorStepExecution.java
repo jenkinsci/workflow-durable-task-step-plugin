@@ -255,6 +255,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @Extension public static final class RemovedNodeListener extends NodeListener {
         @Override protected void onDeleted(Node node) {
+            if (!RemovedNodeCause.ENABLED) {
+                return;
+            }
             LOGGER.fine(() -> "received node deletion event on " + node.getNodeName());
             Timer.get().schedule(() -> {
                 Computer c = node.toComputer();
@@ -286,6 +289,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     public static final class RemovedNodeCause extends CauseOfInterruption {
+        @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
+        public static boolean ENABLED = Boolean.parseBoolean(System.getProperty(ExecutorStepExecution.class.getName() + ".REMOVED_NODE_DETECTION", "true"));
         @Override public String getShortDescription() {
             return "Agent was removed";
         }
