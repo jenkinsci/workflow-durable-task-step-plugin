@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.Main;
@@ -65,6 +66,7 @@ public class ExecutorPickle extends Pickle {
 
     private final boolean isEphemeral;
 
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
     @Restricted(NoExternalUse.class)
     public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
