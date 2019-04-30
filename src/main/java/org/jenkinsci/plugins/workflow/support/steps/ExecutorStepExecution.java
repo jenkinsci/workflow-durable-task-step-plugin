@@ -255,29 +255,33 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @Extension public static final class RemovedNodeListener extends NodeListener {
         @Override protected void onDeleted(Node node) {
-            Computer c = node.toComputer();
-            if (c == null || c.isOnline()) {
-                LOGGER.fine(() -> "computer for " + node.getNodeName() + " was missing or online, skipping");
-                return;
-            }
-            for (Executor e : c.getExecutors()) {
-                Queue.Executable exec = e.getCurrentExecutable();
-                if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
-                    PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
-                    TaskListener listener = TaskListener.NULL;
-                    try {
-                        listener = task.context.get(TaskListener.class);
-                    } catch (Exception x) {
-                        LOGGER.log(Level.WARNING, null, x);
-                    }
-                    if (task.body == null) {
-                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
-                        continue;
-                    }
-                    listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                    task.body.cancel(new RemovedNodeCause());
+            LOGGER.fine(() -> "received node deletion event on " + node.getNodeName());
+            Timer.get().schedule(() -> {
+                Computer c = node.toComputer();
+                if (c == null || c.isOnline()) {
+                    LOGGER.fine(() -> "computer for " + node.getNodeName() + " was missing or online, skipping");
+                    return;
                 }
-            }
+                LOGGER.fine(() -> "processing node deletion event on " + node.getNodeName());
+                for (Executor e : c.getExecutors()) {
+                    Queue.Executable exec = e.getCurrentExecutable();
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                        PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
+                        TaskListener listener = TaskListener.NULL;
+                        try {
+                            listener = task.context.get(TaskListener.class);
+                        } catch (Exception x) {
+                            LOGGER.log(Level.WARNING, null, x);
+                        }
+                        if (task.body == null) {
+                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
+                            continue;
+                        }
+                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
+                        task.body.cancel(new RemovedNodeCause());
+                    }
+                }
+            }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
         }
     }
 

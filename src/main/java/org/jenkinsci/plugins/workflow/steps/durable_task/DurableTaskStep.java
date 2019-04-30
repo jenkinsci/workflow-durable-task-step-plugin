@@ -77,6 +77,7 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -284,6 +285,8 @@ public abstract class DurableTaskStep extends Step {
         private transient boolean awaitingAsynchExit;
         /** The first throwable used to stop the task */
         private transient volatile Throwable causeOfStoppage;
+        /** If nonzero, {@link System#nanoTime} when we first discovered that the node had been removed. */
+        private transient long removedNodeDiscovered;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -332,11 +335,23 @@ public abstract class DurableTaskStep extends Step {
                     // ExecutorStepExecution.NodeListener will normally do this first, so this is a fallback.
                     Jenkins j = Jenkins.getInstanceOrNull();
                     if (!node.isEmpty() && j != null && j.getNode(node) == null) {
-                        throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+                        if (removedNodeDiscovered == 0) {
+                            LOGGER.fine(() -> "discovered that " + node + " has been removed");
+                            removedNodeDiscovered = System.nanoTime();
+                            return null;
+                        } else if (System.nanoTime() < removedNodeDiscovered + TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                            LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
+                            return null;
+                        } else {
+                            LOGGER.fine(() -> node + " has been removed for a while, assuming it is not coming back");
+                            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+                        }
                     }
+                    removedNodeDiscovered = 0; // something else; reset
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
+                removedNodeDiscovered = 0;
                 if (watching) {
                     try {
                         controller.watch(ws, new HandlerImpl(this, ws, listener()), listener());
