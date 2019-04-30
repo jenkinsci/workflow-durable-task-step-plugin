@@ -34,6 +34,7 @@ import hudson.Launcher;
 import hudson.Util;
 import hudson.init.Terminator;
 import hudson.model.Node;
+import hudson.model.Result;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
@@ -69,12 +70,14 @@ import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -318,7 +321,7 @@ public abstract class DurableTaskStep extends Step {
             return false;
         }
 
-        private @CheckForNull FilePath getWorkspace() throws AbortException {
+        private @CheckForNull FilePath getWorkspace() throws IOException, InterruptedException {
             if (ws == null) {
                 ws = FilePathUtils.find(node, remote);
                 if (ws == null) {
@@ -326,10 +329,10 @@ public abstract class DurableTaskStep extends Step {
                     // (Note that a Computer may be missing because a Node is offline,
                     // and conversely after removing a Node its Computer may remain for a while.
                     // Therefore we only fail here if _both_ are absent.)
+                    // ExecutorStepExecution.NodeListener will normally do this first, so this is a fallback.
                     Jenkins j = Jenkins.getInstanceOrNull();
                     if (!node.isEmpty() && j != null && j.getNode(node) == null) {
-                        // TODO or FlowInterruptedException?
-                        throw new AbortException("Agent " + node + " was removed");
+                        throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
                     }
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
@@ -478,9 +481,11 @@ public abstract class DurableTaskStep extends Step {
             final FilePath workspace;
             try {
                 workspace = getWorkspace();
-            } catch (AbortException x) {
+            } catch (IOException | InterruptedException x) {
                 recurrencePeriod = 0;
-                getContext().onFailure(x);
+                if (causeOfStoppage == null) { // do not doubly terminate
+                    getContext().onFailure(x);
+                }
                 return;
             }
             if (workspace == null) {

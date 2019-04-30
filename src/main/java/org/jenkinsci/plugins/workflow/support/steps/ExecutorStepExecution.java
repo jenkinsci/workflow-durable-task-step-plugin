@@ -48,8 +48,10 @@ import static java.util.logging.Level.*;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
+import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
+import jenkins.model.NodeListener;
 import jenkins.model.queue.AsynchronousExecution;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
@@ -68,11 +70,14 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
+import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
+import org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -248,6 +253,40 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     }
 
+    @Extension public static final class RemovedNodeListener extends NodeListener {
+        @Override protected void onDeleted(Node node) {
+            Computer c = node.toComputer();
+            if (c == null || c.isOnline()) {
+                LOGGER.fine(() -> "computer for " + node.getNodeName() + " was missing or online, skipping");
+                return;
+            }
+            for (Executor e : c.getExecutors()) {
+                Queue.Executable exec = e.getCurrentExecutable();
+                if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                    PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
+                    TaskListener listener = TaskListener.NULL;
+                    try {
+                        listener = task.context.get(TaskListener.class);
+                    } catch (Exception x) {
+                        LOGGER.log(Level.WARNING, null, x);
+                    }
+                    if (task.body == null) {
+                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
+                        continue;
+                    }
+                    listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
+                    task.body.cancel(new RemovedNodeCause());
+                }
+            }
+        }
+    }
+
+    public static final class RemovedNodeCause extends CauseOfInterruption {
+        @Override public String getShortDescription() {
+            return "Agent was removed";
+        }
+    }
+
     /** Transient handle of a running executor task. */
     private static final class RunningTask {
         /** null until placeholder executable runs */
@@ -277,6 +316,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * and allows {@link Launcher#kill} to work.
          */
         private String cookie;
+
+        /**
+         * Needed for {@link BodyExecution#cancel}.
+         * {@code transient} because we cannot save a {@link BodyExecution} in {@link PlaceholderTask}:
+         * {@link ExecutorPickle} is written to the stream first, which holds a {@link PlaceholderTask},
+         * and the {@link BodyExecution} holds {@link PlaceholderTask.Callback} whose {@link WorkspaceList.Lease}
+         * is not processed by {@link WorkspaceListLeasePickle} since pickles are not recursive.
+         * So we make a best effort and only try to cancel a body within the current session.
+         * @see RemovedNodeListener
+         */
+        private transient @CheckForNull BodyExecution body;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
@@ -781,7 +831,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
-                        context.newBodyInvoker()
+                        body = context.newBodyInvoker()
                                 .withContexts(exec, computer, env, workspace)
                                 .withCallback(new Callback(cookie, lease))
                                 .start();
