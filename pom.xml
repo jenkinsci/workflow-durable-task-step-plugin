@@ -64,7 +64,7 @@
     <properties>
         <revision>2.31</revision>
         <changelist>-SNAPSHOT</changelist>
-        <jenkins.version>2.173</jenkins.version>
+        <jenkins.version>2.176</jenkins.version>
         <java.level>8</java.level>
         <workflow-step-api-plugin.version>2.20-rc522.e7bd30e9c518</workflow-step-api-plugin.version> <!-- TODO https://github.com/jenkinsci/workflow-step-api-plugin/pull/42 -->
         <workflow-support-plugin.version>3.3</workflow-support-plugin.version>
