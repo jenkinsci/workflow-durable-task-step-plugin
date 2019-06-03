@@ -302,7 +302,15 @@ public abstract class DurableTaskStep extends Step {
             } else {
                 durableTask.defaultCharset();
             }
-            controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), listener);
+            Launcher launcher = context.get(Launcher.class);
+            LOGGER.log(Level.FINE, "launching task against {0} using {1}", new Object[] {ws.getChannel(), launcher});
+            try {
+                controller = durableTask.launch(context.get(EnvVars.class), ws, launcher, listener);
+                LOGGER.log(Level.FINE, "launched task");
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, "failed to launch task", x);
+                throw x;
+            }
             this.remote = ws.getRemote();
             if (USE_WATCHING) {
                 try {
