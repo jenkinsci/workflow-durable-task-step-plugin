@@ -101,7 +101,7 @@ public class EnvWorkflowTest {
     }
 
     /**
-     * Verifies if EXECUTOR_COUNT environemn variable is set
+     * Verifies if EXECUTOR_COUNT environment variable is set
      */
     @Test public void isExecutorCountAvailable() throws Exception {
         r.jenkins.setNumExecutors(2);
