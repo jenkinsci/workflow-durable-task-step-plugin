@@ -419,9 +419,7 @@ public class ExecutorStepTest {
                     Thread.sleep(100);
                 }
                 LOGGER.info("agent back online");
-                /* TODO JENKINS-50504 still fails:
                 assertWorkspaceLocked(computer, workspacePath);
-                */
                 assertTrue(f2.isFile());
                 assertTrue(f1.delete());
                 while (f2.isFile()) {

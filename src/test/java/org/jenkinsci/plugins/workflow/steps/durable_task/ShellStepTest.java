@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
@@ -84,8 +85,10 @@ import static org.junit.Assert.*;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ErrorCollector;
 import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
@@ -103,7 +106,7 @@ public class ShellStepTest {
 
     @Rule public JenkinsRule j = new JenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
-
+    @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
 
     /**
@@ -596,6 +599,44 @@ public class ShellStepTest {
         ws.child("message").write("¡Čau → there!\n", "UTF-8");
         p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh script: 'cat message', encoding: 'UTF-8'} else {bat script: 'type message', encoding: 'UTF-8'}}", true));
         j.assertLogContains("¡Čau → there!", j.buildAndAssertSuccess(p));
+    }
+
+    @Ignore("TODO missing final line and in some cases even the `+ set +x` (but passes without withCredentials)")
+    @Test public void missingNewline() throws Exception {
+        assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
+        String credentialsId = "creds";
+        String username = "bob";
+        String password = "s3cr3t";
+        UsernamePasswordCredentialsImpl c = new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, credentialsId, "sample", username, password);
+        CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
+        j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+            "node('master') {\n" +
+            "  withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
+            "    sh 'set +x; printf \"some local output\"'\n" +
+            "  }\n" +
+            "}\n" +
+            "node('remote') {\n" +
+            "  withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
+            "    sh 'set +x; printf \"some remote output\"'\n" +
+            "  }\n" +
+            "}", true));
+        Callable<Void> test = () -> {
+            WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            j.assertLogContains("some local output", b);
+            j.assertLogContains("some remote output", b);
+            return null;
+        };
+        boolean origUseWatching = DurableTaskStep.USE_WATCHING;
+        try {
+            DurableTaskStep.USE_WATCHING = false;
+            errors.checkSucceeds(test);
+            DurableTaskStep.USE_WATCHING = true;
+            errors.checkSucceeds(test);
+        } finally {
+            DurableTaskStep.USE_WATCHING = origUseWatching;
+        }
     }
 
     @Issue("JENKINS-34021")
