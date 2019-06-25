@@ -62,8 +62,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.ConsoleHandler;
-import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -102,7 +100,6 @@ import org.junit.AfterClass;
 import static org.junit.Assert.*;
 import org.junit.Assume;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -117,6 +114,8 @@ import org.jvnet.hudson.test.TestExtension;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
+
+    private static final Logger LOGGER = Logger.getLogger(ExecutorStepTest.class.getName());
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
@@ -365,8 +364,7 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore("TODO currently fails with: hudson.remoting.RequestAbortedException: java.nio.channels.ClosedChannelException")
-    @Issue("JENKINS-41854")
+    @Issue({"JENKINS-41854", "JENKINS-50504"})
     @Test
     public void contextualizeFreshFilePathAfterAgentReconnection() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
@@ -374,11 +372,9 @@ public class ExecutorStepTest {
             @SuppressWarnings("SleepWhileInLoop")
             @Override
             public void evaluate() throws Throwable {
-                Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
-                LOGGER.setLevel(Level.FINE);
-                Handler handler = new ConsoleHandler();
-                handler.setLevel(Level.ALL);
-                LOGGER.addHandler(handler);
+                logging.record(DurableTaskStep.class, Level.FINE).
+                        record(FilePathDynamicContext.class, Level.FINE).
+                        record(WorkspaceList.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
@@ -393,9 +389,11 @@ public class ExecutorStepTest {
                                 "    echo 'OK, done'\n" +
                                 "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                LOGGER.info("build started");
                 while (!f2.isFile()) {
                     Thread.sleep(100);
                 }
+                LOGGER.info("f2 created, first sh running");
                 assertTrue(b.isBuilding());
                 Computer computer = s.toComputer();
                 assertNotNull(computer);
@@ -410,20 +408,24 @@ public class ExecutorStepTest {
                 assertEquals(1, actions.size());
                 String workspacePath = actions.get(0).getWorkspace().getRemote();
                 assertWorkspaceLocked(computer, workspacePath);
+                LOGGER.info("killing agent");
                 killJnlpProc();
                 while (computer.isOnline()) {
                     Thread.sleep(100);
                 }
+                LOGGER.info("restarting agent");
                 startJnlpProc();
                 while (computer.isOffline()) {
                     Thread.sleep(100);
                 }
+                LOGGER.info("agent back online");
                 assertWorkspaceLocked(computer, workspacePath);
                 assertTrue(f2.isFile());
                 assertTrue(f1.delete());
                 while (f2.isFile()) {
                     Thread.sleep(100);
                 }
+                LOGGER.info("f2 deleted, first sh finishing");
                 story.j.assertBuildStatusSuccess(story.j.waitForCompletion(b));
                 story.j.assertLogContains("finished waiting", b);
                 story.j.assertLogContains("Back again", b);
@@ -435,11 +437,8 @@ public class ExecutorStepTest {
 
     private static void assertWorkspaceLocked(Computer computer, String workspacePath) throws InterruptedException {
         FilePath proposed = new FilePath(computer.getChannel(), workspacePath);
-        WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(proposed);
-        try {
+        try (WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(proposed)) {
             assertNotEquals(workspacePath, lease.path.getRemote());
-        } finally {
-            lease.release();
         }
     }
 

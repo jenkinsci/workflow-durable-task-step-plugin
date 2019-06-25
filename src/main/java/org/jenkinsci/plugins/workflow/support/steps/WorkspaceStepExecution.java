@@ -63,7 +63,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
                         EnvironmentExpander.constant(Collections.singletonMap("WORKSPACE", workspace.getRemote()))),
-                    workspace)
+                    FilePathDynamicContext.createContextualObject(workspace))
                 .withCallback(new Callback(lease))
                 .start();
         return false;
