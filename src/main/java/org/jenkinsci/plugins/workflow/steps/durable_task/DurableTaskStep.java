@@ -347,7 +347,7 @@ public abstract class DurableTaskStep extends Step {
                             LOGGER.fine(() -> "discovered that " + node + " has been removed");
                             removedNodeDiscovered = System.nanoTime();
                             return null;
-                        } else if (System.nanoTime() < removedNodeDiscovered + TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
                             return null;
                         } else {
