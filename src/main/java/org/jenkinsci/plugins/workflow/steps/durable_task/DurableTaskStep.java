@@ -340,7 +340,7 @@ public abstract class DurableTaskStep extends Step {
                     // (Note that a Computer may be missing because a Node is offline,
                     // and conversely after removing a Node its Computer may remain for a while.
                     // Therefore we only fail here if _both_ are absent.)
-                    // ExecutorStepExecution.NodeListener will normally do this first, so this is a fallback.
+                    // ExecutorStepExecution.RemovedNodeListener will normally do this first, so this is a fallback.
                     Jenkins j = Jenkins.getInstanceOrNull();
                     if (ExecutorStepExecution.RemovedNodeCause.ENABLED && !node.isEmpty() && j != null && j.getNode(node) == null) {
                         if (removedNodeDiscovered == 0) {
