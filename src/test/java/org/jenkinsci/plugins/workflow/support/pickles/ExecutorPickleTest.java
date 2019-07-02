@@ -191,7 +191,6 @@ public class ExecutorPickleTest {
                 DumbSlave s = r.j.createSlave(Label.get("ghost"));
                 System.out.println("Agent launched, waiting for semaphore");
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
-                ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
                 r.j.jenkins.removeNode(s);
             }
         });
@@ -199,7 +198,6 @@ public class ExecutorPickleTest {
         r.addStep(new Statement() {
             // Start up a build and then reboot and take the node offline
             @Override public void evaluate() throws Throwable {
-                ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS = 4000L; // fail faster
                 assertEquals(0, r.j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
                 assertNull(r.j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
                 WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();

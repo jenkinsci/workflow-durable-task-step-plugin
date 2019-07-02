@@ -52,6 +52,7 @@ import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 
 import static org.hamcrest.Matchers.*;
+import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -77,6 +78,7 @@ import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
 import static org.junit.Assert.*;
@@ -652,6 +654,19 @@ public class ShellStepTest {
         }
     }
     
+    @Issue("JENKINS-49707")
+    @Test public void removingAgentIsFatal() throws Exception {
+        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
+        DumbSlave s = j.createSlave("remote", null, null);
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}", true));
+        WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+        j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
+        j.jenkins.removeNode(s);
+        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+        j.waitForMessage(new ExecutorStepExecution.RemovedNodeCause().getShortDescription(), b);
+    }
+
     @Issue("JENKINS-44521")
     @Test public void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);

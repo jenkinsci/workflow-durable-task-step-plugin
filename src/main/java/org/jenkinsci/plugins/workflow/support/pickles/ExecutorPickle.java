@@ -25,8 +25,10 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.Extension;
+import hudson.Main;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
@@ -47,6 +49,8 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
@@ -62,7 +66,9 @@ public class ExecutorPickle extends Pickle {
 
     private final boolean isEphemeral;
 
-    static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
+    @Restricted(NoExternalUse.class)
+    public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
