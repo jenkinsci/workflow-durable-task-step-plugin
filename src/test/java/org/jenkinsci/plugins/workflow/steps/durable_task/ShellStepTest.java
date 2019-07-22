@@ -116,7 +116,7 @@ public class ShellStepTest {
     public void failureShouldMarkNodeRed() throws Exception {
         // job setup
         WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
-        foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ? "node {bat 'whatever'}" : "node {sh 'false'}"));
+        foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ? "node {bat 'whatever'}" : "node {sh 'false'}", true));
 
         // get the build going, and wait until workflow pauses
         WorkflowRun b = j.assertBuildStatus(Result.FAILURE, foo.scheduleBuild2(0).get());
@@ -178,7 +178,7 @@ public class ShellStepTest {
                 "echo . >" + tmp + "\r\n" +
                 "ping -n 2 127.0.0.1 >nul\r\n" + // http://stackoverflow.com/a/4317036/12916
                 "goto :loop/$)}" :
-            "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}"));
+            "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}", true));
 
         // get the build going, and wait until workflow pauses
         WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
@@ -223,11 +223,11 @@ public class ShellStepTest {
     @Test public void launcherDecorator() throws Exception {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}"));
+        p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}", true));
         Assume.assumeThat("test only works if mvn test is not itself niced", j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
-        p.setDefinition(new CpsFlowDefinition("node {nice {sh 'echo niceness=`nice`'}}"));
+        p.setDefinition(new CpsFlowDefinition("node {nice {sh 'echo niceness=`nice`'}}", true));
         j.assertLogContains("niceness=10", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
-        p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}"));
+        p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}", true));
         j.assertLogContains("niceness=19", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
     public static class NiceStep extends AbstractStepImpl {
@@ -313,7 +313,7 @@ public class ShellStepTest {
     @Test public void returnStdout() throws Exception {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/tr").canExecute());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("def msg; node {msg = sh(script: 'echo hello world | tr [a-z] [A-Z]', returnStdout: true).trim()}; echo \"it said ${msg}\""));
+        p.setDefinition(new CpsFlowDefinition("def msg; node {msg = sh(script: 'echo hello world | tr [a-z] [A-Z]', returnStdout: true).trim()}; echo \"it said ${msg}\"", true));
         j.assertLogContains("it said HELLO WORLD", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         p.setDefinition(new CpsFlowDefinition("node {sh script: 'echo some problem here | tr [a-z] [A-Z]; exit 1', returnStdout: true}", true));
         j.assertLogContains("SOME PROBLEM HERE", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));

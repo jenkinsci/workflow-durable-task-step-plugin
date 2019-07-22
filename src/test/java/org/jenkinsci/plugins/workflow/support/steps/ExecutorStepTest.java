@@ -523,7 +523,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("node('special') {echo 'OK ran'}"));
+                p.setDefinition(new CpsFlowDefinition("node('special') {echo 'OK ran'}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 story.j.waitForMessage("Still waiting to schedule task", b);
             }
@@ -547,7 +547,7 @@ public class ExecutorStepTest {
                 p.setDefinition(new CpsFlowDefinition(
                     "node('dumbo') {\n" +
                     "  semaphore 'wait'\n" +
-                    "}"));
+                    "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
                 dumbo.getComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getUnknown(), "not about to reconnect"));
@@ -578,7 +578,7 @@ public class ExecutorStepTest {
                         "node('" + s.getNodeName() + "') {\n"
                         + "semaphore 'wait'\n"
                         + "    sleep 10\n"
-                        + "}"));
+                        + "}", true));
 
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
@@ -610,9 +610,9 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("def r = node {'the result'}; echo \"got ${r}\""));
+                p.setDefinition(new CpsFlowDefinition("def r = node {'the result'}; echo \"got ${r}\"", true));
                 story.j.assertLogContains("got the result", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
-                p.setDefinition(new CpsFlowDefinition("try {node {error 'a problem'}} catch (e) {echo \"failed with ${e.message}\"}"));
+                p.setDefinition(new CpsFlowDefinition("try {node {error 'a problem'}} catch (e) {echo \"failed with ${e.message}\"}", true));
                 story.j.assertLogContains("failed with a problem", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
             }
         });
@@ -722,7 +722,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}"));
+                p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}", true));
                 story.j.assertLogContains("ran node block #49", story.j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
             }
         });
