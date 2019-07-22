@@ -499,11 +499,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                SecurityContext orig = ACL.impersonate(ACL.SYSTEM);
-                try {
+                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
                     return Run.fromExternalizableId(runId);
-                } finally {
-                    SecurityContextHolder.setContext(orig);
                 }
             }
             return r;
