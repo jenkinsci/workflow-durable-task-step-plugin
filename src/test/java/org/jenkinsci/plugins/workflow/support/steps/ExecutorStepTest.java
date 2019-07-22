@@ -628,14 +628,14 @@ public class ExecutorStepTest {
                 p.setDefinition(new CpsFlowDefinition("node('nonexistent') {}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 story.j.waitForMessage("Still waiting to schedule task", b);
-                ACL.impersonate(User.get("admin").impersonate(), new Runnable() {
+                ACL.impersonate(User.getById("admin", true).impersonate(), new Runnable() {
                     @Override public void run() {
                         Queue.Item[] items = Queue.getInstance().getItems();
                         assertEquals(1, items.length); // fails in 1.638
                         assertEquals(p, items[0].task.getOwnerTask());
                     }
                 });
-                ACL.impersonate(User.get("devel").impersonate(), new Runnable() {
+                ACL.impersonate(User.getById("devel", true).impersonate(), new Runnable() {
                     @Override public void run() {
                         Queue.Item[] items = Queue.getInstance().getItems();
                         assertEquals(0, items.length); // fails in 1.609.2
