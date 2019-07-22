@@ -50,7 +50,7 @@ public class ComputerPickle extends Pickle {
             @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
             @Override
             protected Computer tryResolve() {
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 if (j == null) {
                     return null;
                 }
