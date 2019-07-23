@@ -635,6 +635,9 @@ public class ShellStepTest {
                         errors.checkThat(log, containsString(mode + " final newline node=" + node + " watching=" + watching));
                     }
                 }
+                errors.checkThat("no blank lines with watching=" + watching, log, not(containsString("\n\n")));
+                errors.checkThat(log, not(containsString("watching=false[Pipeline]")));
+                errors.checkThat(log, not(containsString("watching=true[Pipeline]")));
             }
         } finally {
             DurableTaskStep.USE_WATCHING = origUseWatching;

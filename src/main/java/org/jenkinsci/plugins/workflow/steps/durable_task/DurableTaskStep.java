@@ -48,6 +48,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -254,6 +255,7 @@ public abstract class DurableTaskStep extends Step {
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
 
+        private transient TaskListener newlineSafeTaskListener;
         /** Used only during {@link #start}. */
         private transient final DurableTaskStep step;
         /** Current “live” connection to the workspace, or null if we might be offline at the moment. */
@@ -303,7 +305,7 @@ public abstract class DurableTaskStep extends Step {
             if (returnStdout) {
                 durableTask.captureOutput();
             }
-            TaskListener listener = context.get(TaskListener.class);
+            TaskListener listener = listener();
             if (step.encoding != null) {
                 durableTask.charset(Charset.forName(step.encoding));
             } else {
@@ -398,7 +400,14 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
-        private @Nonnull TaskListener listener() {
+        private synchronized @Nonnull TaskListener listener() {
+            if (newlineSafeTaskListener == null) {
+                newlineSafeTaskListener = new NewlineSafeTaskListener(_listener());
+            }
+            return newlineSafeTaskListener;
+        }
+
+        private @Nonnull TaskListener _listener() {
             TaskListener l;
             StepContext context = getContext();
             try {
@@ -415,6 +424,50 @@ public abstract class DurableTaskStep extends Step {
                 recurrencePeriod = 0;
             }
             return l;
+        }
+
+        /**
+         * Interprets {@link PrintStream#close} as a signal to end a final newline if necessary.
+         */
+        private static final class NewlineSafeTaskListener implements TaskListener {
+
+            private static final long serialVersionUID = 1;
+
+            private final TaskListener delegate;
+            private transient PrintStream logger;
+
+            NewlineSafeTaskListener(TaskListener delegate) {
+                this.delegate = delegate;
+            }
+
+            // Similar to DecoratedTaskListener:
+            @Override public synchronized PrintStream getLogger() {
+                if (logger == null) {
+                    LOGGER.fine("creating filtered stream");
+                    OutputStream base = delegate.getLogger();
+                    OutputStream filtered = new FilterOutputStream(base) {
+                        boolean nl = true; // empty string does not need a newline
+                        @Override public void write(int b) throws IOException {
+                            super.write(b);
+                            nl = b == '\n';
+                        }
+                        @Override public void close() throws IOException {
+                            LOGGER.log(Level.FINE, "calling close with nl={0}", nl);
+                            if (!nl) {
+                                super.write('\n');
+                            }
+                            flush(); // do *not* call base.close() here, unlike super.close()
+                        }
+                    };
+                    try {
+                        logger = new PrintStream(filtered, false, "UTF-8");
+                    } catch (UnsupportedEncodingException x) {
+                        throw new AssertionError(x);
+                    }
+                }
+                return logger;
+            }
+
         }
 
         private @Nonnull Launcher launcher() throws IOException, InterruptedException {
