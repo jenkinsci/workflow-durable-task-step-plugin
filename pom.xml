@@ -65,6 +65,7 @@
         <revision>2.33</revision>
         <changelist>-SNAPSHOT</changelist>
         <jenkins.version>2.176.1</jenkins.version>
+        <jenkins-test-harness.version>2.54-rc1207.a9cdd7c1192a</jenkins-test-harness.version> <!-- TODO https://github.com/jenkinsci/jenkins-test-harness/pull/149 -->
         <java.level>8</java.level>
         <useBeta>true</useBeta>
         <workflow-step-api-plugin.version>2.20</workflow-step-api-plugin.version>
@@ -79,7 +80,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
-            <version>1.29</version>
+            <version>1.31-rc427.7bfff1482201</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/102 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
