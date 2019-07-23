@@ -584,6 +584,7 @@ public abstract class DurableTaskStep extends Step {
             byte[] produce() throws IOException, InterruptedException;
         }
         private void handleExit(int exitCode, OutputSupplier output) throws IOException, InterruptedException {
+            listener().getLogger().println(); // TODO
             Throwable originalCause = causeOfStoppage;
             if ((returnStatus && originalCause == null) || exitCode == 0) {
                 getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output.produce(), StandardCharsets.UTF_8) : null);
@@ -658,6 +659,7 @@ public abstract class DurableTaskStep extends Step {
                     synchronized (ps) { // like PrintStream.write overloads do
                         IOUtils.copy(stream, os);
                     }
+                    ps.println(); // TODO
                 } else {
                     // A subclass. Who knows why, but trust any write(…) overrides it may have.
                     IOUtils.copy(stream, ps);
