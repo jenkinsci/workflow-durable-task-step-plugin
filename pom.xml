@@ -65,6 +65,7 @@
         <revision>2.33</revision>
         <changelist>-SNAPSHOT</changelist>
         <jenkins.version>2.176.1</jenkins.version>
+        <jenkins-test-harness.version>2.54</jenkins-test-harness.version> <!-- TODO pending plugin-pom update -->
         <java.level>8</java.level>
         <useBeta>true</useBeta>
         <workflow-step-api-plugin.version>2.20</workflow-step-api-plugin.version>
@@ -132,7 +133,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>credentials-binding</artifactId>
-            <version>1.16</version>
+            <version>1.17</version>
             <scope>test</scope>
         </dependency>
         <dependency>

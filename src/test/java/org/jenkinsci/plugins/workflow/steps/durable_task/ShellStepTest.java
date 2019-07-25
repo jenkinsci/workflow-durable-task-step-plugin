@@ -17,9 +17,13 @@ import hudson.console.ConsoleLogFilter;
 import hudson.console.ConsoleNote;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
+import hudson.model.BooleanParameterDefinition;
+import hudson.model.BooleanParameterValue;
 import hudson.model.BuildListener;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
+import hudson.model.ParametersAction;
+import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.remoting.Channel;
@@ -44,7 +48,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
@@ -85,7 +88,6 @@ import static org.junit.Assert.*;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ErrorCollector;
@@ -601,7 +603,6 @@ public class ShellStepTest {
         j.assertLogContains("¡Čau → there!", j.buildAndAssertSuccess(p));
     }
 
-    @Ignore("TODO missing final line and in some cases even the `+ set +x` (but passes without withCredentials)")
     @Test public void missingNewline() throws Exception {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         String credentialsId = "creds";
@@ -609,31 +610,35 @@ public class ShellStepTest {
         String password = "s3cr3t";
         UsernamePasswordCredentialsImpl c = new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, credentialsId, "sample", username, password);
         CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
-        j.createSlave("remote", null, null);
+        DumbSlave s = j.createSlave("remote", null, null);
+        j.waitOnline(s);
+        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+        j.showAgentLogs(s, logging);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.addProperty(new ParametersDefinitionProperty(new BooleanParameterDefinition("WATCHING", false, null)));
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
-            "  withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
-            "    sh 'set +x; printf \"some local output\"'\n" +
-            "  }\n" +
-            "}\n" +
-            "node('remote') {\n" +
-            "  withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
-            "    sh 'set +x; printf \"some remote output\"'\n" +
+            "['master', 'remote'].each {label ->\n" +
+            "  node(label) {\n" +
+            "    withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
+            "      sh 'set +x; echo \"with final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
+            "      sh 'set +x; printf \"missing final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
+            "    }\n" +
             "  }\n" +
             "}", true));
-        Callable<Void> test = () -> {
-            WorkflowRun b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
-            j.assertLogContains("some local output", b);
-            j.assertLogContains("some remote output", b);
-            return null;
-        };
         boolean origUseWatching = DurableTaskStep.USE_WATCHING;
         try {
-            DurableTaskStep.USE_WATCHING = false;
-            errors.checkSucceeds(test);
-            DurableTaskStep.USE_WATCHING = true;
-            errors.checkSucceeds(test);
+            for (boolean watching : new boolean[] {false, true}) {
+                DurableTaskStep.USE_WATCHING = watching;
+                String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
+                for (String node : new String[] {"master", "remote"}) {
+                    for (String mode : new String[] {"with", "missing"}) {
+                        errors.checkThat(log, containsString(mode + " final newline node=" + node + " watching=" + watching));
+                    }
+                }
+                errors.checkThat("no blank lines with watching=" + watching, log, not(containsString("\n\n")));
+                errors.checkThat(log, not(containsString("watching=false[Pipeline]")));
+                errors.checkThat(log, not(containsString("watching=true[Pipeline]")));
+            }
         } finally {
             DurableTaskStep.USE_WATCHING = origUseWatching;
         }
