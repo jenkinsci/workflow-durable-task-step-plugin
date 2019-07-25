@@ -451,6 +451,12 @@ public abstract class DurableTaskStep extends Step {
                             super.write(b);
                             nl = b == '\n';
                         }
+                        @Override public void write(byte[] b, int off, int len) throws IOException {
+                            super.write(b, off, len);
+                            if (len > 0) {
+                                nl = b[off + len - 1] == '\n';
+                            }
+                        }
                         @Override public void close() throws IOException {
                             LOGGER.log(Level.FINE, "calling close with nl={0}", nl);
                             if (!nl) {
