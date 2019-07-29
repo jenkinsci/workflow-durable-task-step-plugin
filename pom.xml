@@ -28,7 +28,7 @@
     <parent>
         <groupId>org.jenkins-ci.plugins</groupId>
         <artifactId>plugin</artifactId>
-        <version>3.43</version>
+        <version>3.48</version>
         <relativePath />
     </parent>
     <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -65,7 +65,6 @@
         <revision>2.33</revision>
         <changelist>-SNAPSHOT</changelist>
         <jenkins.version>2.176.1</jenkins.version>
-        <jenkins-test-harness.version>2.54</jenkins-test-harness.version> <!-- TODO pending plugin-pom update -->
         <java.level>8</java.level>
         <useBeta>true</useBeta>
         <workflow-step-api-plugin.version>2.20</workflow-step-api-plugin.version>
