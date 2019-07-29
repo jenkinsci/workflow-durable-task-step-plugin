@@ -125,7 +125,7 @@ public class ExecutorPickle extends Pickle {
                         // PlaceholderTask#getAssignedLabel is set to the Node name when execution starts
                         // Thus we're guaranteeing the execution began and the Node is now unknown.
                         // Theoretically it's safe to simply fail earlier when rehydrating any EphemeralNode... but we're being extra safe.
-                        if (placeholder.getCookie() != null && Jenkins.getActiveInstance().getNode(placeholder.getAssignedLabel().getName()) == null ) {
+                        if (placeholder.getCookie() != null && Jenkins.get().getNode(placeholder.getAssignedLabel().getName()) == null ) {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
                                     throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {2} is never going to appear!",

@@ -156,7 +156,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 LOGGER.log(FINE, "no match on {0}", item);
             }
         }
-        Jenkins j = Jenkins.getInstance();
+        Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
             // if we are already running, kill the ongoing activities, which releases PlaceholderExecutable from its sleep loop
             // Similar to Executor.of, but distinct since we do not have the Executable yet:
@@ -193,7 +193,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
             }
-            Jenkins j = Jenkins.getInstance();
+            Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null) {
                 COMPUTERS: for (Computer c : j.getComputers()) {
                     for (Executor e : c.getExecutors()) {
@@ -224,7 +224,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return "waiting for " + item.task.getFullDisplayName() + " to be scheduled; blocked: " + item.getWhy();
             }
         }
-        Jenkins j = Jenkins.getInstance();
+        Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
             COMPUTERS: for (Computer c : j.getComputers()) {
                 for (Executor e : c.getExecutors()) {
@@ -384,12 +384,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return cookie;
         }
 
-        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Label getAssignedLabel() {
             if (label == null) {
                 return null;
             } else if (label.isEmpty()) {
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 if (j == null) {
                     return null;
                 }
@@ -399,12 +398,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
-        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Node getLastBuiltOn() {
             if (label == null) {
                 return null;
             }
-            Jenkins j = Jenkins.getInstance();
+            Jenkins j = Jenkins.getInstanceOrNull();
             if (j == null) {
                 return null;
             }
@@ -457,21 +455,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public ACL getACL() {
             try {
                 if (!context.isReady()) {
-                    return Jenkins.getActiveInstance().getACL();
+                    return Jenkins.get().getACL();
                 }
                 FlowExecution exec = context.get(FlowExecution.class);
                 if (exec == null) {
-                    return Jenkins.getActiveInstance().getACL();
+                    return Jenkins.get().getACL();
                 }
                 Queue.Executable executable = exec.getOwner().getExecutable();
                 if (executable instanceof AccessControlled) {
                     return ((AccessControlled) executable).getACL();
                 } else {
-                    return Jenkins.getActiveInstance().getACL();
+                    return Jenkins.get().getACL();
                 }
             } catch (Exception x) {
                 LOGGER.log(FINE, null, x);
-                return Jenkins.getActiveInstance().getACL();
+                return Jenkins.get().getACL();
             }
         }
 
@@ -499,11 +497,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                SecurityContext orig = ACL.impersonate(ACL.SYSTEM);
-                try {
+                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
                     return Run.fromExternalizableId(runId);
-                } finally {
-                    SecurityContextHolder.setContext(orig);
                 }
             }
             return r;
@@ -963,7 +958,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (r == null) {
                     return "";
                 }
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 String base = "";
                 if (j != null) {
                     base = Util.removeTrailingSlash(j.getRootUrl()) + "/";

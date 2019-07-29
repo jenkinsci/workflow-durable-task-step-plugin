@@ -110,7 +110,7 @@ public class ExecutorPickleTest {
                 WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'}", true));
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
-                remote.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.get("admin"), "hold"));
+                remote.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getById("admin", true), "hold"));
             }
         });
         r.addStep(new Statement() {

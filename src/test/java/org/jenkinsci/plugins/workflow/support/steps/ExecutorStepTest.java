@@ -43,6 +43,7 @@ import hudson.model.queue.QueueTaskDispatcher;
 import hudson.remoting.Launcher;
 import hudson.remoting.Which;
 import hudson.security.ACL;
+import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
@@ -628,19 +629,15 @@ public class ExecutorStepTest {
                 p.setDefinition(new CpsFlowDefinition("node('nonexistent') {}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 story.j.waitForMessage("Still waiting to schedule task", b);
-                ACL.impersonate(User.get("admin").impersonate(), new Runnable() {
-                    @Override public void run() {
-                        Queue.Item[] items = Queue.getInstance().getItems();
-                        assertEquals(1, items.length); // fails in 1.638
-                        assertEquals(p, items[0].task.getOwnerTask());
-                    }
-                });
-                ACL.impersonate(User.get("devel").impersonate(), new Runnable() {
-                    @Override public void run() {
-                        Queue.Item[] items = Queue.getInstance().getItems();
-                        assertEquals(0, items.length); // fails in 1.609.2
-                    }
-                });
+                try (ACLContext context = ACL.as(User.getById("admin", true))) {
+                    Queue.Item[] items = Queue.getInstance().getItems();
+                    assertEquals(1, items.length); // fails in 1.638
+                    assertEquals(p, items[0].task.getOwnerTask());
+                }
+                try (ACLContext context = ACL.as(User.getById("devel", true))) {
+                    Queue.Item[] items = Queue.getInstance().getItems();
+                    assertEquals(0, items.length); // fails in 1.609.2
+                }
                 // TODO this would be a good time to add a third user with READ but no CANCEL permission and check behavior
                 // Also try canceling the task and verify that the step aborts promptly:
                 Queue.Item[] items = Queue.getInstance().getItems();

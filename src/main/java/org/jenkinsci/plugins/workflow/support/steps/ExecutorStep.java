@@ -98,7 +98,7 @@ public final class ExecutorStep extends Step implements Serializable {
         // TODO copied from AbstractProjectDescriptor
         public AutoCompletionCandidates doAutoCompleteLabel(@QueryParameter String value) {
             AutoCompletionCandidates c = new AutoCompletionCandidates();
-            Jenkins j = Jenkins.getInstance();
+            Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null) {
                 for (Label label : j.getLabels()) {
                     if (label.getName().startsWith(value)) {
