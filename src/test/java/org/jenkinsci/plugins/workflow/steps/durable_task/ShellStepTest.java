@@ -229,10 +229,16 @@ public class ShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}", true));
         j.assertLogContains("niceness=19", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
-    public static class NiceStep extends AbstractStepImpl {
+    public static class NiceStep extends Step {
         @DataBoundConstructor public NiceStep() {}
-        public static class Execution extends AbstractStepExecutionImpl {
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return new Execution(context);
+        }
+        public static class Execution extends StepExecution {
             private static final long serialVersionUID = 1;
+            Execution(StepContext context) {
+                super(context);
+            }
             @Override public boolean start() throws Exception {
                 getContext().newBodyInvoker().
                         withContext(BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), new Decorator())).
@@ -247,9 +253,9 @@ public class ShellStepTest {
                 return launcher.decorateByPrefix("nice");
             }
         }
-        @TestExtension("launcherDecorator") public static class DescriptorImpl extends AbstractStepDescriptorImpl {
-            public DescriptorImpl() {
-                super(Execution.class);
+        @TestExtension("launcherDecorator") public static class DescriptorImpl extends StepDescriptor {
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Collections.emptySet();
             }
             @Override public String getFunctionName() {
                 return "nice";
