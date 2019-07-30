@@ -735,7 +735,7 @@ public class ExecutorStepTest {
     }
 
 
-    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
+    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) {
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
         List<WorkspaceAction> actions = new ArrayList<>();
         for (FlowNode n : walker) {
