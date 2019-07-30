@@ -33,7 +33,6 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.Assume;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
-import java.util.*;
 import hudson.Functions;
 
 public class PowerShellStepTest {
