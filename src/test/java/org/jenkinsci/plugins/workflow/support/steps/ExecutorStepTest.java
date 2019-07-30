@@ -471,8 +471,7 @@ public class ExecutorStepTest {
     @Test public void acquireWorkspace() throws Exception {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
-                @SuppressWarnings("deprecation")
-                String slaveRoot = story.j.createTmpDir().getPath();
+                String slaveRoot = tmp.newFolder().getPath();
                 DumbSlave s = new DumbSlave("slave", slaveRoot, story.j.createComputerLauncher(null));
                 s.setNumExecutors(2);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
