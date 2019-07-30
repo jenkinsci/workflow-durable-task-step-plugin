@@ -24,19 +24,12 @@
 
 package org.jenkinsci.plugins.workflow.support.pickles;
 
-import hudson.Extension;
-import hudson.model.Computer;
 import hudson.model.Item;
 import hudson.model.Label;
-import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
-import hudson.model.Slave;
-import hudson.model.TaskListener;
 import hudson.model.User;
-import hudson.slaves.ComputerListener;
 import hudson.slaves.DumbSlave;
-import hudson.slaves.EphemeralNode;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import jenkins.model.Jenkins;
@@ -55,14 +48,10 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
-import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 
-import java.io.IOException;
 import java.io.InterruptedIOException;
-import java.util.Collections;
-import java.util.concurrent.CountDownLatch;
 
 public class ExecutorPickleTest {
 
@@ -124,52 +113,6 @@ public class ExecutorPickleTest {
                 r.j.assertBuildStatusSuccess(r.j.waitForCompletion(b));
             }
         });
-    }
-
-    /** Ephemeral and deleted when it disconnects */
-    static class EphemeralDumbAgent extends Slave implements EphemeralNode {
-
-        public EphemeralDumbAgent(JenkinsRule rule, String labels) throws Exception {
-            super("ghostly", "I disappear", rule.createTmpDir().getPath(), "1", Node.Mode.NORMAL, labels, rule.createComputerLauncher(null), RetentionStrategy.NOOP, Collections.EMPTY_LIST);
-        }
-
-        public void addIfMissingAndWaitForOnline(JenkinsRule rule) throws InterruptedException {
-            if (rule.jenkins.getNode(this.getNodeName()) == null) {
-                try {
-                    rule.jenkins.addNode(this);
-                } catch (IOException ioe) {
-                    ioe.printStackTrace();
-                }
-            } else if (rule.jenkins.getNode(this.getNodeName()).toComputer().isOnline()) {
-                return;  // Already online
-            }
-            final CountDownLatch latch = new CountDownLatch(1);
-            ComputerListener waiter = new ComputerListener() {
-                @Override
-                public void onOnline(Computer C, TaskListener t) {
-                    if (EphemeralDumbAgent.super.toComputer() == C) {
-                        latch.countDown();
-                        unregister();
-                    } else {
-                        System.out.println("Saw an irrelevant node go online.");
-                    }
-                }
-            };
-            waiter.register();
-            latch.await();
-        }
-
-        @Extension
-        public static final class DescriptorImpl extends SlaveDescriptor {
-            public String getDisplayName() {
-                return hudson.slaves.Messages.DumbSlave_displayName();
-            }
-        }
-
-        @Override
-        public Node asNode() {
-            return this;
-        }
     }
 
     /**
