@@ -159,7 +159,7 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("ONSLAVE=true", b);
 
                 FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
-                List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+                List<WorkspaceAction> actions = new ArrayList<>();
                 for (FlowNode n : walker) {
                     WorkspaceAction a = n.getAction(WorkspaceAction.class);
                     if (a != null) {
@@ -167,7 +167,7 @@ public class ExecutorStepTest {
                     }
                 }
                 assertEquals(1, actions.size());
-                assertEquals(new HashSet<LabelAtom>(Arrays.asList(LabelAtom.get("remote"), LabelAtom.get("quick"))), actions.get(0).getLabels());
+                assertEquals(new HashSet<>(Arrays.asList(LabelAtom.get("remote"), LabelAtom.get("quick"))), actions.get(0).getLabels());
             }
         });
     }
@@ -737,7 +737,7 @@ public class ExecutorStepTest {
 
     private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
-        List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+        List<WorkspaceAction> actions = new ArrayList<>();
         for (FlowNode n : walker) {
             WorkspaceAction a = n.getAction(WorkspaceAction.class);
             if (a != null) {
