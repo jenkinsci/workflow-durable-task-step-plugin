@@ -194,14 +194,11 @@ public class ShellStepTest {
 
         // touching should have stopped
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
-        ensureForWhile(5000, tmp, new Predicate<Path>() {
-            @Override
-            public boolean apply(Path tmp) {
-                try {
-                    return refTimestamp == Files.getLastModifiedTime(tmp).toMillis();
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
+        ensureForWhile(5000, tmp, tmpFile -> {
+            try {
+                return refTimestamp == Files.getLastModifiedTime(tmpFile).toMillis();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
         });
 
