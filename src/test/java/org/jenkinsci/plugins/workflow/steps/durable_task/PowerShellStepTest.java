@@ -35,6 +35,8 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import hudson.Functions;
 
+import java.nio.charset.StandardCharsets;
+
 public class PowerShellStepTest {
 
     @Rule public JenkinsRule j = new JenkinsRule();
@@ -67,7 +69,7 @@ public class PowerShellStepTest {
     @Test public void testUnicode() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "foobar");
         p.setDefinition(new CpsFlowDefinition("node {def x = powershell(returnStdout: true, script: 'write-output \"Hëllö Wórld\"'); println x.replace(\"\ufeff\",\"\")}", true));
-        String log = new String(j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))).getBytes(), "UTF-8");
+        String log = new String(j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))).getBytes(), StandardCharsets.UTF_8);
         Assume.assumeTrue("Correct UTF-8 output should be produced",log.contains("Hëllö Wórld"));
     }
 
