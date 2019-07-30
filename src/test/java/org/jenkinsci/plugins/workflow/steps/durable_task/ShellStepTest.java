@@ -227,7 +227,7 @@ public class ShellStepTest {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}", true));
-        Assume.assumeThat("test only works if mvn test is not itself niced", j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
+        Assume.assumeThat("test only works if mvn test is not itself niced", JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
         p.setDefinition(new CpsFlowDefinition("node {nice {sh 'echo niceness=`nice`'}}", true));
         j.assertLogContains("niceness=10", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}", true));
