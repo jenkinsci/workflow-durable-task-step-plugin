@@ -94,7 +94,6 @@ public class ExecutorPickleTest {
                 r.j.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().
                     grant(Jenkins.ADMINISTER).everywhere().to("admin").
                     grant(Jenkins.READ, Item.DISCOVER).everywhere().toEveryone());
-                r.j.jenkins.save(); // TODO pending https://github.com/jenkinsci/jenkins/pull/2790
                 DumbSlave remote = r.j.createSlave("remote", null, null);
                 WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'}", true));
