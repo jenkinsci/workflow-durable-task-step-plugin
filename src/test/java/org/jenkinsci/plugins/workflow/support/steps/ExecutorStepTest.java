@@ -709,8 +709,7 @@ public class ExecutorStepTest {
     private static final class ExecutorStepWithQueueItemPredicate implements Predicate<FlowNode> {
         @Override
         public boolean apply(@Nullable FlowNode input) {
-            return input != null &&
-                    input instanceof StepStartNode &&
+            return input instanceof StepStartNode &&
                     ((StepStartNode) input).getDescriptor() == ExecutorStep.DescriptorImpl.byFunctionName("node") &&
                     input.getAction(QueueItemAction.class) != null;
         }
