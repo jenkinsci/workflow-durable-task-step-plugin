@@ -234,7 +234,9 @@ public class ExecutorStepTest {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
                 // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                DumbSlave s  = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+                s.setNumExecutors(1);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -324,7 +326,9 @@ public class ExecutorStepTest {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+                s.setNumExecutors(1);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -375,7 +379,9 @@ public class ExecutorStepTest {
                 logging.record(DurableTaskStep.class, Level.FINE).
                         record(FilePathDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+                s.setNumExecutors(1);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -465,7 +471,10 @@ public class ExecutorStepTest {
             @Override public void evaluate() throws Throwable {
                 @SuppressWarnings("deprecation")
                 String slaveRoot = story.j.createTmpDir().getPath();
-                story.j.jenkins.addNode(new DumbSlave("slave", "dummy", slaveRoot, "2", Node.Mode.NORMAL, "", story.j.createComputerLauncher(null), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList()));
+                DumbSlave s = new DumbSlave("slave", slaveRoot, story.j.createComputerLauncher(null));
+                s.setNumExecutors(2);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
+                story.j.jenkins.addNode(s);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                         "node('slave') {\n" + // this locks the WS
