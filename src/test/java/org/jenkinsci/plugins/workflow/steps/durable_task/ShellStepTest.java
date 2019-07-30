@@ -566,9 +566,8 @@ public class ShellStepTest {
                 };
             }
         }
-        private static final class HelloNote extends ConsoleNote<Object> {
-            @SuppressWarnings("rawtypes") // TODO pending 2.145 generics fixes
-            @Override public ConsoleAnnotator annotate(Object context, MarkupText text, int charPos) {
+        private static final class HelloNote extends ConsoleNote<Run<?, ?>> {
+            @Override public ConsoleAnnotator annotate(Run<?, ?> context, MarkupText text, int charPos) {
                 text.addMarkup(0, 5, "<b>", "</b>");
                 return null;
             }
