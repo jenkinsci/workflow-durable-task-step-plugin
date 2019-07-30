@@ -4,7 +4,6 @@ import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
-import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.EnvVars;
 import hudson.Functions;
@@ -51,6 +50,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
@@ -731,7 +731,7 @@ public class ShellStepTest {
     private <T> void ensureForWhile(int timeout, T o, Predicate<T> predicate) throws Exception {
         long goal = System.currentTimeMillis()+timeout;
         while (System.currentTimeMillis()<goal) {
-            if (!predicate.apply(o))
+            if (!predicate.test(o))
                 throw new AssertionError(predicate);
             Thread.sleep(100);
         }
