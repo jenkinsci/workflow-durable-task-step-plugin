@@ -55,6 +55,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -181,12 +183,12 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
-                File f1 = new File(story.j.jenkins.getRootDir(), "test.txt");
-                String fullPathToTestFile = f1.getAbsolutePath();
+                Path f1 = story.j.jenkins.getRootDir().toPath().resolve("test.txt");
+                String fullPathToTestFile = f1.toAbsolutePath().toString();
                 // Escape any \ in the source so that the script is valid
                 fullPathToTestFile = fullPathToTestFile.replace("\\", "\\\\");
-                // Ensure deleted
-                f1.delete();
+                // Ensure file does not exist
+                assertFalse(Files.exists(f1));
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 // We use sleep on Unix.  On Windows, timeout would
@@ -204,7 +206,7 @@ public class ExecutorStepTest {
                 // steps would have exited
                 Thread.sleep(10000);
                 // Then check for existence of the file
-                assertFalse(f1.exists());
+                assertFalse(Files.exists(f1));
             }
         });
     }

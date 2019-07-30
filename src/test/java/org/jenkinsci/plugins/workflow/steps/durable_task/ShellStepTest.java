@@ -40,7 +40,10 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -167,8 +170,8 @@ public class ShellStepTest {
      */
     @Test
     public void abort() throws Exception {
-        File tmp = File.createTempFile("jenkins","test");
-        tmp.delete();
+        Path tmp = Files.createTempFile("jenkins","test");
+        Files.delete(tmp);
 
         // job setup
         WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
@@ -183,18 +186,22 @@ public class ShellStepTest {
         WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
 
         // at this point the file should be being touched
-        while (!tmp.exists()) {
+        while (!Files.exists(tmp)) {
             Thread.sleep(100);
         }
 
         b.getExecutor().interrupt();
 
         // touching should have stopped
-        final long refTimestamp = tmp.lastModified();
-        ensureForWhile(5000, tmp, new Predicate<File>() {
+        final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
+        ensureForWhile(5000, tmp, new Predicate<Path>() {
             @Override
-            public boolean apply(File tmp) {
-                return refTimestamp==tmp.lastModified();
+            public boolean apply(Path tmp) {
+                try {
+                    return refTimestamp == Files.getLastModifiedTime(tmp).toMillis();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
             }
         });
 
