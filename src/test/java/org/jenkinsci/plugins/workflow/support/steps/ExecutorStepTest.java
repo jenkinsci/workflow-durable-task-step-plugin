@@ -1161,6 +1161,32 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-58900")
+    @Test public void nodeDisconnectMissingContextVariableException() {
+        story.then(r -> {
+            DumbSlave agent = r.createOnlineSlave();
+            WorkflowJob p = r.createProject(WorkflowJob.class);
+            p.setDefinition(new CpsFlowDefinition(
+                    "node ('" + agent.getNodeName() + "') {\n" +
+                    "  sh('echo hello')\n" +
+                    "  semaphore('wait')\n" +
+                    "  sh('echo world')\n" +
+                    "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            agent.toComputer().disconnect(new OfflineCause.UserCause(User.getUnknown(), "going offline"));
+            while (agent.toComputer().isOnline()) {
+                Thread.sleep(100);
+            }
+            SemaphoreStep.success("wait/1", null);
+            r.waitForCompletion(b);
+            r.assertBuildStatus(Result.FAILURE, b);
+            r.assertLogContains("hello", b);
+            r.assertLogNotContains("world", b);
+            r.assertLogContains("MissingContextVariableException: Required context class hudson.FilePath is missing", b);
+        });
+    }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
