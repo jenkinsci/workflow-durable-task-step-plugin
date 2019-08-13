@@ -187,8 +187,8 @@ public class ExecutorStepTest {
                 String fullPathToTestFile = f1.toAbsolutePath().toString();
                 // Escape any \ in the source so that the script is valid
                 fullPathToTestFile = fullPathToTestFile.replace("\\", "\\\\");
-                // Ensure file does not exist
-                assertFalse(Files.exists(f1));
+                // Ensure deleted, perhaps if this test previously failed using the same workspace
+                Files.deleteIfExists(f1);
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 // We use sleep on Unix.  On Windows, timeout would
