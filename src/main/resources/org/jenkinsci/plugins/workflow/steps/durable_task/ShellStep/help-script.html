@@ -9,4 +9,10 @@
     Otherwise the system default shell will be run, using the <code>-xe</code> flags
     (you can specify <code>set +e</code> and/or <code>set +x</code> to disable those).
     </p>
+    <p>
+    NOTE: The script is launched and monitored using a binary with the prefix <code>durable-task-monitor-</code>.
+          Because the binary is launched as a background process, please ensure that the target script environment
+          is able to reap orphaned processes (i.e. zombie-reaping). For example, in docker, you may use the
+          <code>--init</code> flag, while in kubernetes, you may leverage shared namespaces and use the pause container.
+    </p>
 </div>
