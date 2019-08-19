@@ -25,7 +25,7 @@
 package org.jenkinsci.plugins.workflow;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
@@ -119,7 +119,7 @@ public class BuildQueueTasksTest {
         int secondsWaiting = 0;
         while (true) {
             if (secondsWaiting > 15) {
-                assertTrue("No item queued after 15 seconds", false);
+                fail("No item queued after 15 seconds");
             }
             if (story.j.jenkins.getQueue().getItems().length > 0) {
                 break;

@@ -43,8 +43,6 @@ public class EnvWorkflowTest {
 
     /**
      * Verifies if NODE_NAME environment variable is available on a slave node and on master.
-     *
-     * @throws Exception
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
@@ -77,8 +75,6 @@ public class EnvWorkflowTest {
 
     /**
      * Verifies if EXECUTOR_NUMBER environment variable is available on a slave node and on master.
-     *
-     * @throws Exception
      */
     @Test public void isExecutorNumberAvailable() throws Exception {
         r.jenkins.setNumExecutors(1);

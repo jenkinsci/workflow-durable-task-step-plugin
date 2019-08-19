@@ -47,7 +47,6 @@ import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.JNLPLauncher;
-import hudson.slaves.NodeProperty;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import hudson.slaves.WorkspaceList;
@@ -56,6 +55,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -158,7 +159,7 @@ public class ExecutorStepTest {
                 story.j.assertLogContains("ONSLAVE=true", b);
 
                 FlowGraphWalker walker = new FlowGraphWalker(b.getExecution());
-                List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+                List<WorkspaceAction> actions = new ArrayList<>();
                 for (FlowNode n : walker) {
                     WorkspaceAction a = n.getAction(WorkspaceAction.class);
                     if (a != null) {
@@ -166,7 +167,7 @@ public class ExecutorStepTest {
                     }
                 }
                 assertEquals(1, actions.size());
-                assertEquals(new HashSet<LabelAtom>(Arrays.asList(LabelAtom.get("remote"), LabelAtom.get("quick"))), actions.get(0).getLabels());
+                assertEquals(new HashSet<>(Arrays.asList(LabelAtom.get("remote"), LabelAtom.get("quick"))), actions.get(0).getLabels());
             }
         });
     }
@@ -182,12 +183,12 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
-                File f1 = new File(story.j.jenkins.getRootDir(), "test.txt");
-                String fullPathToTestFile = f1.getAbsolutePath();
+                Path f1 = story.j.jenkins.getRootDir().toPath().resolve("test.txt");
+                String fullPathToTestFile = f1.toAbsolutePath().toString();
                 // Escape any \ in the source so that the script is valid
                 fullPathToTestFile = fullPathToTestFile.replace("\\", "\\\\");
-                // Ensure deleted
-                f1.delete();
+                // Ensure deleted, perhaps if this test previously failed using the same workspace
+                Files.deleteIfExists(f1);
 
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 // We use sleep on Unix.  On Windows, timeout would
@@ -205,7 +206,7 @@ public class ExecutorStepTest {
                 // steps would have exited
                 Thread.sleep(10000);
                 // Then check for existence of the file
-                assertFalse(f1.exists());
+                assertFalse(Files.exists(f1));
             }
         });
     }
@@ -235,7 +236,9 @@ public class ExecutorStepTest {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
                 // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                DumbSlave s  = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+                s.setNumExecutors(1);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -325,7 +328,9 @@ public class ExecutorStepTest {
             @SuppressWarnings("SleepWhileInLoop")
             @Override public void evaluate() throws Throwable {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+                s.setNumExecutors(1);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -376,7 +381,9 @@ public class ExecutorStepTest {
                 logging.record(DurableTaskStep.class, Level.FINE).
                         record(FilePathDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", "dummy", tmp.getRoot().getAbsolutePath(), "1", Node.Mode.NORMAL, "", new JNLPLauncher(), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList());
+                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+                s.setNumExecutors(1);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
                 story.j.jenkins.addNode(s);
                 startJnlpProc();
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
@@ -464,9 +471,11 @@ public class ExecutorStepTest {
     @Test public void acquireWorkspace() throws Exception {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
-                @SuppressWarnings("deprecation")
-                String slaveRoot = story.j.createTmpDir().getPath();
-                story.j.jenkins.addNode(new DumbSlave("slave", "dummy", slaveRoot, "2", Node.Mode.NORMAL, "", story.j.createComputerLauncher(null), RetentionStrategy.NOOP, Collections.<NodeProperty<?>>emptyList()));
+                String slaveRoot = tmp.newFolder().getPath();
+                DumbSlave s = new DumbSlave("slave", slaveRoot, story.j.createComputerLauncher(null));
+                s.setNumExecutors(2);
+                s.setRetentionStrategy(RetentionStrategy.NOOP);
+                story.j.jenkins.addNode(s);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                         "node('slave') {\n" + // this locks the WS
@@ -699,8 +708,7 @@ public class ExecutorStepTest {
     private static final class ExecutorStepWithQueueItemPredicate implements Predicate<FlowNode> {
         @Override
         public boolean apply(@Nullable FlowNode input) {
-            return input != null &&
-                    input instanceof StepStartNode &&
+            return input instanceof StepStartNode &&
                     ((StepStartNode) input).getDescriptor() == ExecutorStep.DescriptorImpl.byFunctionName("node") &&
                     input.getAction(QueueItemAction.class) != null;
         }
@@ -726,9 +734,9 @@ public class ExecutorStepTest {
     }
 
 
-    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) throws java.io.IOException{
+    private List<WorkspaceAction> getWorkspaceActions(WorkflowRun workflowRun) {
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
-        List<WorkspaceAction> actions = new ArrayList<WorkspaceAction>();
+        List<WorkspaceAction> actions = new ArrayList<>();
         for (FlowNode n : walker) {
             WorkspaceAction a = n.getAction(WorkspaceAction.class);
             if (a != null) {

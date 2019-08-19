@@ -4,7 +4,6 @@ import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
-import com.google.common.base.Predicate;
 import hudson.FilePath;
 import hudson.EnvVars;
 import hudson.Functions;
@@ -40,7 +39,10 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -48,6 +50,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
@@ -71,9 +74,6 @@ import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
-import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -170,8 +170,8 @@ public class ShellStepTest {
      */
     @Test
     public void abort() throws Exception {
-        File tmp = File.createTempFile("jenkins","test");
-        tmp.delete();
+        Path tmp = Files.createTempFile("jenkins","test");
+        Files.delete(tmp);
 
         // job setup
         WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
@@ -186,18 +186,19 @@ public class ShellStepTest {
         WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
 
         // at this point the file should be being touched
-        while (!tmp.exists()) {
+        while (!Files.exists(tmp)) {
             Thread.sleep(100);
         }
 
         b.getExecutor().interrupt();
 
         // touching should have stopped
-        final long refTimestamp = tmp.lastModified();
-        ensureForWhile(5000, tmp, new Predicate<File>() {
-            @Override
-            public boolean apply(File tmp) {
-                return refTimestamp==tmp.lastModified();
+        final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
+        ensureForWhile(5000, tmp, tmpFile -> {
+            try {
+                return refTimestamp == Files.getLastModifiedTime(tmpFile).toMillis();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
         });
 
@@ -226,16 +227,22 @@ public class ShellStepTest {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}", true));
-        Assume.assumeThat("test only works if mvn test is not itself niced", j.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
+        Assume.assumeThat("test only works if mvn test is not itself niced", JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
         p.setDefinition(new CpsFlowDefinition("node {nice {sh 'echo niceness=`nice`'}}", true));
         j.assertLogContains("niceness=10", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}", true));
         j.assertLogContains("niceness=19", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
-    public static class NiceStep extends AbstractStepImpl {
+    public static class NiceStep extends Step {
         @DataBoundConstructor public NiceStep() {}
-        public static class Execution extends AbstractStepExecutionImpl {
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return new Execution(context);
+        }
+        public static class Execution extends StepExecution {
             private static final long serialVersionUID = 1;
+            Execution(StepContext context) {
+                super(context);
+            }
             @Override public boolean start() throws Exception {
                 getContext().newBodyInvoker().
                         withContext(BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), new Decorator())).
@@ -250,9 +257,9 @@ public class ShellStepTest {
                 return launcher.decorateByPrefix("nice");
             }
         }
-        @TestExtension("launcherDecorator") public static class DescriptorImpl extends AbstractStepDescriptorImpl {
-            public DescriptorImpl() {
-                super(Execution.class);
+        @TestExtension("launcherDecorator") public static class DescriptorImpl extends StepDescriptor {
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Collections.emptySet();
             }
             @Override public String getFunctionName() {
                 return "nice";
@@ -559,9 +566,8 @@ public class ShellStepTest {
                 };
             }
         }
-        private static final class HelloNote extends ConsoleNote<Object> {
-            @SuppressWarnings("rawtypes") // TODO pending 2.145 generics fixes
-            @Override public ConsoleAnnotator annotate(Object context, MarkupText text, int charPos) {
+        private static final class HelloNote extends ConsoleNote<Run<?, ?>> {
+            @Override public ConsoleAnnotator annotate(Run<?, ?> context, MarkupText text, int charPos) {
                 text.addMarkup(0, 5, "<b>", "</b>");
                 return null;
             }
@@ -724,7 +730,7 @@ public class ShellStepTest {
     private <T> void ensureForWhile(int timeout, T o, Predicate<T> predicate) throws Exception {
         long goal = System.currentTimeMillis()+timeout;
         while (System.currentTimeMillis()<goal) {
-            if (!predicate.apply(o))
+            if (!predicate.test(o))
                 throw new AssertionError(predicate);
             Thread.sleep(100);
         }
