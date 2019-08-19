@@ -600,7 +600,7 @@ public class ExecutorStepTest {
                         .goTo("computer/" + s.getNodeName()
                                 + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
 
-                JSONObject propertiesJSON = (JSONObject) (new JsonSlurper()).parseText(page.getWebResponse().getContentAsString());
+                JSONObject propertiesJSON = (JSONObject) new JsonSlurper().parseText(page.getWebResponse().getContentAsString());
                 JSONArray executors = propertiesJSON.getJSONArray("executors");
                 JSONObject executor = executors.getJSONObject(0);
                 JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
