@@ -309,7 +309,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {
 
         /** keys are {@link #cookie}s */
-        private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
+        private static final Map<String,RunningTask> runningTasks = new HashMap<>();
 
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
