@@ -34,6 +34,7 @@ import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -281,7 +282,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             continue;
                         }
                         listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        task.body.cancel(new RemovedNodeCause());
+                        task.body.get().cancel(new RemovedNodeCause());
                     }
                 }
             }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
@@ -335,7 +336,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * So we make a best effort and only try to cancel a body within the current session.
          * @see RemovedNodeListener
          */
-        private transient @CheckForNull BodyExecution body;
+        private transient @CheckForNull WeakReference<BodyExecution> body;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
@@ -725,16 +726,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     // JENKINS-30759: finished before asynch execution was even scheduled
                     return;
                 }
-                final Executor executor = execution.getExecutor();
-                if (executor != null) {
-                    final Queue.Executable exec = executor.getCurrentExecutable();
-                    if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
-                        final PlaceholderExecutable placeholderExec = (PlaceholderExecutable) exec;
-                        if (placeholderExec.getParent().body != null) {
-                            placeholderExec.getParent().body = null;
-                        }
-                    }
-                }
                 assert runningTask.launcher != null;
                 Timer.get().submit(new Runnable() { // JENKINS-31614
                     @Override public void run() {
@@ -845,11 +836,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
-                        body = context.newBodyInvoker()
+                        body = new WeakReference<BodyExecution>(context.newBodyInvoker()
                                 .withContexts(exec, computer, env,
                                     FilePathDynamicContext.createContextualObject(workspace))
                                 .withCallback(new Callback(cookie, lease))
-                                .start();
+                                .start());
                         LOGGER.log(FINE, "started {0}", cookie);
                     } else {
                         // just rescheduled after a restart; wait for task to complete
