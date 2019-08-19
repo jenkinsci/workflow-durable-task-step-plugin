@@ -725,6 +725,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     // JENKINS-30759: finished before asynch execution was even scheduled
                     return;
                 }
+                final Executor executor = execution.getExecutor();
+                if (executor != null) {
+                    final Queue.Executable exec = executor.getCurrentExecutable();
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                        final PlaceholderExecutable placeholderExec = (PlaceholderExecutable) exec;
+                        if (placeholderExec.getParent().body != null) {
+                            placeholderExec.getParent().body = null;
+                        }
+                    }
+                }
                 assert runningTask.launcher != null;
                 Timer.get().submit(new Runnable() { // JENKINS-31614
                     @Override public void run() {
