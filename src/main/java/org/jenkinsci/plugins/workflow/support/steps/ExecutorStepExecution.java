@@ -277,12 +277,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         } catch (Exception x) {
                             LOGGER.log(Level.WARNING, null, x);
                         }
-                        if (task.body == null) {
+                        BodyExecution body = task.body != null ? task.body.get() : null;
+                        if (body == null) {
                             listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
                             continue;
                         }
                         listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        task.body.get().cancel(new RemovedNodeCause());
+                        body.cancel(new RemovedNodeCause());
                     }
                 }
             }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
