@@ -16,7 +16,6 @@
           <a href="https://docs.docker.com/engine/reference/run/?#specify-an-init-process"><code>--init</code> flag</a>,
           while in Kubernetes, you may leverage
           <a href="https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/"> shared process namespace</a>.
-          With shared process namespaces, the pod sandbox will be assigned PID 1 and assume
-          <a href="https://github.com/kubernetes/kubernetes/blob/master/build/pause/pause.c#L37">zombie-reaping responsibilities</a>.
+          With shared process namespaces, the pod sandbox will be assigned PID 1 and assume zombie-reaping responsibilities.
     </p>
 </div>
