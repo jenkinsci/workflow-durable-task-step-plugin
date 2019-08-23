@@ -26,10 +26,12 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.Extension;
 import hudson.FilePath;
+import hudson.model.Computer;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
@@ -57,7 +59,14 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         if (f != null) {
             LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
         } else {
-            LOGGER.log(Level.FINE, "failing to serve {0}:{1}", new Object[] {r.slave, r.path});
+            IOException e = new IOException("Unable to create live FilePath for " + r.slave);
+            Computer c = Jenkins.get().getComputer(r.slave);
+            if (c != null) {
+                for (Computer.TerminationRequest tr : c.getTerminatedBy()) {
+                    e.addSuppressed(tr);
+                }
+            }
+            throw e;
         }
         return f;
     }

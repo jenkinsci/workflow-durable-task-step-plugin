@@ -1184,7 +1184,7 @@ public class ExecutorStepTest {
             r.assertBuildStatus(Result.FAILURE, b);
             r.assertLogContains("hello", b);
             r.assertLogNotContains("world", b);
-            r.assertLogContains("MissingContextVariableException: Required context class hudson.FilePath is missing", b);
+            r.assertLogContains("IOException: Unable to create live FilePath for " + agent.getNodeName(), b);
         });
     }
 
