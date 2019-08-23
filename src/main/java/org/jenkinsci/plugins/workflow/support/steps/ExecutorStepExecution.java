@@ -837,7 +837,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
-                        body = new WeakReference<BodyExecution>(context.newBodyInvoker()
+                        body = new WeakReference<>(context.newBodyInvoker()
                                 .withContexts(exec, computer, env,
                                     FilePathDynamicContext.createContextualObject(workspace))
                                 .withCallback(new Callback(cookie, lease))
