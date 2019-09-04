@@ -1171,7 +1171,7 @@ public class ExecutorStepTest {
                     "  def isUnix = isUnix()\n" + // Only call `isUnix()` before the agent goes offline to avoid additional log warnings.
                     "  isUnix ? sh('echo hello') : bat('echo hello')\n" +
                     "  semaphore('wait')\n" +
-                    "  isUnix ? sh('echo world') : bat('echo hello')\n" +
+                    "  isUnix ? sh('echo world') : bat('echo world')\n" +
                     "}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             SemaphoreStep.waitForStart("wait/1", b);
