@@ -27,6 +27,8 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Computer;
+import hudson.model.TaskListener;
+import hudson.slaves.OfflineCause;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.logging.Level;
@@ -64,6 +66,13 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
             if (c != null) {
                 for (Computer.TerminationRequest tr : c.getTerminatedBy()) {
                     e.addSuppressed(tr);
+                }
+            }
+            TaskListener listener = context.get(TaskListener.class);
+            if (listener != null) {
+                OfflineCause oc = c.getOfflineCause();
+                if (oc != null) {
+                    listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
                 }
             }
             throw e;
