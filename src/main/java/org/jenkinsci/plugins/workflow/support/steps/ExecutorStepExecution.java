@@ -34,6 +34,7 @@ import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -276,12 +277,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         } catch (Exception x) {
                             LOGGER.log(Level.WARNING, null, x);
                         }
-                        if (task.body == null) {
+                        BodyExecution body = task.body != null ? task.body.get() : null;
+                        if (body == null) {
                             listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
                             continue;
                         }
                         listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        task.body.cancel(new RemovedNodeCause());
+                        body.cancel(new RemovedNodeCause());
                     }
                 }
             }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
@@ -335,7 +337,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * So we make a best effort and only try to cancel a body within the current session.
          * @see RemovedNodeListener
          */
-        private transient @CheckForNull BodyExecution body;
+        private transient @CheckForNull WeakReference<BodyExecution> body;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
@@ -835,11 +837,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
-                        body = context.newBodyInvoker()
+                        body = new WeakReference<>(context.newBodyInvoker()
                                 .withContexts(exec, computer, env,
                                     FilePathDynamicContext.createContextualObject(workspace))
                                 .withCallback(new Callback(cookie, lease))
-                                .start();
+                                .start());
                         LOGGER.log(FINE, "started {0}", cookie);
                     } else {
                         // just rescheduled after a restart; wait for task to complete
