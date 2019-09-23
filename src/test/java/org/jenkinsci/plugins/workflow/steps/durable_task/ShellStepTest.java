@@ -25,6 +25,7 @@ import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.model.queue.QueueTaskFuture;
 import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
@@ -183,14 +184,16 @@ public class ShellStepTest {
             "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}", true));
 
         // get the build going, and wait until workflow pauses
-        WorkflowRun b = foo.scheduleBuild2(0).getStartCondition().get();
+        final QueueTaskFuture<WorkflowRun> f = foo.scheduleBuild2(0);
+        WorkflowRun b = f.getStartCondition().get();
 
         // at this point the file should be being touched
         while (!Files.exists(tmp)) {
             Thread.sleep(100);
         }
 
-        b.getExecutor().interrupt();
+        b.doStop();
+        j.assertBuildStatus(Result.ABORTED, f.get());
 
         // touching should have stopped
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
@@ -201,8 +204,6 @@ public class ShellStepTest {
                 throw new UncheckedIOException(e);
             }
         });
-
-        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
     }
 
     @Issue("JENKINS-41339")
