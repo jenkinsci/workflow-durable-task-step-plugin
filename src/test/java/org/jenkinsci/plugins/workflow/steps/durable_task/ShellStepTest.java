@@ -54,6 +54,8 @@ import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
+
+import hudson.util.ProcessTree;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 
@@ -205,6 +207,50 @@ public class ShellStepTest {
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
     }
 
+    @Test
+    @Issue("JENKINS-59152")
+    public void abortDeepCmd() throws Exception {
+        Assume.assumeTrue(Functions.isWindows());
+        ProcessTree.enabled = true;
+
+        final WorkflowJob foo = j.createProject(WorkflowJob.class);
+        foo.setDefinition(new CpsFlowDefinition(
+                "node {\n" +
+                        "    parallel abort: {\n" +
+                        "        sleep time: 1\n" +
+                        "        currentBuild.result = 'ABORTED'\n" +
+                        "        error('Abort')\n" +
+                        "    },\n" +
+                        "    payload1: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    payload2: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    payload3: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    payload4: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    payload5: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    payload6: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    payload7: {\n" +
+                        "        bat 'cmd /c cmd /c cmd /c cmd /c cmd /c ping -n 10000 127.0.0.1'\n" +
+                        "    },\n" +
+                        "    failFast: true\n" +
+                        "}"
+        ));
+
+        for (int i = 0; i < 10; ++i) {
+            j.assertBuildStatus(Result.ABORTED, foo.scheduleBuild2(0));
+        }
+    }
+
     @Issue("JENKINS-41339")
     @Test public void nodePaths() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);
@@ -289,7 +335,7 @@ public class ShellStepTest {
         assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
         assertEquals("", s.getLabel());
-        
+
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
         s = new StepConfigTester(j).configRoundTrip(s);
@@ -298,7 +344,7 @@ public class ShellStepTest {
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
         assertEquals("", s.getLabel());
-        
+
         s.setReturnStdout(false);
         s.setEncoding("UTF-8");
         s.setReturnStatus(true);
@@ -308,7 +354,7 @@ public class ShellStepTest {
         assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
         assertEquals("", s.getLabel());
-        
+
         s.setLabel("Round Trip Test");
         s = new StepConfigTester(j).configRoundTrip(s);
         assertEquals("echo hello", s.getScript());
@@ -334,12 +380,12 @@ public class ShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
-    
-    
+
+
     @Test public void label() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: 'Step with label') : bat(script: 'echo', label: 'Step with label')}", true));
-        
+
         WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
 
         boolean found = false;
@@ -353,14 +399,14 @@ public class ShellStepTest {
 
         assertTrue(found);
     }
-    
+
     @Test public void labelShortened() throws Exception {
         String singleLabel= StringUtils.repeat("0123456789", 10);
         String label = singleLabel + singleLabel;
-        
+
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: '" + label + "') : bat(script: 'echo', label: '" + label + "')}", true));
-        
+
         WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
 
         boolean found = false;
@@ -664,7 +710,7 @@ public class ShellStepTest {
             assertNull(record.getThrown());
         }
     }
-    
+
     @Issue("JENKINS-49707")
     @Test public void removingAgentIsFatal() throws Exception {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
@@ -681,13 +727,13 @@ public class ShellStepTest {
     @Issue("JENKINS-44521")
     @Test public void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);
-        
+
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node('slave') {isUnix() ? sh('echo INJECTED=$INJECTED') : bat('echo INJECTED=%INJECTED%')}", true));
         WorkflowRun run = j.buildAndAssertSuccess(p);
-        
+
         j.assertLogContains("INJECTED=MYVAR-" + slave.getNodeName(), run);
-        
+
     }
 
     @Issue("JENKINS-28822")
@@ -735,7 +781,7 @@ public class ShellStepTest {
             Thread.sleep(100);
         }
     }
-    
+
     @TestExtension(value = "shouldInvokeLauncherDecoratorForShellStep")
     public static final class MyNodeLauncherDecorator extends LauncherDecorator {
 
@@ -745,7 +791,7 @@ public class ShellStepTest {
             Map<String, String> env = new HashMap<>();
             env.put("INJECTED", "MYVAR-" + node.getNodeName());
             return lnchr.decorateByEnv(new EnvVars(env));
-        }  
+        }
     }
 }
 
