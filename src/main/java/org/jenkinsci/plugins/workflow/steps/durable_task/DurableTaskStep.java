@@ -134,7 +134,7 @@ public abstract class DurableTaskStep extends Step {
     }
     
     @DataBoundSetter public void setLabel(String label) {
-        this.label = label;
+        this.label = Util.fixEmptyAndTrim(label);
     }
     
     public String getLabel() {
