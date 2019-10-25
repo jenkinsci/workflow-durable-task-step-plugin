@@ -347,7 +347,7 @@ Jun 29, 2016
 -   [JENKINS-31842](https://issues.jenkins-ci.org/browse/JENKINS-31842)
     Provide information about `node` and `sh`/`bat` steps for use in the
     thread dump.
--   [JENKINS-26130](https://issues.jenkins-ci.org/browse/JENKINS-26130)/[JENKINS-31842](https://issues.jenkins-ci.org/browse/JENKINS-31842)
+-   [JENKINS-26130](https://issues.jenkins-ci.org/browse/JENKINS-26130), [JENKINS-31842](https://issues.jenkins-ci.org/browse/JENKINS-31842)
     Provide information in the thread dump about pending `node` step
     resumption when a build is being restored from disk.
 
