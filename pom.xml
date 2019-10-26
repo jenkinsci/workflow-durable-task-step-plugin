@@ -36,7 +36,7 @@
     <version>${revision}${changelist}</version>
     <packaging>hpi</packaging>
     <name>Pipeline: Nodes and Processes</name>
-    <url>https://wiki.jenkins.io/display/JENKINS/Pipeline+Nodes+and+Processes+Plugin</url>
+    <url>https://github.com/jenkinsci/workflow-durable-task-step-plugin</url>
     <licenses>
         <license>
             <name>MIT License</name>
