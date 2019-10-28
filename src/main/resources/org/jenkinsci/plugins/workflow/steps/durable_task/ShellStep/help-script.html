@@ -18,6 +18,7 @@
           while in Kubernetes, you may leverage
           <a href="https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/"> shared process namespace</a>.
           With shared process namespaces, the pod sandbox will be assigned PID 1 and assume zombie-reaping responsibilities.
-          To force durable-task to always use the shell wrapper, you may set the environment variable FORCE_SHELL_WRAPPER as true.
+          To force durable-task to always use the shell wrapper, pass the system property
+          `org.jenkinsci.plugins.durabletask.BourneShellScript.FORCE_SHELL_WRAPPER=true` to the Java command line used to start Jenkins.
     </p>
 </div>
