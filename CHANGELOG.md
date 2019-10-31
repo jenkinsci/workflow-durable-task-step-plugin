@@ -1,6 +1,6 @@
-## Changelog
+# Changelog
 
-### 2.34
+## 2.34
 2019 Sep 10
 
 -   Fix: Prevent the `node` step from holding a strong reference to its
@@ -19,7 +19,7 @@
     equivalents, various cleanup and refactoring in test code. ([PR
     114](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/114))
 
-### 2.33
+## 2.33
 2019 Jul 29
 
 -   Fix: The final line of output from a shell step could be lost if it
@@ -31,14 +31,14 @@
     [PR
     111](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/111))
 
-### 2.32
+## 2.32
 2019 Jul 05
 
 -   Fix: Abort the build immediately if an agent being used by the build
     is removed (deconfigured) from Jenkins
     ([JENKINS-49707](https://issues.jenkins-ci.org/browse/JENKINS-49707))
 
-### 2.31
+## 2.31
 2019 Jun 03
 
 > **WARNING**: You must update Pipeline Groovy Plugin to version 2.70 along with this
@@ -51,13 +51,13 @@ update.
     disconnected earlier during the build.
     ([JENKINS-41854](https://issues.jenkins-ci.org/browse/JENKINS-41854))
 
-### 2.30
+## 2.30
 2019 Apr 03
 
 -   Internal: Update parent POM so that the plugin can build with all
     tests passing on Java 11.
 
-### 2.29
+## 2.29
 2019 Jan 31
 
 > **NOTE**: Requires Jenkins 2.150.1 or newer
@@ -86,7 +86,7 @@ update.
     ([PR
     96](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/96))
 
-### 2.28
+## 2.28
 2019 Jan 14
 
 -   Enhancement: Add an optional `label` argument to the `sh`, `bat`,
@@ -98,7 +98,7 @@ update.
     a `node` step fails because the agent has been disconnected. ([PR
     94](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/94))
 
-### 2.27
+## 2.27
 2018 Dec 14
 
 -   Fix: Show descriptions for `sh` and `bat` steps in the Blue Ocean
@@ -107,7 +107,7 @@ update.
     script was the only argument.
     ([JENKINS-52943](https://issues.jenkins-ci.org/browse/JENKINS-52943))
 
-### 2.26
+## 2.26
 2018 Nov 01
 
 -   Fix: Adjust log handling behavior in watch mode to work correctly
@@ -123,7 +123,7 @@ update.
 -   Internal: Shut down thread pools when Jenkins shuts down. Should
     only affect other plugins using this plugin in their tests.
 
-### 2.25
+## 2.25
 Oct 24, 2018
 
 -   Fix: Disables
@@ -136,7 +136,7 @@ Oct 24, 2018
     [JENKINS-54073](https://issues.jenkins-ci.org/browse/JENKINS-54073)
     and [JENKINS-53888](https://issues.jenkins-ci.org/browse/JENKINS-53888))
 
-### 2.24
+## 2.24
 Oct 22, 2018
 
 -   Fix: Distinguish between abort (FlowInterruptedException) and
@@ -151,12 +151,12 @@ Oct 22, 2018
     ([JENKINS-53837](https://issues.jenkins-ci.org/browse/JENKINS-53837))
 -   Improvement: Update documentation for the `node` step.
 
-### 2.23
+## 2.23
 Oct 22, 2018
 
 -   Released incorrectly. Use 2.24 instead.
 
-### 2.22
+## 2.22
 Sep 25, 2018
 
 -   Major Enhancement: Durable task logs are now pushed from build
@@ -166,20 +166,20 @@ Sep 25, 2018
     [JEP-210](https://github.com/jenkinsci/jep/tree/master/jep/210).
     ([JENKINS-52165](https://issues.jenkins-ci.org/browse/JENKINS-52165))
 
-### 2.21
+## 2.21
 Aug 22, 2018
 
 -   Fix: Ensure that stopping `node` steps removes them from the queue
     regardless of the permissions of the user running the build.
 
-### 2.20
+## 2.20
 Aug 7, 2018
 > **IMPORTANT**: please also upgrade the [Pipeline Job Plugin](https://wiki.jenkins.io/display/JENKINS/Pipeline+Job+Plugin) to v2.24+ along with this upgrade, to avoid potential log encoding issues
 
 -   [JEP-206](https://github.com/jenkinsci/jep/blob/master/jep/206/README.adoc) Use
     UTF-8 for all Pipeline build logs
 
-### 2.19
+## 2.19
 Feb 16, 2018
 
 -   Enhancement: Print message describing failure when a step fails with
@@ -189,13 +189,13 @@ Feb 16, 2018
     depends on a nonexistent executor (not just one that is offline)
 -   Test fix: UTF-8 with Powershell step
 
-### 2.18
+## 2.18
 Jan 22, 2018
 
 -   [Fix security
     issue](https://jenkins.io/security/advisory/2018-01-22/)
 
-### 2.17
+## 2.17
 Oct 13, 2017
 
 -   [JENKINS-42264](https://issues.jenkins-ci.org/browse/JENKINS-42264) Feature:
@@ -206,14 +206,14 @@ Oct 13, 2017
     DurableTask.Execution.check - avoid using up all Timer threads  ([PR
     \#53](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/53))
 
-### 2.16
+## 2.16
 Oct 13, 2017
 
 -   [JENKINS-46738](https://issues.jenkins-ci.org/browse/JENKINS-46738) 
     Fix a deadlock that can occur with the PlaceHolderTasks used to
     claim an executor for a pipeline
 
-### 2.15
+## 2.15
 Aug 30, 2017
 
 -   Update to
@@ -222,7 +222,7 @@ Aug 30, 2017
     where the node doesn't exist
     -   Covers a few edge cases with EphemeralNodes
 
-### 2.14
+## 2.14
 Aug 23, 2017
 
 -   [JENKINS-36013](http://36013@issue) - Prevent
@@ -241,27 +241,27 @@ Aug 23, 2017
     use of Guice
     -   Optimize Action lookup when displaying executors used
 
-### 2.13
+## 2.13
 July 25, 2017
 
 -   JENKINS-26132 Display current stage on executor.
 -   JENKINS-44981 Record information on queued task for reporting.
 
-### 2.12
+## 2.12
 Jun 15, 2017
 
 -   JENKINS-34581 Added a `powershell` step.
 -   JENKINS-28182 Kill any spawned processes at the end of a `node`
     block.
 
-### 2.11
+## 2.11
 Apr 25, 2017
 
 -   Reduce log output to
     ameliorate [JENKINS-42048](https://issues.jenkins-ci.org/browse/JENKINS-42048).
 -   Added logging for `ExecutorPickle`.
 
-### 2.10
+## 2.10
 Mar 09, 2017
 
 -   [JENKINS-42556](https://issues.jenkins-ci.org/browse/JENKINS-42556)
@@ -273,7 +273,7 @@ Mar 09, 2017
     excessive noise in the log after forcible termination of a build
     inside `sh`/`bat`.
 
-### 2.9
+## 2.9
 Feb 13, 2017
 
 -   [JENKINS-41339](https://issues.jenkins-ci.org/browse/JENKINS-41339)
@@ -286,7 +286,7 @@ Feb 13, 2017
 -   [JENKINS-41446](https://issues.jenkins-ci.org/browse/JENKINS-41446)
     Bind `$WORKSPACE` inside a `ws` block.
 
-### 2.8
+## 2.8
 Jan 13, 2017
 
 -   [JENKINS-40995](https://issues.jenkins-ci.org/browse/JENKINS-40995)
@@ -294,14 +294,14 @@ Jan 13, 2017
 -   [JENKINS-41010](https://issues.jenkins-ci.org/browse/JENKINS-41010)
     API to associate a queue item with an entry in the flow graph.
 
-### 2.7
+## 2.7
 Jan 10, 2017
 
 -   [JENKINS-40909](https://issues.jenkins-ci.org/browse/JENKINS-40909)
     regression from 2.6 fixed. Only meaningful for updates directly from
     2.5-; if you have already updated to 2.6 it is too late.
 
-### 2.6
+## 2.6
 Jan 05, 2016
 
 > **WARNING**: Running builds created in 2.5- will not be loadable in this release
@@ -320,7 +320,7 @@ Jan 05, 2016
     `NullPointerException` thrown when aborting a build under unknown
     conditions.
 
-### 2.5
+## 2.5
 Sep 23, 2016
 
 -   [JENKINS-33511](https://issues.jenkins-ci.org/browse/JENKINS-33511)
@@ -335,13 +335,13 @@ Sep 23, 2016
 -   Clearer display in log when a queue item is canceled while a build
     is trying to resume.
 
-### 2.4
+## 2.4
 Jul 28, 2016
 
 -   [JENKINS-26133](https://issues.jenkins-ci.org/browse/JENKINS-26133)
     Added `returnStdout` and `returnStatus` options to `sh` and `bat`.
 
-### 2.3
+## 2.3
 Jun 29, 2016
 
 -   [JENKINS-31842](https://issues.jenkins-ci.org/browse/JENKINS-31842)
@@ -351,7 +351,7 @@ Jun 29, 2016
     Provide information in the thread dump about pending `node` step
     resumption when a build is being restored from disk.
 
-### 2.2
+## 2.2
 Jun 16, 2016
 
 -   [JENKINS-26130](https://issues.jenkins-ci.org/browse/JENKINS-26130)
@@ -364,7 +364,7 @@ Jun 16, 2016
     Work around and diagnostics for a `NullPointerException` when trying
     to abort a build inside a `sh`/`bat` step.
 
-### 2.1
+## 2.1
 Jun 09, 2016
 
 -   [JENKINS-34281](https://issues.jenkins-ci.org/browse/JENKINS-34281)
@@ -379,7 +379,7 @@ Jun 09, 2016
 -   [JENKINS-28240](https://issues.jenkins-ci.org/browse/JENKINS-28240)
     `IllegalStateException` was thrown under some conditions.
 
-### 2.0
+## 2.0
 Apr 05, 2016
 
 -   First release under per-plugin versioning scheme. See [1.x
