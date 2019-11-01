@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.35
+2019 Nov 01
+
+- Update durable-task (v1.33)
+- Add `pwsh` step to support powershell name change ([JENKINS-48803](https://issues.jenkins-ci.org/browse/JENKINS-48803))
+
 ## 2.34
 2019 Sep 10
 
