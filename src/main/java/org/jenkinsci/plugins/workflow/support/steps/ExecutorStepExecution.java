@@ -59,8 +59,6 @@ import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.Timer;
 import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
-import org.acegisecurity.context.SecurityContext;
-import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
@@ -318,7 +316,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
         /** Shortcut for {@link #run}. */
-        private String runId;
+        private final String runId;
         /**
          * Unique cookie set once the task starts.
          * Serves multiple purposes:
@@ -433,6 +431,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public Queue.Task getOwnerTask() {
+            Jenkins j = Jenkins.getInstanceOrNull();
+            if (j != null && runId != null) { // JENKINS-60389 shortcut
+                Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                if (job instanceof Queue.Task) {
+                    return (Queue.Task) job;
+                }
+            }
             Run<?,?> r = runForDisplay();
             if (r != null && r.getParent() instanceof Queue.Task) {
                 return (Queue.Task) r.getParent();
