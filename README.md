@@ -9,10 +9,6 @@ A component of [Pipeline Plugin](https://wiki.jenkins.io/display/JENKINS/Pipelin
 
 Pipeline steps locking agents and workspaces, and running external processes that may survive a Jenkins restart or agent reconnection.
 
-
->**WARNING**: Older versions of this plugin may not be safe to use. Please review the following warnings before using an older version:
-> -   [Incorrect permission checks allow executing builds on agents without Computer/Buildpermission](https://jenkins.io/security/advisory/2018-01-22/)
-
 ## Documentation
 
 * [Changelog](https://github.com/jenkinsci/workflow-durable-task-step-plugin/blob/master/CHANGELOG.md)
