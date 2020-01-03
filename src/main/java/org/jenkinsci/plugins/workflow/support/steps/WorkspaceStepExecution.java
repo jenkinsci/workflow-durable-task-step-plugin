@@ -1,5 +1,6 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.collect.ImmutableMap;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import hudson.EnvVars;
@@ -11,7 +12,6 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.slaves.WorkspaceList;
-import java.util.Collections;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
@@ -62,7 +62,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         getContext().newBodyInvoker()
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
-                        EnvironmentExpander.constant(Collections.singletonMap("WORKSPACE", workspace.getRemote()))),
+                        EnvironmentExpander.constant(ImmutableMap.of("WORKSPACE", workspace.getRemote(), "WORKSPACE_TMP", WorkspaceList.tempDir(workspace).getRemote()))),
                     FilePathDynamicContext.createContextualObject(workspace))
                 .withCallback(new Callback(lease))
                 .start();
