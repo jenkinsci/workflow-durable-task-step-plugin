@@ -1197,6 +1197,17 @@ public class ExecutorStepTest {
         });
     }
 
+    @Test
+    @Issue("JENKINS-60634")
+    public void tempDirVariable() throws Exception {
+        story.then(r -> {
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node {if (isUnix()) {sh 'set -u && touch \"$WORKSPACE_TMP/x\"'} else {bat(/echo ok > \"%WORKSPACE_TMP%\\x\"/)}}", true));
+            r.buildAndAssertSuccess(p);
+            assertTrue(WorkspaceList.tempDir(r.jenkins.getWorkspaceFor(p)).child("x").exists());
+        });
+    }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
