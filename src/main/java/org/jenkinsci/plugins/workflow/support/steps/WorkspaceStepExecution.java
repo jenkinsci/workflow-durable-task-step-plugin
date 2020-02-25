@@ -1,6 +1,5 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.google.common.collect.ImmutableMap;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import hudson.EnvVars;
@@ -12,6 +11,8 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.slaves.WorkspaceList;
+import java.util.HashMap;
+import java.util.Map;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
@@ -59,10 +60,14 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         FlowNode flowNode = getContext().get(FlowNode.class);
         flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
         getContext().get(TaskListener.class).getLogger().println("Running in " + workspace);
+        Map<String, String> env = new HashMap<>();
+        env.put("WORKSPACE", workspace.getRemote());
+        if (workspace.getParent() != null) {
+            env.put("WORKSPACE_TMP", WorkspaceList.tempDir(workspace).getRemote());
+        }
         getContext().newBodyInvoker()
                 .withContexts(
-                    EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
-                        EnvironmentExpander.constant(ImmutableMap.of("WORKSPACE", workspace.getRemote(), "WORKSPACE_TMP", WorkspaceList.tempDir(workspace).getRemote()))),
+                    EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class), EnvironmentExpander.constant(env)),
                     FilePathDynamicContext.createContextualObject(workspace))
                 .withCallback(new Callback(lease))
                 .start();
