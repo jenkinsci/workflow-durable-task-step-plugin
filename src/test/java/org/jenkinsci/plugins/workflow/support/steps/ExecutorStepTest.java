@@ -681,7 +681,7 @@ public class ExecutorStepTest {
 
                 assertTrue(Queue.getInstance().cancel(items[0]));
                 story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
-                story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
+                story.j.waitForMessage(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
 
                 FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
                 assertNotNull(executorStartNode2);
@@ -1193,7 +1193,7 @@ public class ExecutorStepTest {
             r.assertLogContains("hello", b);
             r.assertLogNotContains("world", b);
             r.assertLogContains("going offline", b);
-            r.assertLogContains("IOException: Unable to create live FilePath for " + agent.getNodeName(), b);
+            r.waitForMessage("IOException: Unable to create live FilePath for " + agent.getNodeName(), b);
         });
     }
 
