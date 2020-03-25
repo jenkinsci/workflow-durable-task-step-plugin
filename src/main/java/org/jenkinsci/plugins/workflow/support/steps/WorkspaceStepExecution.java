@@ -35,6 +35,9 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         if (!(job instanceof TopLevelItem)) {
             throw new Exception(job + " must be a top-level job");
         }
+        if (!getContext().hasBody()) {
+            throw new Exception("ws must be called with a body");
+        }
         Computer computer = getContext().get(Computer.class);
         Node node = computer.getNode();
         if (node == null) {

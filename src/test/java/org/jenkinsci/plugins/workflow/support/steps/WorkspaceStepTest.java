@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import hudson.model.Result;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.WorkspaceList;
 import java.io.File;
@@ -80,6 +81,14 @@ public class WorkspaceStepTest {
         r.buildAndAssertSuccess(p);
         assertFalse(WorkspaceList.tempDir(r.jenkins.getWorkspaceFor(p)).child("x").exists());
         assertTrue(WorkspaceList.tempDir(r.jenkins.getWorkspaceFor(p).sibling("p@2")).child("x").exists());
+    }
+
+    @Test
+    public void wsNoBody() throws Exception {
+        WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {ws('test')}", true));
+        WorkflowRun b = r.buildAndAssertStatus(Result.FAILURE, p);
+        r.assertLogContains("ws must be called with a body", b);
     }
 
 }
