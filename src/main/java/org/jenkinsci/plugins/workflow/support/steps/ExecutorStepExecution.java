@@ -66,6 +66,7 @@ import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
@@ -638,10 +639,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 // See if this step is inside our node {} block, and track the associated label.
                 boolean match = false;
                 String enclosingLabel = null;
-                Iterator<FlowNode> it = FlowScanningUtils.fetchEnclosingBlocks(runningNode);
                 int count = 0;
-                while (it.hasNext()) {
-                    FlowNode n = it.next();
+                for (FlowNode n : runningNode.iterateEnclosingBlocks()) {
                     if (enclosingLabel == null) {
                         ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {
