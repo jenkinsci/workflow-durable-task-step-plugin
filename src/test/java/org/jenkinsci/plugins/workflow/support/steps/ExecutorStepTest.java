@@ -1208,6 +1208,16 @@ public class ExecutorStepTest {
         });
     }
 
+    @Test
+    public void nodeNoBody() throws Exception {
+        story.then( r -> {
+            WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('')", true));
+            WorkflowRun b = r.buildAndAssertStatus(Result.FAILURE, p);
+            r.assertLogContains("node must be called with a body", b);
+        });
+    }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;

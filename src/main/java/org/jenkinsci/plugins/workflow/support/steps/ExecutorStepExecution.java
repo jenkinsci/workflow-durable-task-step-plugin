@@ -794,6 +794,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     if (exec == null) {
                         throw new IllegalStateException("running task without associated executor thread");
                     }
+                    if (!context.hasBody()) {
+                        throw new Exception("node must be called with a body");
+                    }
                     computer = exec.getOwner();
                     // Set up context for other steps inside this one.
                     Node node = computer.getNode();
