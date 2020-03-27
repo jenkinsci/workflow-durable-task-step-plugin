@@ -88,7 +88,7 @@ public class WorkspaceStepTest {
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {ws('test')}", true));
         WorkflowRun b = r.buildAndAssertStatus(Result.FAILURE, p);
-        r.assertLogContains("ws must be called with a body", b);
+        r.assertLogContains("The ws step must be called with a body", b);
     }
 
 }

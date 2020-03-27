@@ -3,6 +3,8 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import com.google.common.collect.ImmutableMap;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
+
+import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.model.Computer;
@@ -36,7 +38,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
             throw new Exception(job + " must be a top-level job");
         }
         if (!getContext().hasBody()) {
-            throw new Exception("ws must be called with a body");
+            throw new AbortException("The ws step must be called with a body");
         }
         Computer computer = getContext().get(Computer.class);
         Node node = computer.getNode();

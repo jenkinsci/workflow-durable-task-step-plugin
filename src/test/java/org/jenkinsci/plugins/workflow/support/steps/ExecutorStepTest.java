@@ -1214,7 +1214,7 @@ public class ExecutorStepTest {
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('')", true));
             WorkflowRun b = r.buildAndAssertStatus(Result.FAILURE, p);
-            r.assertLogContains("node must be called with a body", b);
+            r.assertLogContains("The node step must be called with a body", b);
         });
     }
 

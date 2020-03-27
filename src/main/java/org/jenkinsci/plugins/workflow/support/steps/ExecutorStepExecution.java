@@ -101,6 +101,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
      */
     @Override
     public boolean start() throws Exception {
+        if(!getContext().hasBody()) {
+            throw new AbortException("The node step must be called with a body");
+        }
         final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel());
         Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
         if (waitingItem == null) {
@@ -793,9 +796,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     Executor exec = Executor.currentExecutor();
                     if (exec == null) {
                         throw new IllegalStateException("running task without associated executor thread");
-                    }
-                    if (!context.hasBody()) {
-                        throw new Exception("node must be called with a body");
                     }
                     computer = exec.getOwner();
                     // Set up context for other steps inside this one.
