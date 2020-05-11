@@ -35,6 +35,7 @@ import hudson.Util;
 import hudson.init.Terminator;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
@@ -302,6 +303,7 @@ public abstract class DurableTaskStep extends Step {
             ws = context.get(FilePath.class);
             node = FilePathUtils.getNodeName(ws);
             DurableTask durableTask = step.task();
+            durableTask.setRun(context.get(Run.class));
             if (returnStdout) {
                 durableTask.captureOutput();
             }
