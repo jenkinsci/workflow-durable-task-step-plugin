@@ -63,7 +63,9 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         Map<String, String> env = new HashMap<>();
         env.put("WORKSPACE", workspace.getRemote());
         if (workspace.getParent() != null) {
-            env.put("WORKSPACE_TMP", WorkspaceList.tempDir(workspace).getRemote());
+            FilePath tmp = WorkspaceList.tempDir(workspace);
+            if (tmp != null)
+                env.put("WORKSPACE_TMP", tmp.getRemote());
         }
         getContext().newBodyInvoker()
                 .withContexts(
