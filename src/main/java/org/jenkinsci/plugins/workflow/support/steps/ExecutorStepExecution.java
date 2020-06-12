@@ -839,8 +839,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put("WORKSPACE", workspace.getRemote());
                         if (workspace.getParent() != null) {
                             FilePath tmp = WorkspaceList.tempDir(workspace);
-                            if (tmp != null)
+                            if (tmp != null) {
                                 env.put("WORKSPACE_TMP", tmp.getRemote()); // JENKINS-60634
+                            }
                         }
                         FlowNode flowNode = context.get(FlowNode.class);
                         if (flowNode != null) {
