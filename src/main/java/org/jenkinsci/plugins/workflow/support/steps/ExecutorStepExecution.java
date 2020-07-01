@@ -32,7 +32,6 @@ import hudson.security.Permission;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.io.Serializable;
 import java.lang.ref.WeakReference;
 import java.util.Arrays;
@@ -113,17 +112,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             @Override public void run() {
                 Queue.Item item = Queue.getInstance().getItem(task);
                 if (item != null) {
-                    PrintStream logger;
+                    TaskListener listener;
                     try {
-                        logger = getContext().get(TaskListener.class).getLogger();
+                        listener = getContext().get(TaskListener.class);
                     } catch (Exception x) { // IOException, InterruptedException
                         LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
                         return;
                     }
-                    logger.println("Still waiting to schedule task");
-                    String why = item.getWhy();
-                    if (why != null) {
-                        logger.println(why);
+                    listener.getLogger().println("Still waiting to schedule task");
+                    CauseOfBlockage cob = item.getCauseOfBlockage();
+                    if (cob != null) {
+                        cob.print(listener);
                     }
                 }
             }
