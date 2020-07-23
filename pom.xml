@@ -64,7 +64,7 @@
     <properties>
         <revision>2.36</revision>
         <changelist>-SNAPSHOT</changelist>
-        <jenkins.version>2.236-SNAPSHOT</jenkins.version>
+        <jenkins.version>2.248</jenkins.version>
         <java.level>8</java.level>
         <useBeta>true</useBeta>
         <workflow-step-api-plugin.version>2.20</workflow-step-api-plugin.version>
