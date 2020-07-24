@@ -35,6 +35,7 @@ import hudson.Util;
 import hudson.init.Terminator;
 import hudson.model.Node;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
@@ -61,6 +62,7 @@ import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import jenkins.model.Jenkins;
+import jenkins.tasks.filters.EnvVarsFilterableBuilder;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -96,7 +98,7 @@ import org.kohsuke.stapler.QueryParameter;
  * When the process exits, the status code is also written to a file and ultimately results in the step passing or failing.
  * <p>Tasks can also be run on the master node, which differs only in that there is no possibility of a network failure.
  */
-public abstract class DurableTaskStep extends Step {
+public abstract class DurableTaskStep extends Step implements EnvVarsFilterableBuilder {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
@@ -312,6 +314,7 @@ public abstract class DurableTaskStep extends Step {
                 durableTask.defaultCharset();
             }
             Launcher launcher = context.get(Launcher.class);
+            launcher.prepareFilterRules(context.get(Run.class), step);
             LOGGER.log(Level.FINE, "launching task against {0} using {1}", new Object[] {ws.getChannel(), launcher});
             try {
                 controller = durableTask.launch(context.get(EnvVars.class), ws, launcher, listener);
