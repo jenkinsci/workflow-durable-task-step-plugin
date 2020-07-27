@@ -836,8 +836,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         FilePath workspace = lease.path;
                         // Cf. AbstractBuild.getEnvironment:
                         env.put("WORKSPACE", workspace.getRemote());
-                        if (workspace.getParent() != null) {
-                            env.put("WORKSPACE_TMP", WorkspaceList.tempDir(workspace).getRemote()); // JENKINS-60634
+                        final FilePath tempDir = WorkspaceList.tempDir(workspace);
+                        if (tempDir != null) {
+                            env.put("WORKSPACE_TMP", tempDir.getRemote()); // JENKINS-60634
                         }
                         FlowNode flowNode = context.get(FlowNode.class);
                         if (flowNode != null) {
