@@ -47,6 +47,7 @@ import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
@@ -101,7 +102,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
      */
     @Override
     public boolean start() throws Exception {
-        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel());
+        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel(), step.getWeight());
         Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
         if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
@@ -313,6 +314,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
+        private final int weight;
         /** Shortcut for {@link #run}. */
         private final String runId;
         /**
@@ -341,9 +343,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed. */
         private transient boolean stopping;
 
-        PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
+        PlaceholderTask(StepContext context, String label, int weight) throws IOException, InterruptedException {
             this.context = context;
             this.label = label;
+            this.weight = weight;
             runId = context.get(Run.class).getExternalizableId();
             Authentication runningAuth = Jenkins.getAuthentication();
             if (runningAuth.equals(ACL.SYSTEM)) {
@@ -425,7 +428,35 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public Collection<? extends SubTask> getSubTasks() {
-            return Collections.singleton(this);
+            List<SubTask> r = new ArrayList<SubTask>();
+            r.add(this);
+            for (int i = 1; i < weight; i++)
+                r.add(new SubTask() {
+                    public Queue.Executable createExecutable() throws IOException {
+                        return new ExecutableImpl(this);
+                    }
+
+                    @Override
+                    public Object getSameNodeConstraint() {
+                        // must occupy the same node as the project itself
+                        return PlaceholderTask.this;
+                    }
+
+                    @Override
+                    public long getEstimatedDuration() {
+                        return PlaceholderTask.this.getEstimatedDuration();
+                    }
+
+                    @Nonnull
+                    public Queue.Task getOwnerTask() {
+                        return PlaceholderTask.this;
+                    }
+
+                    public String getDisplayName() {
+                        return PlaceholderTask.this.getDisplayName();
+                    }
+                });
+            return r;
         }
 
         @Override public Queue.Task getOwnerTask() {
@@ -984,6 +1015,33 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             public boolean hasPermission(Permission permission) {
                 return getACL().hasPermission(permission);
             }
+        }
+
+        public static class ExecutableImpl implements Queue.Executable {
+            private final SubTask parent;
+            private final Executor executor = Executor.currentExecutor();
+
+            private ExecutableImpl(SubTask parent) {
+                this.parent = parent;
+            }
+
+            @Nonnull
+            public SubTask getParent() {
+                return parent;
+            }
+
+            public AbstractBuild<?,?> getBuild() {
+                return (AbstractBuild<?,?>)executor.getCurrentWorkUnit().context.getPrimaryWorkUnit().getExecutable();
+            }
+
+            public void run() {
+                // nothing. we just waste time
+            }
+
+            @Override public long getEstimatedDuration() {
+                return parent.getEstimatedDuration();
+            }
+
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
