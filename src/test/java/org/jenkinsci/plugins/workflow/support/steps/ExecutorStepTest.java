@@ -1252,4 +1252,47 @@ public class ExecutorStepTest {
         }
     }
 
+    @Test public void heavyBuildRunning() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node(weight: 2) { echo 'test' }", true));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                story.j.waitForCompletion(b);
+            }
+        });
+    }
+
+    @Test public void heavyBuildWaiting() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                // use weight = 10 to keep the build queued
+                p.setDefinition(new CpsFlowDefinition("node(weight: 10) { echo 'test' }", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForMessage("Still waiting to schedule task", b);
+                b.getExecutor().interrupt();
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
+            }
+        });
+    }
+
+    @Test public void heavyBuildWaitingInQueue() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node(weight: 2) { sleep 600 }", true));
+                WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
+                WorkflowRun b2 = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForMessage("Still waiting to schedule task", b2);
+                b1.getExecutor().interrupt();
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b1));
+                b2.getExecutor().interrupt();
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b2));
+            }
+        });
+    }
 }
