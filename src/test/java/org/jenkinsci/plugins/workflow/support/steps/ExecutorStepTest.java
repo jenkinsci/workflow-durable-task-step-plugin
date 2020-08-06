@@ -1256,6 +1256,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(2);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("node(weight: 2) { echo 'test' }", true));
                 WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
@@ -1268,6 +1269,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(1);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 // use weight = 10 to keep the build queued
                 p.setDefinition(new CpsFlowDefinition("node(weight: 10) { echo 'test' }", true));
@@ -1283,6 +1285,7 @@ public class ExecutorStepTest {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(2);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("node(weight: 2) { sleep 600 }", true));
                 WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
