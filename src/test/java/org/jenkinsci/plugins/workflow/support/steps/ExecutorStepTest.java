@@ -1265,6 +1265,31 @@ public class ExecutorStepTest {
         });
     }
 
+    @Test public void heavyBuildRestart() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(2);
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node(weight: 2) { semaphore 'wait' }", true));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+            }
+        });
+
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
+                WorkflowRun b = p.getLastBuild();
+                SemaphoreStep.success("wait/1", null);
+                story.j.waitForCompletion(b);
+                story.j.assertBuildStatusSuccess(b);
+            }
+        });
+    }
+
     @Test public void heavyBuildWaiting() throws Exception {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
