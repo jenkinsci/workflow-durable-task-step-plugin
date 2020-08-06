@@ -1287,14 +1287,16 @@ public class ExecutorStepTest {
                 DumbSlave s = story.j.createOnlineSlave();
                 s.setNumExecutors(2);
                 WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
-                p.setDefinition(new CpsFlowDefinition("node(weight: 2) { sleep 600 }", true));
+                p.setDefinition(new CpsFlowDefinition("node(weight: 2) { semaphore 'wait' }", true));
                 WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b1);
                 WorkflowRun b2 = p.scheduleBuild2(0).waitForStart();
                 story.j.waitForMessage("Still waiting to schedule task", b2);
-                b1.getExecutor().interrupt();
-                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b1));
-                b2.getExecutor().interrupt();
-                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b2));
+                SemaphoreStep.success("wait/1", null);
+                story.j.assertBuildStatus(Result.SUCCESS, story.j.waitForCompletion(b1));
+                SemaphoreStep.waitForStart("wait/2", b2);
+                SemaphoreStep.success("wait/2", null);
+                story.j.assertBuildStatus(Result.SUCCESS, story.j.waitForCompletion(b2));
             }
         });
     }
