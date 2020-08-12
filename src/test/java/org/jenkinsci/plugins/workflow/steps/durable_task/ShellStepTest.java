@@ -32,6 +32,8 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import io.jenkins.plugins.generic_environment_filters.RemoveSpecificVariablesFilter;
+import io.jenkins.plugins.generic_environment_filters.VariableContributingFilter;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -54,6 +56,7 @@ import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
+import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 
@@ -722,6 +725,23 @@ public class ShellStepTest {
         // Would have succeeded before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
         j.assertBuildStatus(Result.ABORTED, b);
         j.waitForMessage("Timeout has been exceeded", b); // TODO assertLogContains fails unless a sleep is introduced; possible race condition in waitForCompletion
+    }
+
+    @Issue("JENKINS-62014")
+    @Test public void envVarFilters() throws Exception {
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new RemoveSpecificVariablesFilter("FOO", "TODO: UNUSED"));
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new VariableContributingFilter("BAZ", "QUX"));
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+                "node() {\n" +
+                "  withEnv(['FOO=BAR']) {\n" +
+                "    sh('echo FOO=$FOO and BAZ=$BAZ')\n" +
+                "  }\n" +
+                "}", true));
+        WorkflowRun b = j.buildAndAssertSuccess(p);
+        j.assertLogContains("FOO=", b);
+        j.assertLogNotContains("FOO=BAR", b);
+        j.assertLogContains("BAZ=QUX", b);
     }
 
     /**
