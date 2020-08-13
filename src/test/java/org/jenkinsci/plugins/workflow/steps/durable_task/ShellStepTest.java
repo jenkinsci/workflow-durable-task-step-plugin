@@ -19,6 +19,7 @@ import hudson.model.BallColor;
 import hudson.model.BooleanParameterDefinition;
 import hudson.model.BooleanParameterValue;
 import hudson.model.BuildListener;
+import hudson.model.Descriptor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.ParametersAction;
@@ -32,6 +33,7 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import io.jenkins.plugins.environment_filter_utils.util.BuilderUtil;
 import io.jenkins.plugins.generic_environment_filters.RemoveSpecificVariablesFilter;
 import io.jenkins.plugins.generic_environment_filters.VariableContributingFilter;
 import java.io.ByteArrayOutputStream;
@@ -61,6 +63,8 @@ import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 
 import static org.hamcrest.Matchers.*;
+
+import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
@@ -742,6 +746,15 @@ public class ShellStepTest {
         j.assertLogContains("FOO=", b);
         j.assertLogNotContains("FOO=BAR", b);
         j.assertLogContains("BAZ=QUX", b);
+    }
+
+    @Issue("JENKINS-62014")
+    @Test public void ensureTypes() throws Exception {
+        final List<Descriptor> descriptors = BuilderUtil.allDescriptors();
+
+        MatcherAssert.assertThat(descriptors , containsInAnyOrder(
+                j.jenkins.getDescriptor(Shell.class), j.jenkins.getDescriptor(BatchFile.class),
+                j.jenkins.getDescriptor(BatchScriptStep.class), j.jenkins.getDescriptor(PowershellScriptStep.class), j.jenkins.getDescriptor(ShellStep.class), j.jenkins.getDescriptor(PowerShellCoreScriptStep.class)));
     }
 
     /**
