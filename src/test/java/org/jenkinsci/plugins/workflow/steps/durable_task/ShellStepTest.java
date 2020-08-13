@@ -729,7 +729,7 @@ public class ShellStepTest {
 
     @Issue("JENKINS-62014")
     @Test public void envVarFilters() throws Exception {
-        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new RemoveSpecificVariablesFilter("FOO", "TODO: UNUSED"));
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new RemoveSpecificVariablesFilter("FOO"));
         EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new VariableContributingFilter("BAZ", "QUX"));
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition(
