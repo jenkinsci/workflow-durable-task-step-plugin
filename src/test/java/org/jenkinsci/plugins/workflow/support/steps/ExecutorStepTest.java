@@ -346,6 +346,7 @@ public class ExecutorStepTest {
                 while (!f2.isFile()) {
                     Thread.sleep(100);
                 }
+                Thread.sleep(1000); // TODO: Flakiness with script for `sh` step starting before `sh` StepExecution is suspended.
                 assertTrue(b.isBuilding());
                 Computer c = s.toComputer();
                 assertNotNull(c);
@@ -401,6 +402,7 @@ public class ExecutorStepTest {
                 while (!f2.isFile()) {
                     Thread.sleep(100);
                 }
+                Thread.sleep(1000); // TODO: Flakiness with script for `sh` step starting before `sh` StepExecution is suspended.
                 LOGGER.info("f2 created, first sh running");
                 assertTrue(b.isBuilding());
                 Computer computer = s.toComputer();
