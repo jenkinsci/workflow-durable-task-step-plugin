@@ -739,7 +739,11 @@ public class ShellStepTest {
         p.setDefinition(new CpsFlowDefinition(
                 "node() {\n" +
                 "  withEnv(['FOO=BAR']) {\n" +
-                "    sh('echo FOO=$FOO and BAZ=$BAZ')\n" +
+                "    if (isUnix()) {\n" +
+                "      sh('echo FOO=$FOO and BAZ=$BAZ')\n" +
+                "    else {\n" +
+                "      bat('ECHO FOO=%FOO% and BAZ=%BAZ%')\n" +
+                "    }\n" +
                 "  }\n" +
                 "}", true));
         WorkflowRun b = j.buildAndAssertSuccess(p);
