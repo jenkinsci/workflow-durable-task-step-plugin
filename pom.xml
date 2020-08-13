@@ -67,7 +67,7 @@
         <jenkins.version>2.248</jenkins.version>
         <java.level>8</java.level>
         <useBeta>true</useBeta>
-        <workflow-step-api-plugin.version>2.20</workflow-step-api-plugin.version>
+        <workflow-step-api-plugin.version>2.22</workflow-step-api-plugin.version>
         <workflow-support-plugin.version>3.3</workflow-support-plugin.version>
     </properties>
     <dependencies>
@@ -144,7 +144,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>script-security</artifactId>
-            <version>1.58</version>
+            <version>1.71</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
