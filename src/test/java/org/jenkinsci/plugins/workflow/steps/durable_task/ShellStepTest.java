@@ -202,6 +202,7 @@ public class ShellStepTest {
         b.getExecutor().interrupt();
 
         // touching should have stopped
+        System.err.println("About to check if " + tmp + " is still being touched");
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
         ensureForWhile(5000, tmp, tmpFile -> {
             try {
@@ -210,6 +211,7 @@ public class ShellStepTest {
                 throw new UncheckedIOException(e);
             }
         });
+        System.err.println("Verified that " + tmp + " is no longer being touched");
 
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
         if (Functions.isWindows()) {
@@ -772,8 +774,10 @@ public class ShellStepTest {
     private <T> void ensureForWhile(int timeout, T o, Predicate<T> predicate) throws Exception {
         long goal = System.currentTimeMillis()+timeout;
         while (System.currentTimeMillis()<goal) {
-            if (!predicate.test(o))
+            if (!predicate.test(o)) {
+                System.err.println("Predicate failed for object: " + o);
                 throw new AssertionError(predicate);
+            }
             Thread.sleep(100);
         }
     }
