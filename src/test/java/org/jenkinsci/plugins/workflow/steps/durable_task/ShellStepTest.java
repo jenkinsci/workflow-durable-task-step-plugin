@@ -210,6 +210,9 @@ public class ShellStepTest {
         });
 
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+        if (Functions.isWindows()) {
+            Thread.sleep(5000); // TODO: Log file is open on Windows and so JenkinsRule cannot be cleaned up.
+        }
     }
 
     @Issue("JENKINS-41339")
