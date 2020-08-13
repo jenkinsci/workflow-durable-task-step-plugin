@@ -185,7 +185,7 @@ public class ShellStepTest {
         foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ?
             "node {bat($/:loop\r\n" +
                 "echo . >" + tmp + "\r\n" +
-                "timeout /t 1\r\n" +
+                "ping -n 2 127.0.0.1\r\n" + // http://stackoverflow.com/a/4317036/12916
                 "goto :loop/$)}" :
             "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}", true));
 
