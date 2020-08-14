@@ -19,6 +19,7 @@ import hudson.model.BallColor;
 import hudson.model.BooleanParameterDefinition;
 import hudson.model.BooleanParameterValue;
 import hudson.model.BuildListener;
+import hudson.model.Descriptor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.ParametersAction;
@@ -32,6 +33,9 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import io.jenkins.plugins.environment_filter_utils.util.BuilderUtil;
+import io.jenkins.plugins.generic_environment_filters.RemoveSpecificVariablesFilter;
+import io.jenkins.plugins.generic_environment_filters.VariableContributingFilter;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -54,10 +58,13 @@ import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import javax.annotation.CheckForNull;
+import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 
 import static org.hamcrest.Matchers.*;
+
+import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
@@ -192,6 +199,10 @@ public class ShellStepTest {
 
         b.getExecutor().interrupt();
 
+        // It can take a while for the process to exit on Windows (see JENKINS-59152), so we wait for the build to
+        // complete and confirm that the process is no longer running after the build has already completed.
+        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+
         // touching should have stopped
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
         ensureForWhile(5000, tmp, tmpFile -> {
@@ -201,8 +212,6 @@ public class ShellStepTest {
                 throw new UncheckedIOException(e);
             }
         });
-
-        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
     }
 
     @Issue("JENKINS-41339")
@@ -722,6 +731,36 @@ public class ShellStepTest {
         // Would have succeeded before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
         j.assertBuildStatus(Result.ABORTED, b);
         j.waitForMessage("Timeout has been exceeded", b); // TODO assertLogContains fails unless a sleep is introduced; possible race condition in waitForCompletion
+    }
+
+    @Issue("JENKINS-62014")
+    @Test public void envVarFilters() throws Exception {
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new RemoveSpecificVariablesFilter("FOO"));
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new VariableContributingFilter("BAZ", "QUX"));
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+                "node() {\n" +
+                "  withEnv(['FOO=BAR']) {\n" +
+                "    if (isUnix()) {\n" +
+                "      sh('echo FOO=$FOO and BAZ=$BAZ')\n" +
+                "    } else {\n" +
+                "      bat('ECHO FOO=%FOO% and BAZ=%BAZ%')\n" +
+                "    }\n" +
+                "  }\n" +
+                "}", true));
+        WorkflowRun b = j.buildAndAssertSuccess(p);
+        j.assertLogContains("FOO=", b);
+        j.assertLogNotContains("FOO=BAR", b);
+        j.assertLogContains("BAZ=QUX", b);
+    }
+
+    @Issue("JENKINS-62014")
+    @Test public void ensureTypes() throws Exception {
+        final List<Descriptor> descriptors = BuilderUtil.allDescriptors();
+
+        MatcherAssert.assertThat(descriptors , containsInAnyOrder(
+                j.jenkins.getDescriptor(Shell.class), j.jenkins.getDescriptor(BatchFile.class),
+                j.jenkins.getDescriptor(BatchScriptStep.class), j.jenkins.getDescriptor(PowershellScriptStep.class), j.jenkins.getDescriptor(ShellStep.class), j.jenkins.getDescriptor(PowerShellCoreScriptStep.class)));
     }
 
     /**
