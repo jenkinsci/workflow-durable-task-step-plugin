@@ -132,17 +132,17 @@ public abstract class DurableTaskStep extends Step {
     @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
         this.returnStatus = returnStatus;
     }
-    
+
     @DataBoundSetter public void setLabel(String label) {
         this.label = Util.fixEmptyAndTrim(label);
     }
-    
+
     public String getLabel() {
         return label;
     }
 
     @Override public StepExecution start(StepContext context) throws Exception {
-        if (this.label != null && !this.label.isEmpty()) {
+        if (this.label != null) {
             context.get(FlowNode.class).addAction(new LabelAction(StringUtils.left(label, MAX_LABEL_LENGTH)));
         }
         return new Execution(context, this);
