@@ -247,13 +247,14 @@ public class ExecutorStepTest {
                 new FileOutputStream(f1).close();
                 p.setDefinition(new CpsFlowDefinition(
                     "node('dumbo') {\n" +
-                    "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
+                    "    sh 'touch \"" + f2 + "\"; while [ -f \"" + f1 + "\" ]; do echo waiting; sleep 1; done; echo finished waiting; rm \"" + f2 + "\"'\n" +
                     "    echo 'OK, done'\n" +
                     "}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 while (!f2.isFile()) {
                     Thread.sleep(100);
                 }
+                story.j.waitForMessage("waiting", b);
                 assertTrue(b.isBuilding());
                 killJnlpProc();
             }
