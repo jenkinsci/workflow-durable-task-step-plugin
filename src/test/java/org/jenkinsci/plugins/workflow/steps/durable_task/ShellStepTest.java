@@ -185,7 +185,7 @@ public class ShellStepTest {
         foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ?
             "node {bat($/:loop\r\n" +
                 "echo . >" + tmp + "\r\n" +
-                "ping -n 2 127.0.0.1>nul\r\n" + // http://stackoverflow.com/a/4317036/12916
+                "ping -n 2 127.0.0.1 >nul\r\n" + // http://stackoverflow.com/a/4317036/12916
                 "goto :loop/$)}" :
             "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}", true));
 
@@ -196,8 +196,6 @@ public class ShellStepTest {
         while (!Files.exists(tmp)) {
             Thread.sleep(100);
         }
-
-        Thread.sleep(1000); // TODO: Let it sleep a bit so we can see log output.
 
         b.getExecutor().interrupt();
 
@@ -212,9 +210,6 @@ public class ShellStepTest {
         });
 
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
-        if (Functions.isWindows()) {
-            Thread.sleep(10_000); // TODO: Log file is still open on Windows so JenkinsRule cannot be cleaned up.
-        }
     }
 
     @Issue("JENKINS-41339")
