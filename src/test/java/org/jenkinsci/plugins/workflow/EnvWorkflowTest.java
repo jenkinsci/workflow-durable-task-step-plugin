@@ -43,8 +43,6 @@ public class EnvWorkflowTest {
 
     /**
      * Verifies if NODE_NAME environment variable is available on a slave node and on master.
-     *
-     * @throws Exception
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
@@ -53,23 +51,23 @@ public class EnvWorkflowTest {
         p.setDefinition(new CpsFlowDefinition(
             "node('master') {\n" +
             "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n"
-        ));
+            "}\n",
+            true));
         r.assertLogContains("My name on master is master using labels master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +
             "  echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n"
-        ));
+            "}\n",
+            true));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
         r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition( // JENKINS-41446 ensure variable still available in a ws step
             "node('node-test') {\n ws('workspace/foo') {" +
             "    echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "  }\n}\n"
-        ));
+            "  }\n}\n",
+            true));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
         r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
@@ -77,8 +75,6 @@ public class EnvWorkflowTest {
 
     /**
      * Verifies if EXECUTOR_NUMBER environment variable is available on a slave node and on master.
-     *
-     * @throws Exception
      */
     @Test public void isExecutorNumberAvailable() throws Exception {
         r.jenkins.setNumExecutors(1);
@@ -88,15 +84,15 @@ public class EnvWorkflowTest {
         p.setDefinition(new CpsFlowDefinition(
                 "node('master') {\n" +
                         "  echo \"My number on master is ${env.EXECUTOR_NUMBER}\"\n" +
-                        "}\n"
-        ));
+                        "}\n",
+                true));
         r.assertLogContains("My number on master is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
                 "node('node-test') {\n" +
                         "  echo \"My number on a slave is ${env.EXECUTOR_NUMBER}\"\n" +
-                        "}\n"
-        ));
+                        "}\n",
+                true));
         r.assertLogContains("My number on a slave is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 

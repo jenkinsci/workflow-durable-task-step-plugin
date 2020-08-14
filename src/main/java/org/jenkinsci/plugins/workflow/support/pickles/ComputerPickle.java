@@ -26,7 +26,6 @@ package org.jenkinsci.plugins.workflow.support.pickles;
 
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import com.google.common.util.concurrent.ListenableFuture;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.Computer;
 import jenkins.model.Jenkins;
@@ -47,10 +46,9 @@ public class ComputerPickle extends Pickle {
     @Override
     public ListenableFuture<Computer> rehydrate(FlowExecutionOwner owner) {
         return new TryRepeatedly<Computer>(1) {
-            @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
             @Override
             protected Computer tryResolve() {
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 if (j == null) {
                     return null;
                 }

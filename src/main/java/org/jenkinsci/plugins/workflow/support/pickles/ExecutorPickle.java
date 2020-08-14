@@ -25,8 +25,10 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.Extension;
+import hudson.Main;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
@@ -47,6 +49,8 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
@@ -62,7 +66,9 @@ public class ExecutorPickle extends Pickle {
 
     private final boolean isEphemeral;
 
-    static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
+    @Restricted(NoExternalUse.class)
+    public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
@@ -119,7 +125,7 @@ public class ExecutorPickle extends Pickle {
                         // PlaceholderTask#getAssignedLabel is set to the Node name when execution starts
                         // Thus we're guaranteeing the execution began and the Node is now unknown.
                         // Theoretically it's safe to simply fail earlier when rehydrating any EphemeralNode... but we're being extra safe.
-                        if (placeholder.getCookie() != null && Jenkins.getActiveInstance().getNode(placeholder.getAssignedLabel().getName()) == null ) {
+                        if (placeholder.getCookie() != null && Jenkins.get().getNode(placeholder.getAssignedLabel().getName()) == null ) {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
                                     throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {2} is never going to appear!",

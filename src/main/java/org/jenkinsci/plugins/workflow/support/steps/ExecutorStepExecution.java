@@ -32,8 +32,8 @@ import hudson.security.Permission;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.io.Serializable;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -48,16 +48,16 @@ import static java.util.logging.Level.*;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
+import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
+import jenkins.model.NodeListener;
 import jenkins.model.queue.AsynchronousExecution;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.Timer;
 import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
-import org.acegisecurity.context.SecurityContext;
-import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
@@ -68,11 +68,14 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
+import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
+import org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -109,17 +112,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             @Override public void run() {
                 Queue.Item item = Queue.getInstance().getItem(task);
                 if (item != null) {
-                    PrintStream logger;
+                    TaskListener listener;
                     try {
-                        logger = getContext().get(TaskListener.class).getLogger();
+                        listener = getContext().get(TaskListener.class);
                     } catch (Exception x) { // IOException, InterruptedException
                         LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
                         return;
                     }
-                    logger.println("Still waiting to schedule task");
-                    String why = item.getWhy();
-                    if (why != null) {
-                        logger.println(why);
+                    listener.getLogger().println("Still waiting to schedule task");
+                    CauseOfBlockage cob = item.getCauseOfBlockage();
+                    if (cob != null) {
+                        cob.print(listener);
                     }
                 }
             }
@@ -151,7 +154,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 LOGGER.log(FINE, "no match on {0}", item);
             }
         }
-        Jenkins j = Jenkins.getInstance();
+        Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
             // if we are already running, kill the ongoing activities, which releases PlaceholderExecutable from its sleep loop
             // Similar to Executor.of, but distinct since we do not have the Executable yet:
@@ -188,7 +191,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
             }
-            Jenkins j = Jenkins.getInstance();
+            Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null) {
                 COMPUTERS: for (Computer c : j.getComputers()) {
                     for (Executor e : c.getExecutors()) {
@@ -219,7 +222,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return "waiting for " + item.task.getFullDisplayName() + " to be scheduled; blocked: " + item.getWhy();
             }
         }
-        Jenkins j = Jenkins.getInstance();
+        Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
             COMPUTERS: for (Computer c : j.getComputers()) {
                 for (Executor e : c.getExecutors()) {
@@ -248,6 +251,50 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     }
 
+    @Extension public static final class RemovedNodeListener extends NodeListener {
+        @Override protected void onDeleted(Node node) {
+            if (!RemovedNodeCause.ENABLED) {
+                return;
+            }
+            LOGGER.fine(() -> "received node deletion event on " + node.getNodeName());
+            Timer.get().schedule(() -> {
+                Computer c = node.toComputer();
+                if (c == null || c.isOnline()) {
+                    LOGGER.fine(() -> "computer for " + node.getNodeName() + " was missing or online, skipping");
+                    return;
+                }
+                LOGGER.fine(() -> "processing node deletion event on " + node.getNodeName());
+                for (Executor e : c.getExecutors()) {
+                    Queue.Executable exec = e.getCurrentExecutable();
+                    if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                        PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
+                        TaskListener listener = TaskListener.NULL;
+                        try {
+                            listener = task.context.get(TaskListener.class);
+                        } catch (Exception x) {
+                            LOGGER.log(Level.WARNING, null, x);
+                        }
+                        BodyExecution body = task.body != null ? task.body.get() : null;
+                        if (body == null) {
+                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
+                            continue;
+                        }
+                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
+                        body.cancel(new RemovedNodeCause());
+                    }
+                }
+            }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    public static final class RemovedNodeCause extends CauseOfInterruption {
+        @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
+        public static boolean ENABLED = Boolean.parseBoolean(System.getProperty(ExecutorStepExecution.class.getName() + ".REMOVED_NODE_DETECTION", "true"));
+        @Override public String getShortDescription() {
+            return "Agent was removed";
+        }
+    }
+
     /** Transient handle of a running executor task. */
     private static final class RunningTask {
         /** null until placeholder executable runs */
@@ -268,7 +315,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
         /** Shortcut for {@link #run}. */
-        private String runId;
+        private final String runId;
         /**
          * Unique cookie set once the task starts.
          * Serves multiple purposes:
@@ -277,6 +324,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * and allows {@link Launcher#kill} to work.
          */
         private String cookie;
+
+        /**
+         * Needed for {@link BodyExecution#cancel}.
+         * {@code transient} because we cannot save a {@link BodyExecution} in {@link PlaceholderTask}:
+         * {@link ExecutorPickle} is written to the stream first, which holds a {@link PlaceholderTask},
+         * and the {@link BodyExecution} holds {@link PlaceholderTask.Callback} whose {@link WorkspaceList.Lease}
+         * is not processed by {@link WorkspaceListLeasePickle} since pickles are not recursive.
+         * So we make a best effort and only try to cancel a body within the current session.
+         * @see RemovedNodeListener
+         */
+        private transient @CheckForNull WeakReference<BodyExecution> body;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
@@ -325,12 +383,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return cookie;
         }
 
-        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Label getAssignedLabel() {
             if (label == null) {
                 return null;
             } else if (label.isEmpty()) {
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 if (j == null) {
                     return null;
                 }
@@ -340,12 +397,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
-        @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
         @Override public Node getLastBuiltOn() {
             if (label == null) {
                 return null;
             }
-            Jenkins j = Jenkins.getInstance();
+            Jenkins j = Jenkins.getInstanceOrNull();
             if (j == null) {
                 return null;
             }
@@ -374,6 +430,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public Queue.Task getOwnerTask() {
+            Jenkins j = Jenkins.getInstanceOrNull();
+            if (j != null && runId != null) { // JENKINS-60389 shortcut
+                Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                if (job instanceof Queue.Task) {
+                    return (Queue.Task) job;
+                }
+            }
             Run<?,?> r = runForDisplay();
             if (r != null && r.getParent() instanceof Queue.Task) {
                 return (Queue.Task) r.getParent();
@@ -398,21 +461,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public ACL getACL() {
             try {
                 if (!context.isReady()) {
-                    return Jenkins.getActiveInstance().getACL();
+                    return Jenkins.get().getACL();
                 }
                 FlowExecution exec = context.get(FlowExecution.class);
                 if (exec == null) {
-                    return Jenkins.getActiveInstance().getACL();
+                    return Jenkins.get().getACL();
                 }
                 Queue.Executable executable = exec.getOwner().getExecutable();
                 if (executable instanceof AccessControlled) {
                     return ((AccessControlled) executable).getACL();
                 } else {
-                    return Jenkins.getActiveInstance().getACL();
+                    return Jenkins.get().getACL();
                 }
             } catch (Exception x) {
                 LOGGER.log(FINE, null, x);
-                return Jenkins.getActiveInstance().getACL();
+                return Jenkins.get().getACL();
             }
         }
 
@@ -440,11 +503,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                SecurityContext orig = ACL.impersonate(ACL.SYSTEM);
-                try {
+                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
                     return Run.fromExternalizableId(runId);
-                } finally {
-                    SecurityContextHolder.setContext(orig);
                 }
             }
             return r;
@@ -776,15 +836,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         FilePath workspace = lease.path;
                         // Cf. AbstractBuild.getEnvironment:
                         env.put("WORKSPACE", workspace.getRemote());
+                        final FilePath tempDir = WorkspaceList.tempDir(workspace);
+                        if (tempDir != null) {
+                            env.put("WORKSPACE_TMP", tempDir.getRemote()); // JENKINS-60634
+                        }
                         FlowNode flowNode = context.get(FlowNode.class);
                         if (flowNode != null) {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
-                        context.newBodyInvoker()
-                                .withContexts(exec, computer, env, workspace)
+                        body = new WeakReference<>(context.newBodyInvoker()
+                                .withContexts(exec, computer, env,
+                                    FilePathDynamicContext.createContextualObject(workspace))
                                 .withCallback(new Callback(cookie, lease))
-                                .start();
+                                .start());
                         LOGGER.log(FINE, "started {0}", cookie);
                     } else {
                         // just rescheduled after a restart; wait for task to complete
@@ -903,7 +968,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (r == null) {
                     return "";
                 }
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 String base = "";
                 if (j != null) {
                     base = Util.removeTrailingSlash(j.getRootUrl()) + "/";

@@ -34,6 +34,8 @@ import hudson.Launcher;
 import hudson.Util;
 import hudson.init.Terminator;
 import hudson.model.Node;
+import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
@@ -47,6 +49,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -58,6 +61,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import jenkins.model.Jenkins;
+import jenkins.tasks.filters.EnvVarsFilterableBuilder;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -68,12 +73,15 @@ import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -90,7 +98,7 @@ import org.kohsuke.stapler.QueryParameter;
  * When the process exits, the status code is also written to a file and ultimately results in the step passing or failing.
  * <p>Tasks can also be run on the master node, which differs only in that there is no possibility of a network failure.
  */
-public abstract class DurableTaskStep extends Step {
+public abstract class DurableTaskStep extends Step implements EnvVarsFilterableBuilder {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
@@ -249,6 +257,7 @@ public abstract class DurableTaskStep extends Step {
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
 
+        private transient TaskListener newlineSafeTaskListener;
         /** Used only during {@link #start}. */
         private transient final DurableTaskStep step;
         /** Current “live” connection to the workspace, or null if we might be offline at the moment. */
@@ -280,6 +289,8 @@ public abstract class DurableTaskStep extends Step {
         private transient boolean awaitingAsynchExit;
         /** The first throwable used to stop the task */
         private transient volatile Throwable causeOfStoppage;
+        /** If nonzero, {@link System#nanoTime} when we first discovered that the node had been removed. */
+        private transient long removedNodeDiscovered;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -296,13 +307,22 @@ public abstract class DurableTaskStep extends Step {
             if (returnStdout) {
                 durableTask.captureOutput();
             }
-            TaskListener listener = context.get(TaskListener.class);
+            TaskListener listener = listener();
             if (step.encoding != null) {
                 durableTask.charset(Charset.forName(step.encoding));
             } else {
                 durableTask.defaultCharset();
             }
-            controller = durableTask.launch(context.get(EnvVars.class), ws, context.get(Launcher.class), listener);
+            Launcher launcher = context.get(Launcher.class);
+            launcher.prepareFilterRules(context.get(Run.class), step);
+            LOGGER.log(Level.FINE, "launching task against {0} using {1}", new Object[] {ws.getChannel(), launcher});
+            try {
+                controller = durableTask.launch(context.get(EnvVars.class), ws, launcher, listener);
+                LOGGER.log(Level.FINE, "launched task");
+            } catch (Exception x) {
+                LOGGER.log(Level.FINE, "failed to launch task", x);
+                throw x;
+            }
             this.remote = ws.getRemote();
             if (USE_WATCHING) {
                 try {
@@ -317,13 +337,34 @@ public abstract class DurableTaskStep extends Step {
             return false;
         }
 
-        private @CheckForNull FilePath getWorkspace() throws AbortException {
+        private @CheckForNull FilePath getWorkspace() throws IOException, InterruptedException {
             if (ws == null) {
                 ws = FilePathUtils.find(node, remote);
                 if (ws == null) {
+                    // Part of JENKINS-49707: check whether an agent has been removed.
+                    // (Note that a Computer may be missing because a Node is offline,
+                    // and conversely after removing a Node its Computer may remain for a while.
+                    // Therefore we only fail here if _both_ are absent.)
+                    // ExecutorStepExecution.RemovedNodeListener will normally do this first, so this is a fallback.
+                    Jenkins j = Jenkins.getInstanceOrNull();
+                    if (ExecutorStepExecution.RemovedNodeCause.ENABLED && !node.isEmpty() && j != null && j.getNode(node) == null) {
+                        if (removedNodeDiscovered == 0) {
+                            LOGGER.fine(() -> "discovered that " + node + " has been removed");
+                            removedNodeDiscovered = System.nanoTime();
+                            return null;
+                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                            LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
+                            return null;
+                        } else {
+                            LOGGER.fine(() -> node + " has been removed for a while, assuming it is not coming back");
+                            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+                        }
+                    }
+                    removedNodeDiscovered = 0; // something else; reset
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
+                removedNodeDiscovered = 0;
                 if (watching) {
                     try {
                         controller.watch(ws, new HandlerImpl(this, ws, listener()), listener());
@@ -362,7 +403,14 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
-        private @Nonnull TaskListener listener() {
+        private synchronized @Nonnull TaskListener listener() {
+            if (newlineSafeTaskListener == null) {
+                newlineSafeTaskListener = new NewlineSafeTaskListener(_listener());
+            }
+            return newlineSafeTaskListener;
+        }
+
+        private @Nonnull TaskListener _listener() {
             TaskListener l;
             StepContext context = getContext();
             try {
@@ -379,6 +427,56 @@ public abstract class DurableTaskStep extends Step {
                 recurrencePeriod = 0;
             }
             return l;
+        }
+
+        /**
+         * Interprets {@link PrintStream#close} as a signal to end a final newline if necessary.
+         */
+        private static final class NewlineSafeTaskListener implements TaskListener {
+
+            private static final long serialVersionUID = 1;
+
+            private final TaskListener delegate;
+            private transient PrintStream logger;
+
+            NewlineSafeTaskListener(TaskListener delegate) {
+                this.delegate = delegate;
+            }
+
+            // Similar to DecoratedTaskListener:
+            @Override public synchronized PrintStream getLogger() {
+                if (logger == null) {
+                    LOGGER.fine("creating filtered stream");
+                    OutputStream base = delegate.getLogger();
+                    OutputStream filtered = new FilterOutputStream(base) {
+                        boolean nl = true; // empty string does not need a newline
+                        @Override public void write(int b) throws IOException {
+                            super.write(b);
+                            nl = b == '\n';
+                        }
+                        @Override public void write(byte[] b, int off, int len) throws IOException {
+                            super.write(b, off, len);
+                            if (len > 0) {
+                                nl = b[off + len - 1] == '\n';
+                            }
+                        }
+                        @Override public void close() throws IOException {
+                            LOGGER.log(Level.FINE, "calling close with nl={0}", nl);
+                            if (!nl) {
+                                super.write('\n');
+                            }
+                            flush(); // do *not* call base.close() here, unlike super.close()
+                        }
+                    };
+                    try {
+                        logger = new PrintStream(filtered, false, "UTF-8");
+                    } catch (UnsupportedEncodingException x) {
+                        throw new AssertionError(x);
+                    }
+                }
+                return logger;
+            }
+
         }
 
         private @Nonnull Launcher launcher() throws IOException, InterruptedException {
@@ -468,9 +566,11 @@ public abstract class DurableTaskStep extends Step {
             final FilePath workspace;
             try {
                 workspace = getWorkspace();
-            } catch (AbortException x) {
+            } catch (IOException | InterruptedException x) {
                 recurrencePeriod = 0;
-                getContext().onFailure(x);
+                if (causeOfStoppage == null) { // do not doubly terminate
+                    getContext().onFailure(x);
+                }
                 return;
             }
             if (workspace == null) {
@@ -561,6 +661,7 @@ public abstract class DurableTaskStep extends Step {
                     getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                 }
             }
+            listener().getLogger().close();
         }
 
         // ditto
@@ -640,7 +741,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
-            listener.getLogger().flush();
+            listener.getLogger().close();
             execution.exited(code, output);
         }
 
