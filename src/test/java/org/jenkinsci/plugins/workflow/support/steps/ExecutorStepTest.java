@@ -323,7 +323,6 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore("TODO: Flaky on ci.jenkins.io")
     @Test public void buildShellScriptAcrossDisconnect() throws Exception {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
@@ -372,7 +371,6 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore("TODO: Flaky on ci.jenkins.io")
     @Issue({"JENKINS-41854", "JENKINS-50504"})
     @Test
     public void contextualizeFreshFilePathAfterAgentReconnection() throws Exception {
