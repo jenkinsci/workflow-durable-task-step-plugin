@@ -36,6 +36,9 @@
     <version>${revision}${changelist}</version>
     <packaging>hpi</packaging>
     <name>Pipeline: Nodes and Processes</name>
+    <description>
+       Pipeline steps locking agents and workspaces, and running external processes that may survive a Jenkins restart or agent reconnection.
+    </description>
     <url>https://github.com/jenkinsci/workflow-durable-task-step-plugin</url>
     <licenses>
         <license>
