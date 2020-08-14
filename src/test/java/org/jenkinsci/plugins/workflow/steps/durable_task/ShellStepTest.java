@@ -185,7 +185,7 @@ public class ShellStepTest {
         foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ?
             "node {bat($/:loop\r\n" +
                 "echo . >" + tmp + "\r\n" +
-                "ping -n 2 127.0.0.1\r\n" + // http://stackoverflow.com/a/4317036/12916
+                "ping -n 2 127.0.0.1>nul\r\n" + // http://stackoverflow.com/a/4317036/12916
                 "goto :loop/$)}" :
             "node {sh 'while true; do touch " + tmp + "; sleep 1; done'}", true));
 
@@ -202,7 +202,6 @@ public class ShellStepTest {
         b.getExecutor().interrupt();
 
         // touching should have stopped
-        System.err.println("About to check if " + tmp + " is still being touched");
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
         ensureForWhile(5000, tmp, tmpFile -> {
             try {
@@ -211,7 +210,6 @@ public class ShellStepTest {
                 throw new UncheckedIOException(e);
             }
         });
-        System.err.println("Verified that " + tmp + " is no longer being touched");
 
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
         if (Functions.isWindows()) {
@@ -775,7 +773,6 @@ public class ShellStepTest {
         long goal = System.currentTimeMillis()+timeout;
         while (System.currentTimeMillis()<goal) {
             if (!predicate.test(o)) {
-                System.err.println("Predicate failed for object: " + o);
                 throw new AssertionError(predicate);
             }
             Thread.sleep(100);
