@@ -34,10 +34,12 @@ import hudson.model.AbstractProject;
 import hudson.model.AutoCompletionCandidates;
 import hudson.model.Computer;
 import hudson.model.Executor;
+import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Run;
 import hudson.model.TaskListener;
+import hudson.model.labels.LabelExpression;
 import hudson.util.FormValidation;
 import java.io.Serializable;
 import java.util.Set;
@@ -49,6 +51,7 @@ import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 
@@ -95,22 +98,12 @@ public final class ExecutorStep extends Step implements Serializable {
             return true;
         }
 
-        // TODO copied from AbstractProjectDescriptor
         public AutoCompletionCandidates doAutoCompleteLabel(@QueryParameter String value) {
-            AutoCompletionCandidates c = new AutoCompletionCandidates();
-            Jenkins j = Jenkins.getInstanceOrNull();
-            if (j != null) {
-                for (Label label : j.getLabels()) {
-                    if (label.getName().startsWith(value)) {
-                        c.add(label.getName());
-                    }
-                }
-            }
-            return c;
+            return LabelExpression.autoComplete(value);
         }
 
-        public FormValidation doCheckLabel(@QueryParameter String value) {
-            return AbstractProject.AbstractProjectDescriptor.validateLabelExpression(value, /* LabelValidator does not support Job */null);
+        public FormValidation doCheckLabel(@AncestorInPath Job<?, ?> job, @QueryParameter String value) {
+            return LabelExpression.validate(value, job);
         }
 
         @Override public Set<? extends Class<?>> getRequiredContext() {
