@@ -199,6 +199,10 @@ public class ShellStepTest {
 
         b.getExecutor().interrupt();
 
+        // It can take a while for the process to exit on Windows (see JENKINS-59152), so we wait for the build to
+        // complete and confirm that the process is no longer running after the build has already completed.
+        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+
         // touching should have stopped
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
         ensureForWhile(5000, tmp, tmpFile -> {
@@ -208,8 +212,6 @@ public class ShellStepTest {
                 throw new UncheckedIOException(e);
             }
         });
-
-        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
     }
 
     @Issue("JENKINS-41339")
