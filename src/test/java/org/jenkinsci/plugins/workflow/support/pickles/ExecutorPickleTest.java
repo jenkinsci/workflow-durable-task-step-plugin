@@ -60,7 +60,7 @@ public class ExecutorPickleTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     //@Rule public LoggerRule logging = new LoggerRule().record(Queue.class, Level.FINE);
 
-    @Test public void canceledQueueItem() throws Exception {
+    @Test public void canceledQueueItem() {
         r.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = r.j.createSlave(Label.get("remote"));
@@ -121,7 +121,7 @@ public class ExecutorPickleTest {
      *  I.E. cases where the {@link RetentionStrategy} is {@link RetentionStrategy#NOOP}.
      */
     @Issue("JENKINS-36013")
-    @Test public void normalNodeDisappearance() throws Exception {
+    @Test public void normalNodeDisappearance() {
         r.addStep(new Statement() {
             // Start up a build that needs executor and then reboot and take the node offline
             @Override public void evaluate() throws Throwable {

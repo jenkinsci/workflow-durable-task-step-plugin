@@ -54,7 +54,7 @@ public class BuildQueueTasksTest {
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
 
     @Issue("JENKINS-28649")
-    @Test public void queueAPI() throws Exception {
+    @Test public void queueAPI() {
         // This is implicitly testing ExecutorStepExecution$PlaceholderTask as exported bean
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
@@ -69,7 +69,7 @@ public class BuildQueueTasksTest {
     }
 
     @Issue("JENKINS-28649")
-    @Test public void queueAPIRestartable() throws Exception {
+    @Test public void queueAPIRestartable() {
         // This is implicitly testing AfterRestartTask as exported bean
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
@@ -91,7 +91,7 @@ public class BuildQueueTasksTest {
     }
 
     @Issue("JENKINS-28649")
-    @Test public void computerAPI() throws Exception {
+    @Test public void computerAPI() {
         // This is implicitly testing ExecutorStepExecution$PlaceholderTask$PlaceholderExecutable as exported bean
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {

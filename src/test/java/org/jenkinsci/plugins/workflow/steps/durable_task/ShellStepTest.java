@@ -249,7 +249,7 @@ public class ShellStepTest {
     }
     public static class NiceStep extends Step {
         @DataBoundConstructor public NiceStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
+        @Override public StepExecution start(StepContext context) {
             return new Execution(context);
         }
         public static class Execution extends StepExecution {
@@ -528,7 +528,7 @@ public class ShellStepTest {
     public static final class MarkUpStep extends Step {
         @DataBoundSetter public boolean smart;
         @DataBoundConstructor public MarkUpStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
+        @Override public StepExecution start(StepContext context) {
             return new Exec(context, smart);
         }
         private static final class Exec extends StepExecution {
@@ -760,7 +760,7 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-62014")
-    @Test public void ensureTypes() throws Exception {
+    @Test public void ensureTypes() {
         final List<Descriptor> descriptors = BuilderUtil.allDescriptors();
 
         MatcherAssert.assertThat(descriptors , containsInAnyOrder(

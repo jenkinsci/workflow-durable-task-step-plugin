@@ -137,7 +137,7 @@ public class ExecutorStepTest {
      * This ensures that the context variable overrides are working as expected, and
      * that they are persisted and resurrected.
      */
-    @Test public void buildShellScriptOnSlave() throws Exception {
+    @Test public void buildShellScriptOnSlave() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
@@ -185,7 +185,7 @@ public class ExecutorStepTest {
      * This ensures that the context variable overrides are working as expected, and
      * that they are persisted and resurrected.
      */
-    @Test public void buildShellScriptWithPersistentProcesses() throws Exception {
+    @Test public void buildShellScriptWithPersistentProcesses() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
@@ -234,7 +234,7 @@ public class ExecutorStepTest {
         }
     }
 
-    @Test public void buildShellScriptAcrossRestart() throws Exception {
+    @Test public void buildShellScriptAcrossRestart() {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
@@ -287,7 +287,7 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-52165")
-    @Test public void shellOutputAcrossRestart() throws Exception {
+    @Test public void shellOutputAcrossRestart() {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         // TODO does not assert anything in watch mode, just informational.
         // There is no way for FileMonitoringTask.Watcher to know when content has been written through to the sink
@@ -329,7 +329,7 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void buildShellScriptAcrossDisconnect() throws Exception {
+    @Test public void buildShellScriptAcrossDisconnect() {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
@@ -380,7 +380,7 @@ public class ExecutorStepTest {
 
     @Issue({"JENKINS-41854", "JENKINS-50504"})
     @Test
-    public void contextualizeFreshFilePathAfterAgentReconnection() throws Exception {
+    public void contextualizeFreshFilePathAfterAgentReconnection() {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         story.addStep(new Statement() {
             @SuppressWarnings("SleepWhileInLoop")
@@ -459,7 +459,7 @@ public class ExecutorStepTest {
         }
     }
 
-    @Test public void buildShellScriptQuick() throws Exception {
+    @Test public void buildShellScriptQuick() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 DumbSlave s = story.j.createOnlineSlave();
@@ -477,7 +477,7 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void acquireWorkspace() throws Exception {
+    @Test public void acquireWorkspace() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
                 String slaveRoot = tmp.newFolder().getPath();
@@ -586,7 +586,7 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void detailsExported() throws Exception {
+    @Test public void detailsExported() {
         story.addStep(new Statement() {
             @Override
             public void evaluate() throws Throwable {
@@ -1208,7 +1208,7 @@ public class ExecutorStepTest {
 
     @Test
     @Issue("JENKINS-60634")
-    public void tempDirVariable() throws Exception {
+    public void tempDirVariable() {
         story.then(r -> {
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node {if (isUnix()) {sh 'set -u && touch \"$WORKSPACE_TMP/x\"'} else {bat(/echo ok > \"%WORKSPACE_TMP%\\x\"/)}}", true));
