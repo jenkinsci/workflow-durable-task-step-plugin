@@ -191,7 +191,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null) {
-                COMPUTERS: for (Computer c : j.getComputers()) {
+                for (Computer c : j.getComputers()) {
                     for (Executor e : c.getExecutors()) {
                         Queue.Executable exec = e.getCurrentExecutable();
                         if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
@@ -222,7 +222,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
         Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
-            COMPUTERS: for (Computer c : j.getComputers()) {
+            for (Computer c : j.getComputers()) {
                 for (Executor e : c.getExecutors()) {
                     Queue.Executable exec = e.getCurrentExecutable();
                     if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
