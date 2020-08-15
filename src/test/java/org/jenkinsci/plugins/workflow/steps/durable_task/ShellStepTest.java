@@ -302,7 +302,7 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
-        assertEquals(null, s.getLabel());
+        assertNull(s.getLabel());
 
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
@@ -311,7 +311,7 @@ public class ShellStepTest {
         assertTrue(s.isReturnStdout());
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
-        assertEquals(null, s.getLabel());
+        assertNull(s.getLabel());
 
         s.setReturnStdout(false);
         s.setEncoding("UTF-8");
@@ -321,7 +321,7 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
-        assertEquals(null, s.getLabel());
+        assertNull(s.getLabel());
 
         s.setLabel("Round Trip Test");
         s = new StepConfigTester(j).configRoundTrip(s);
