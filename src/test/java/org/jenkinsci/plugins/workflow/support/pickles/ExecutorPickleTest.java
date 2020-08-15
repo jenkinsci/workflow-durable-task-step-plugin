@@ -155,7 +155,7 @@ public class ExecutorPickleTest {
                     r.j.assertBuildStatus(Result.FAILURE, run);
                     Assert.assertEquals(0, r.j.jenkins.getQueue().getItems().length);
                 } catch (InterruptedIOException ioe) {
-                    Assert.fail("Waited for build to detect loss of node and it didn't!");
+                    throw new AssertionError("Waited for build to detect loss of node and it didn't!", ioe);
                 } finally {
                     if (run.isBuilding()) {
                         run.doKill();
