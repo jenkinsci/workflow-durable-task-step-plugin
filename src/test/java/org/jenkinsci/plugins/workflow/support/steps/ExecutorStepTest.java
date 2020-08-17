@@ -68,6 +68,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
 import jenkins.model.Jenkins;
@@ -777,7 +778,7 @@ public class ExecutorStepTest {
      * @return Map containing node names as key and the log text for all steps executed on that very node as value
      * @throws java.io.IOException Will be thrown in case there something went wrong while reading the log
      */
-    private Map<String, StringWriter> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
+    private Map<String, String> mapNodeNameToLogText(WorkflowRun workflowRun) throws java.io.IOException{
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
         Map<String, StringWriter> workspaceActionToLogText = new HashMap<>();
         for (FlowNode n : walker) {
@@ -804,7 +805,8 @@ public class ExecutorStepTest {
                 }
             }
         }
-        return workspaceActionToLogText;
+        return workspaceActionToLogText.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().toString()));
     }
 
 
@@ -826,20 +828,18 @@ public class ExecutorStepTest {
                             "}\n" +
                             "", true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+            Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
 
-            for (String nodeName: nodeMapping1.keySet()) {
-                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-            }
+            assertEquals(nodeMapping1, nodeMapping2);
         });
     }
 
     /**
      * Please note that any change to the node allocation algorithm may need an increase or decrease
-     * of the number of slaves in order to get a pass
+     * of the number of agents in order to get a pass
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() {
@@ -863,9 +863,9 @@ public class ExecutorStepTest {
                     "}\n" +
                     "", true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
-            // possibly the number of dumb slaves has to be adjusted in that case
+            // possibly the number of agents has to be adjusted in that case
             assertEquals(nodeMapping1.size(), 2);
 
             p.setDefinition(new CpsFlowDefinition("" +
@@ -881,18 +881,16 @@ public class ExecutorStepTest {
                     "}\n" +
                     "", true));
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
+            Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
 
-            for (String nodeName: nodeMapping1.keySet()) {
-                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-            }
+            assertEquals(nodeMapping1, nodeMapping2);
         });
     }
 
     /**
      * Ensure node reuse works from within parallel block without using stages
      * Please note that any change to the node allocation algorithm may need an increase or decrease
-     * of the number of slaves in order to get a pass
+     * of the number of agents in order to get a pass
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() {
@@ -924,10 +922,10 @@ public class ExecutorStepTest {
                     "})\n" +
                     "", true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
-            // possibly the number of dumb slaves has to be adjusted in that case
+            // possibly the number of agents has to be adjusted in that case
             assertEquals(nodeMapping1.size(), 2);
 
             // 2: update script to force reversed order for node blocks; shall still pick the same nodes
@@ -949,18 +947,15 @@ public class ExecutorStepTest {
                     "})\n" +
                     "", true));
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
-
-            for (String nodeName: nodeMapping1.keySet()) {
-                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-            }
+            Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
+            assertEquals(nodeMapping1, nodeMapping2);
         });
     }
 
     /**
      * Ensure node reuse works from within parallel blocks which use the same stage names
      * Please note that any change to the node allocation algorithm may need an increase or decrease
-     * of the number of slaves in order to get a pass
+     * of the number of agents in order to get a pass
      */
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() {
@@ -993,10 +988,10 @@ public class ExecutorStepTest {
                     "})\n" +
                     "", true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping1 = mapNodeNameToLogText(run1);
+            Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
-            // possibly the number of dumb slaves has to be adjusted in that case
+            // possibly the number of agents has to be adjusted in that case
             assertEquals(nodeMapping1.size(), 2);
 
             // update script to force reversed order for node blocks; shall still pick the same nodes
@@ -1023,11 +1018,8 @@ public class ExecutorStepTest {
                     "", true));
 
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping2 = mapNodeNameToLogText(run2);
-
-            for (String nodeName: nodeMapping1.keySet()) {
-                assertEquals(nodeMapping1.get(nodeName).toString(), nodeMapping2.get(nodeName).toString());
-            }
+            Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
+            assertEquals(nodeMapping1, nodeMapping2);
         });
     }
 
@@ -1042,7 +1034,7 @@ public class ExecutorStepTest {
             WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
             WorkflowRun run = r.buildAndAssertSuccess(p);
-            Map<String, StringWriter> nodeMapping = mapNodeNameToLogText(run);
+            Map<String, String> nodeMapping = mapNodeNameToLogText(run);
 
             // if the node was reused every time we'll only have one node mapping entry
             assertEquals(nodeMapping.size(), 1);
