@@ -494,21 +494,19 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             if (workspace != null) {
                 listener().getLogger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
-                stopTask = Timer.get().schedule(new Runnable() {
-                    @Override public void run() {
-                        stopTask = null;
-                        if (recurrencePeriod > 0) {
-                            recurrencePeriod = 0;
-                            listener().getLogger().println("After " + REMOTE_TIMEOUT + "s process did not stop");
-                            getContext().onFailure(cause);
-                            try {
-                                FilePath workspace = getWorkspace();
-                                if (workspace != null) {
-                                    controller.cleanup(workspace);
-                                }
-                            } catch (IOException | InterruptedException x) {
-                                Functions.printStackTrace(x, listener().getLogger());
+                stopTask = Timer.get().schedule(() -> {
+                    stopTask = null;
+                    if (recurrencePeriod > 0) {
+                        recurrencePeriod = 0;
+                        listener().getLogger().println("After " + REMOTE_TIMEOUT + "s process did not stop");
+                        getContext().onFailure(cause);
+                        try {
+                            FilePath taskWorkspace = getWorkspace();
+                            if (taskWorkspace != null) {
+                                controller.cleanup(taskWorkspace);
                             }
+                        } catch (IOException | InterruptedException x) {
+                            Functions.printStackTrace(x, listener().getLogger());
                         }
                     }
                 }, REMOTE_TIMEOUT, TimeUnit.SECONDS);

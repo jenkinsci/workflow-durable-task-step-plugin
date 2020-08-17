@@ -109,22 +109,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
         getContext().get(FlowNode.class).addAction(new QueueItemActionImpl(waitingItem.getId()));
 
-        Timer.get().schedule(new Runnable() {
-            @Override public void run() {
-                Queue.Item item = Queue.getInstance().getItem(task);
-                if (item != null) {
-                    TaskListener listener;
-                    try {
-                        listener = getContext().get(TaskListener.class);
-                    } catch (Exception x) { // IOException, InterruptedException
-                        LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
-                        return;
-                    }
-                    listener.getLogger().println("Still waiting to schedule task");
-                    CauseOfBlockage cob = item.getCauseOfBlockage();
-                    if (cob != null) {
-                        cob.print(listener);
-                    }
+        Timer.get().schedule(() -> {
+            Queue.Item item = Queue.getInstance().getItem(task);
+            if (item != null) {
+                TaskListener listener;
+                try {
+                    listener = getContext().get(TaskListener.class);
+                } catch (Exception x) { // IOException, InterruptedException
+                    LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
+                    return;
+                }
+                listener.getLogger().println("Still waiting to schedule task");
+                CauseOfBlockage cob = item.getCauseOfBlockage();
+                if (cob != null) {
+                    cob.print(listener);
                 }
             }
         }, 15, TimeUnit.SECONDS);
@@ -194,7 +192,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null) {
-                COMPUTERS: for (Computer c : j.getComputers()) {
+                for (Computer c : j.getComputers()) {
                     for (Executor e : c.getExecutors()) {
                         Queue.Executable exec = e.getCurrentExecutable();
                         if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
@@ -225,7 +223,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
         Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
-            COMPUTERS: for (Computer c : j.getComputers()) {
+            for (Computer c : j.getComputers()) {
                 for (Executor e : c.getExecutors()) {
                     Queue.Executable exec = e.getCurrentExecutable();
                     if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
@@ -310,7 +308,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {
 
         /** keys are {@link #cookie}s */
-        private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
+        private static final Map<String,RunningTask> runningTasks = new HashMap<>();
 
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
@@ -731,23 +729,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
                 assert runningTask.launcher != null;
-                Timer.get().submit(new Runnable() { // JENKINS-31614
-                    @Override public void run() {
-                        execution.completed(null);
-                    }
-                });
-                Computer.threadPoolForRemoting.submit(new Runnable() { // JENKINS-34542, JENKINS-45553
-                    @Override
-                    public void run() {
-                        try {
-                            runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
-                        } catch (ChannelClosedException x) {
-                            // fine, Jenkins was shutting down
-                        } catch (RequestAbortedException x) {
-                            // slave was exiting; too late to kill subprocesses
-                        } catch (Exception x) {
-                            LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
-                        }
+                Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
+                Computer.threadPoolForRemoting.submit(() -> { // JENKINS-34542, JENKINS-45553
+                    try {
+                        runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
+                    } catch (ChannelClosedException x) {
+                        // fine, Jenkins was shutting down
+                    } catch (RequestAbortedException x) {
+                        // slave was exiting; too late to kill subprocesses
+                    } catch (Exception x) {
+                        LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
                     }
                 });
             }
@@ -888,18 +879,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             }
                             LOGGER.log(FINE, "interrupted {0}", cookie);
                             // TODO save the BodyExecution somehow and call .cancel() here; currently we just interrupt the build as a whole:
-                            Timer.get().submit(new Runnable() { // JENKINS-46738
-                                @Override public void run() {
-                                    Executor masterExecutor = r.getExecutor();
-                                    if (masterExecutor != null) {
-                                        masterExecutor.interrupt();
-                                    } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                        Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
-                                        if (thisExecutor != null) {
-                                            thisExecutor.recordCauseOfInterruption(r, _listener);
-                                        }
-                                        completed(null);
+                            Timer.get().submit(() -> { // JENKINS-46738
+                                Executor masterExecutor = r.getExecutor();
+                                if (masterExecutor != null) {
+                                    masterExecutor.interrupt();
+                                } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                    Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
+                                    if (thisExecutor != null) {
+                                        thisExecutor.recordCauseOfInterruption(r, _listener);
                                     }
+                                    completed(null);
                                 }
                             });
                         }

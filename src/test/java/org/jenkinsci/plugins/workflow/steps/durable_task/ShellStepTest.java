@@ -91,7 +91,12 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertTrue;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
@@ -244,7 +249,7 @@ public class ShellStepTest {
     }
     public static class NiceStep extends Step {
         @DataBoundConstructor public NiceStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
+        @Override public StepExecution start(StepContext context) {
             return new Execution(context);
         }
         public static class Execution extends StepExecution {
@@ -297,7 +302,7 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
-        assertEquals(null, s.getLabel());
+        assertNull(s.getLabel());
 
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
@@ -306,7 +311,7 @@ public class ShellStepTest {
         assertTrue(s.isReturnStdout());
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
-        assertEquals(null, s.getLabel());
+        assertNull(s.getLabel());
 
         s.setReturnStdout(false);
         s.setEncoding("UTF-8");
@@ -316,7 +321,7 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
-        assertEquals(null, s.getLabel());
+        assertNull(s.getLabel());
 
         s.setLabel("Round Trip Test");
         s = new StepConfigTester(j).configRoundTrip(s);
@@ -523,7 +528,7 @@ public class ShellStepTest {
     public static final class MarkUpStep extends Step {
         @DataBoundSetter public boolean smart;
         @DataBoundConstructor public MarkUpStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
+        @Override public StepExecution start(StepContext context) {
             return new Exec(context, smart);
         }
         private static final class Exec extends StepExecution {
@@ -755,7 +760,7 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-62014")
-    @Test public void ensureTypes() throws Exception {
+    @Test public void ensureTypes() {
         final List<Descriptor> descriptors = BuilderUtil.allDescriptors();
 
         MatcherAssert.assertThat(descriptors , containsInAnyOrder(
