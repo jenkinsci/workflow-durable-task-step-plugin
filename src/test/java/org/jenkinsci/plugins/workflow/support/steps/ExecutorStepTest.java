@@ -64,6 +64,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -427,10 +428,16 @@ public class ExecutorStepTest {
                 String workspacePath = actions.get(0).getWorkspace().getRemote();
                 assertWorkspaceLocked(computer, workspacePath);
                 LOGGER.info("killing agent");
-                killJnlpProc();
+                jnlpProc.destroyForcibly();
+                long lastMessageMillis = System.currentTimeMillis();
                 while (computer.isOnline()) {
+                    if (TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - lastMessageMillis) > 30) {
+                        LOGGER.info(() -> "Waiting for " + computer.getNode() + " to go offline. JNLP Process is " + (jnlpProc.isAlive() ? "alive" : "not alive"));
+                        lastMessageMillis = System.currentTimeMillis();
+                    }
                     Thread.sleep(100);
                 }
+                jnlpProc = null;
                 LOGGER.info("restarting agent");
                 startJnlpProc();
                 while (computer.isOffline()) {
