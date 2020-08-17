@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.36
+2020 Aug 17
+
+- New feature: Add support for global build step env var filters ([JENKINS-62014](https://issues.jenkins-ci.org/browse/JENKINS-62014))
+- New feature: Bind an environment variable named WORKSPACE_TMP in the `node` and `ws` steps that points to a temporary directory associated with the workspace as long as the workspace is not a filesystem root ([JENKINS-60634](https://issues.jenkins-ci.org/browse/JENKINS-60634), [JENKINS-61197](https://issues.jenkins-ci.org/browse/JENKINS-61197))
+- Fix: When using the snippet generator for the `sh`, `bat`, `powershell`, or `pwsh` steps, `label: ''` was unnecessarily added to the Groovy output even when no label was specified ([PR 121](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/121))
+- Fix: Do not load builds from disk when computing the affinity key for the `node` step after a Jenkins restart ([JENKINS-60389](https://issues.jenkins-ci.org/browse/JENKINS-60389))
+- Improvement: Allow messages printed to build logs when the `node` step is waiting on an agent to display rich text such as hyperlinks ([PR 134](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/134))
+- Improvement: Update plugin description ([PR 100](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/100))
+- Internal: **Update minimum required Jenkins version to 2.248**, update parent POM and update dependencies ([PR 127](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/127), [PR 137](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/137))
+- Internal: Use new APIs from Jenkins core to autocomplete and validate labels for the `node` step in the snippet generator ([JENKINS-26097](https://issues.jenkins-ci.org/browse/JENKINS-26097))
+- Internal: Replace usage of deprecated APIs and general code cleanup ([PR 133](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/133), [PR 140](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/140))
+- Internal: Remove redundant security warnings from README ([PR 124](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/124))
+
 ## 2.35
 2019 Nov 01
 
