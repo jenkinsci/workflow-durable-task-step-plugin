@@ -8,7 +8,6 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
-import hudson.model.AbstractBuild;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
@@ -301,8 +300,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     private static final class RunningTask {
         /** null until placeholder executable runs */
         @Nullable AsynchronousExecution execution;
+        List<AsynchronousExecution> subtaskExecutions;
         /** null until placeholder executable runs */
         @Nullable Launcher launcher;
+
+        RunningTask() {
+            subtaskExecutions = new ArrayList<>();
+        }
+
+        synchronized void addExecution(AsynchronousExecution execution) {
+            subtaskExecutions.add(execution);
+        }
     }
 
     private static final String COOKIE_VAR = "JENKINS_NODE_COOKIE";
@@ -345,6 +353,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed. */
         private transient boolean stopping;
 
+        private boolean mainExecutionInited = false;
+
         PlaceholderTask(StepContext context, String label, int weight) throws IOException, InterruptedException {
             this.context = context;
             this.label = label;
@@ -360,7 +370,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         private Object readResolve() {
-            if (cookie != null) {
+            if (cookie != null && mainExecutionInited) {
                 synchronized (runningTasks) {
                     runningTasks.put(cookie, new RunningTask());
                 }
@@ -738,7 +748,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
                 assert runningTask.launcher != null;
-                Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
+                completeExecution(execution); // JENKINS-31614
+                for (int i = 0; i < runningTask.subtaskExecutions.size(); i++) {
+                    completeExecution(runningTask.subtaskExecutions.get(i));
+                }
                 Computer.threadPoolForRemoting.submit(() -> { // JENKINS-34542, JENKINS-45553
                     try {
                         runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
@@ -753,7 +766,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
-        class PlaceholderSubTask implements SubTask {
+        private static void completeExecution(AsynchronousExecution e) {
+            Timer.get().submit(() -> { e.completed(null); });
+        }
+
+        class PlaceholderSubTask implements SubTask, ContinuedTask, Serializable {
             public Queue.Executable createExecutable() throws IOException {
                 return new PlaceholderSubTaskExecutable();
             }
@@ -778,26 +795,101 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return PlaceholderTask.this.getDisplayName();
             }
 
-            class PlaceholderSubTaskExecutable implements Queue.Executable {
-                private final Executor executor = Executor.currentExecutor();
+            @Override
+            public boolean isContinued() {
+                return PlaceholderTask.this.isContinued();
+            }
 
-                @Nonnull
-                public SubTask getParent() {
-                    return PlaceholderTask.this;
+            @Override
+            public String getName() {
+                return PlaceholderTask.this.getName();
+            }
+
+            @Override
+            public String getFullDisplayName() {
+                return PlaceholderTask.this.getDisplayName();
+            }
+
+            @Override
+            public void checkAbortPermission() {
+                PlaceholderTask.this.checkAbortPermission();
+            }
+
+            @Override
+            public boolean hasAbortPermission() {
+                return PlaceholderTask.this.hasAbortPermission();
+            }
+
+            @Override
+            public String getUrl() {
+                return PlaceholderTask.this.getUrl();
+            }
+
+            @ExportedBean
+            private final class PlaceholderSubTaskExecutable implements ContinuableExecutable {
+
+                @Override public SubTask getParent() {
+                    return PlaceholderSubTask.this;
                 }
 
-                public AbstractBuild<?,?> getBuild() {
-                    return (AbstractBuild<?,?>)executor.getCurrentWorkUnit().context.getPrimaryWorkUnit().getExecutable();
-                }
+                @Override public void run() {
+                    final Run<?, ?> r;
 
-                public void run() {
-                    // nothing. we just waste time
+                    try {
+                        r = context.get(Run.class);
+                    } catch (Exception x) {
+                        context.onFailure(x);
+                        return;
+                    }
+
+                    AsynchronousExecution execution = new AsynchronousExecution() {
+                        @Override public void interrupt(boolean forShutdown) {
+                            if (forShutdown) {
+                                return;
+                            }
+                            LOGGER.log(FINE, "PlaceholderSubtaskExecutable interrupted {0}", cookie);
+                            Timer.get().submit(() -> {
+                                Executor masterExecutor = r.getExecutor();
+                                if (masterExecutor != null) {
+                                    masterExecutor.interrupt();
+                                } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                    completed(null);
+                                }
+                            });
+                        }
+                        @Override public boolean blocksRestart() {
+                            return false;
+                        }
+                        @Override public boolean displayCell() {
+                            return true;
+                        }
+                    };
+
+                    synchronized (runningTasks) {
+                        if (cookie == null) {
+                            // First time around.
+                            cookie = UUID.randomUUID().toString();
+                            runningTasks.put(cookie, new RunningTask());
+                        }
+
+                        runningTasks.get(cookie).addExecution(execution);
+                    }
+
+                    throw execution;
                 }
 
                 @Override public long getEstimatedDuration() {
-                    return PlaceholderTask.this.getEstimatedDuration();
+                    return getParent().getEstimatedDuration();
                 }
 
+                @Override
+                public boolean willContinue() {
+                    synchronized (runningTasks) {
+                        return runningTasks.containsKey(cookie);
+                    }
+                }
+
+                private static final long serialVersionUID = 1L;
             }
         }
 
@@ -849,9 +941,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     listener = context.get(TaskListener.class);
                     launcher = node.createLauncher(listener);
                     r = context.get(Run.class);
-                    if (cookie == null) {
-                        // First time around.
-                        cookie = UUID.randomUUID().toString();
+                    if (!mainExecutionInited) {
+                        synchronized (runningTasks) {
+                            if (cookie == null) {
+                                // First time around.
+                                cookie = UUID.randomUUID().toString();
+                                runningTasks.put(cookie, new RunningTask());
+                            }
+                            mainExecutionInited = true;
+                        }
+
                         // Switches the label to a self-label, so if the executable is killed and restarted via ExecutorPickle, it will run on the same node:
                         label = computer.getName();
 
@@ -867,9 +966,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
                         env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
 
-                        synchronized (runningTasks) {
-                            runningTasks.put(cookie, new RunningTask());
-                        }
                         // For convenience, automatically allocate a workspace, like WorkspaceStep would:
                         Job<?,?> j = r.getParent();
                         if (!(j instanceof TopLevelItem)) {
