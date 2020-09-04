@@ -770,7 +770,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             Timer.get().submit(() -> { e.completed(null); });
         }
 
-        class PlaceholderSubTask implements SubTask, ContinuedTask, Serializable {
+        class PlaceholderSubTask implements SubTask, ContinuedTask {
             public Queue.Executable createExecutable() throws IOException {
                 return new PlaceholderSubTaskExecutable();
             }
