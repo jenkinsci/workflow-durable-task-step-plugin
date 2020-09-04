@@ -433,31 +433,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             List<SubTask> r = new ArrayList<SubTask>();
             r.add(this);
             for (int i = 1; i < weight; i++)
-                r.add(new SubTask() {
-                    public Queue.Executable createExecutable() throws IOException {
-                        return new ExecutableImpl(this);
-                    }
-
-                    @Override
-                    public Object getSameNodeConstraint() {
-                        // must occupy the same node as the project itself
-                        return PlaceholderTask.this;
-                    }
-
-                    @Override
-                    public long getEstimatedDuration() {
-                        return PlaceholderTask.this.getEstimatedDuration();
-                    }
-
-                    @Nonnull
-                    public Queue.Task getOwnerTask() {
-                        return PlaceholderTask.this;
-                    }
-
-                    public String getDisplayName() {
-                        return PlaceholderTask.this.getDisplayName();
-                    }
-                });
+                r.add(new PlaceholderSubTask());
             return r;
         }
 
@@ -777,6 +753,54 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        class PlaceholderSubTask implements SubTask {
+            public Queue.Executable createExecutable() throws IOException {
+                return new PlaceholderSubTaskExecutable();
+            }
+
+            @Override
+            public Object getSameNodeConstraint() {
+                // must occupy the same node as the project itself
+                return PlaceholderTask.this;
+            }
+
+            @Override
+            public long getEstimatedDuration() {
+                return PlaceholderTask.this.getEstimatedDuration();
+            }
+
+            @Nonnull
+            public Queue.Task getOwnerTask() {
+                return PlaceholderTask.this;
+            }
+
+            public String getDisplayName() {
+                return PlaceholderTask.this.getDisplayName();
+            }
+
+            class PlaceholderSubTaskExecutable implements Queue.Executable {
+                private final Executor executor = Executor.currentExecutor();
+
+                @Nonnull
+                public SubTask getParent() {
+                    return PlaceholderTask.this;
+                }
+
+                public AbstractBuild<?,?> getBuild() {
+                    return (AbstractBuild<?,?>)executor.getCurrentWorkUnit().context.getPrimaryWorkUnit().getExecutable();
+                }
+
+                public void run() {
+                    // nothing. we just waste time
+                }
+
+                @Override public long getEstimatedDuration() {
+                    return PlaceholderTask.this.getEstimatedDuration();
+                }
+
+            }
+        }
+
         /**
          * Called when the body closure is complete.
          */
@@ -1017,33 +1041,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             public boolean hasPermission(Permission permission) {
                 return getACL().hasPermission(permission);
             }
-        }
-
-        public static class ExecutableImpl implements Queue.Executable {
-            private final SubTask parent;
-            private final Executor executor = Executor.currentExecutor();
-
-            private ExecutableImpl(SubTask parent) {
-                this.parent = parent;
-            }
-
-            @Nonnull
-            public SubTask getParent() {
-                return parent;
-            }
-
-            public AbstractBuild<?,?> getBuild() {
-                return (AbstractBuild<?,?>)executor.getCurrentWorkUnit().context.getPrimaryWorkUnit().getExecutable();
-            }
-
-            public void run() {
-                // nothing. we just waste time
-            }
-
-            @Override public long getEstimatedDuration() {
-                return parent.getEstimatedDuration();
-            }
-
         }
 
         private static final long serialVersionUID = 1098885580375315588L; // as of 2.12
