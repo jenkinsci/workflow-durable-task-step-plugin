@@ -255,7 +255,7 @@ Aug 23, 2017
             disconnected nodes, and only is triggered upon restart of
             the master
     -   Added System property
-        'org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeOutForNodeMillis'
+        'org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis'
         for how long to wait before aborting builds
 -   [JENKINS-45553](http://45553@issue) - Fix a bug from
     use of Guice
