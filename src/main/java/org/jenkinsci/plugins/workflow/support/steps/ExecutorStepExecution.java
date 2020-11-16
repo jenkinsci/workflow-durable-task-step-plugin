@@ -431,9 +431,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public Queue.Task getOwnerTask() {
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null && runId != null) { // JENKINS-60389 shortcut
-                Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
-                if (job instanceof Queue.Task) {
-                    return (Queue.Task) job;
+                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
+                    Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                    if (job instanceof Queue.Task) {
+                        return (Queue.Task) job;
+                    }
                 }
             }
             Run<?,?> r = runForDisplay();
