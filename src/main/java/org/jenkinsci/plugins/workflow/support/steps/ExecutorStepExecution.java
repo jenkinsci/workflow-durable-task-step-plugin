@@ -511,6 +511,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return r;
         }
 
+        @Exported
         @Override public String getUrl() {
             // TODO ideally this would be found via FlowExecution.owner.executable, but how do we check for something with a URL? There is no marker interface for it: JENKINS-26091
             Run<?,?> r = runForDisplay();
@@ -533,10 +534,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        @Exported
         @Override public String getName() {
             return getDisplayName();
         }
 
+        @Exported
         @Override public String getFullDisplayName() {
             return getDisplayName();
         }
