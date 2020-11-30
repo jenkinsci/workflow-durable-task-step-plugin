@@ -773,7 +773,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         /**
-         * Occupies {@link Executor} while workflow uses this slave.
+         * Occupies {@link Executor} while workflow uses this build agent.
          */
         @ExportedBean
         private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {

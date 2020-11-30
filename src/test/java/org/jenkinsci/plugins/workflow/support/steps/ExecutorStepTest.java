@@ -136,7 +136,7 @@ public class ExecutorStepTest {
     @Rule public LoggerRule logging = new LoggerRule();
 
     /**
-     * Executes a shell script build on a slave.
+     * Executes a shell script build on a build agent.
      *
      * This ensures that the context variable overrides are working as expected, and
      * that they are persisted and resurrected.
@@ -183,7 +183,7 @@ public class ExecutorStepTest {
     }
 
     /**
-     * Executes a shell script build on a slave and ensures the processes are
+     * Executes a shell script build on a build agent and ensures the processes are
      * killed at the end of the run
      *
      * This ensures that the context variable overrides are working as expected, and
