@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.37
+
+Release date: 2020-11-18
+
+- Fix: Prevent build widget from breaking in cases where users have read access to a Pipeline job but not its parent ([JENKINS-63486](https://issues.jenkins.io/browse/JENKINS-63486))
+- Internal: Fix typo in changelog ([PR #142](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/142))
+
 ## 2.36
 2020 Aug 17
 

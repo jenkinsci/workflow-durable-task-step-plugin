@@ -31,6 +31,7 @@ import hudson.Functions;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
+import hudson.model.Job;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -119,6 +120,7 @@ import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
+import org.jvnet.hudson.test.MockFolder;
 import org.jvnet.hudson.test.RestartableJenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 
@@ -1213,6 +1215,30 @@ public class ExecutorStepTest {
             p.setDefinition(new CpsFlowDefinition("node {if (isUnix()) {sh 'set -u && touch \"$WORKSPACE_TMP/x\"'} else {bat(/echo ok > \"%WORKSPACE_TMP%\\x\"/)}}", true));
             r.buildAndAssertSuccess(p);
             assertTrue(WorkspaceList.tempDir(r.jenkins.getWorkspaceFor(p)).child("x").exists());
+        });
+    }
+
+    @Test
+    @Issue("JENKINS-63486")
+    public void getOwnerTaskPermissions() {
+        story.then(r -> {
+            MockFolder f = r.createFolder("f");
+            WorkflowJob p = f.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node() { semaphore('wait') }", true));
+
+            r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
+            r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy()
+                    .grant(Job.DISCOVER).onFolders(f).toEveryone()
+                    .grant(Job.READ).onItems(p).toEveryone());
+            User alice = User.get("alice", true, Collections.emptyMap());
+
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            for (Executor e : Jenkins.get().toComputer().getExecutors()) {
+                try (ACLContext context = ACL.as(alice)) {
+                    e.hasStopPermission(); // Throws AccessDeniedException before JENKINS-63486.
+                }
+            }
         });
     }
 
