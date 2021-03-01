@@ -73,6 +73,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
+import hudson.util.VersionNumber;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -864,7 +865,8 @@ public class ExecutorStepTest {
         story.then(r -> {
             // Note: for Jenkins versions > 2.65, the number of agents must be increased to 5.
             // This is due to changes in the Load Balancer (See JENKINS-60563).
-            for (int i = 0; i < 3; ++i) {
+            int totalAgents = Jenkins.getVersion().isNewerThan(new VersionNumber("2.265")) ? 5 : 3;
+            for (int i = 0; i < totalAgents; ++i) {
                 DumbSlave slave = r.createOnlineSlave();
                 slave.setLabelString("foo bar");
             }
