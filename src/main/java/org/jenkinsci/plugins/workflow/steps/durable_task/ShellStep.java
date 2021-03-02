@@ -36,7 +36,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import java.util.Map;
 
 /**
- * Runs a Bourne shell script asynchronously on a slave.
+ * Runs a Bourne shell script asynchronously on a build agent.
  */
 public final class ShellStep extends DurableTaskStep {
 
