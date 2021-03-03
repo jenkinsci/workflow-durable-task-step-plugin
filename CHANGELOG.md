@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38
+
+Release date: 2021-03-03
+
+- Fix: `ExecutorStepTest` fails due to changes in `LoadBalancer` for Jenkins versions > 2.65 ([PR #150](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/150))
+- Fix: Typo in resource directory for PowerShellCoreScriptStep ([PR #149](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/149))
+- Update user-facing documentation to use build agent terminology ([PR #148](https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/148))
+
 ## 2.37
 
 Release date: 2020-11-18
