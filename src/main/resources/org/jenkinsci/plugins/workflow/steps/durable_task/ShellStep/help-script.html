@@ -9,4 +9,33 @@
     Otherwise the system default shell will be run, using the <code>-xe</code> flags
     (you can specify <code>set +e</code> and/or <code>set +x</code> to disable those).
     </p>
+    <p>A few examples of usage include:</p>
+
+    <b>Creating an output folder</b>
+    <p><code>sh "mkdir -p output"</code></p>
+
+    <b>Returning the current directory Pipeline is running in.</b>
+    <p><code>sh "ls -la ${pwd()}"</code></p>
+
+    <b>Making HTTP requests </b>
+    <p><code>sh "curl -X POST --data-urlencode \'payload=${payload}\' ${slackURL}"</code></p>
+    
+    <b>Running tests in the same workspace that the project was built </b>
+    <p><code>sh 'mvn test'</code></p>
+
+    <b>Escaping script content from groovy interpretation </b>>
+    <p>The triple-double-quote (""") string literal syntax allows for variable/expression substitution (interpolation), so the backslash (\) is interpreted as a special character "escape".</p>
+    <p>Since the first open parentheses is not such a special character, Groovy compilation fails. If your intent is to have literal backslashes in the resulting string, you need to escape the backslashes. That is, use a double-backslash (\\) to substitute for one literal backslash</p>
+    <p><code>sh ("""
+        sed "s/(AssemblyInformationalVersion\\(\\")(.*)(\\")/\\1${productVersion}\\3/g" 
+        AssemblyInfoGlobal/AssemblyInfoGlobal.cs -r
+        """)</code>
+    </p>
+
+    <b>Adding shell script as part of Groovy interpolation </b>>
+    <p>For double quoted string, Groovy will do interpolation on the string firstly.</p>
+    <p>Because the variables are runtime variables of the shell, rather than the variables of Groovy runtime. Groovy can't find the responding value from Groovy variable stack to replace the variables during interpolation.</p>
+    <p>So you need to escape all $ if you use double quotes or simply use single quotes which does not support interpolation</p>
+    <p><code>sh(returnStdout: true, script: "cd \$it; PLAN=\$(terragrunt plan --terragrunt-source-update | landscape); 
+        echo \$PLAN; CHANGES=\$(echo \$PLAN | tail -2); echo \$CHANGES"</code></p>
 </div>
