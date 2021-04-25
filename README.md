@@ -11,7 +11,7 @@ Pipeline steps locking agents and workspaces, and running external processes tha
 
 ## Documentation
 
-The nodes and processes pluginalso called workflow durable task steps locks jenkins agents with the processes running on them, thereby adding durability to workflows. Pipelines can resume after an unforseeable restart.
+The nodes and processes plugin also called workflow durable task steps locks jenkins agents with the processes running on them, thereby adding durability to workflows. This ensures Pipelines can resume after an unforseeable restart.
 
 ### Pipelines
 
@@ -37,7 +37,7 @@ It is possible to run Jenkins pipeline on multiple agents. Pipelines that can ru
 
 A declarative pipeline with multiple agents:
 
-'''
+```
 pipeline {
     agent none
     stages {
@@ -79,10 +79,10 @@ pipeline {
         }
     }
 }
-'''
+```
 A scripted pipeline with multiple agents
 
-'''
+```
 stage('Test') {
     node('linux') { 
         checkout scm
@@ -105,10 +105,12 @@ stage('Test') {
         }
     }
 }
-'''
+```
 Refer to this [article](https://docs.cloudbees.com/docs/admin-resources/latest/automating-with-jenkinsfile/using-multiple-agents) for a detailed explanation.
 
-* [Changelog](https://github.com/jenkinsci/workflow-durable-task-step-plugin/blob/master/CHANGELOG.md)
+## Changelog
+
+[Changelog](https://github.com/jenkinsci/workflow-durable-task-step-plugin/blob/master/CHANGELOG.md)
 
 
 ## License
