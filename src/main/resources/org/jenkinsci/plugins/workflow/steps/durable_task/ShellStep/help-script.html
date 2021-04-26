@@ -22,7 +22,16 @@
     
     <b>Running tests in the same workspace that the project was built </b>
     <p><code>sh 'mvn test'</code></p>
-
+   <b>Using multi-line syntax to run several lines of script:</b>
+    <p>
+        <pre>
+    sh '''
+    echo "This is a first line of script"
+    # This is a script comment
+    echo "This is a second line"
+    '''
+        </pre>
+    </p>
     <b>Escaping script content from groovy interpretation </b>>
     <p>The triple-double-quote (""") string literal syntax allows for variable/expression substitution (interpolation), so the backslash (\) is interpreted as a special character "escape".</p>
     <p>Since the first open parentheses is not such a special character, Groovy compilation fails. If your intent is to have literal backslashes in the resulting string, you need to escape the backslashes. That is, use a double-backslash (\\) to substitute for one literal backslash</p>
