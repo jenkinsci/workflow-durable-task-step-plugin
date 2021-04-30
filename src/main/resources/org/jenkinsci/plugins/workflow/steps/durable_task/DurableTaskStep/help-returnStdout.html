@@ -28,3 +28,8 @@ Refer to the <a href="https://www.jenkins.io/doc/pipeline/steps/workflow-durable
 </code></p>
 
 <p>Use variables to store pipeline steps to encapsulate results.</p>
+<p><b>Using stdout with the bat step</b></p>
+<p>The backslashes are used to escape the quotation marks (if you need them as part 
+    of the script)
+</p>
+<p><code>bat returnStdout: true, script: '\'set\''</code></p>
