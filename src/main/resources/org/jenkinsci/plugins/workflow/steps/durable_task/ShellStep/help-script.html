@@ -14,8 +14,8 @@
     <b>Creating an output folder</b>
     <p><code>sh "mkdir -p output"</code></p>
 
-    <b>Returning the current directory Pipeline is running in.</b>
-    <p><code>sh "ls -la ${pwd()}"</code></p>
+    <b>Reporting the current directory of the Pipeline step.</b>
+    <p><code>sh 'pwd'</code></p>
 
     <b>Making HTTP requests </b>
     <p><code>sh "curl -X POST --data-urlencode \'payload=${payload}\' ${slackURL}"</code></p>
