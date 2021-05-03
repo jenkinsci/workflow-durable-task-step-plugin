@@ -17,8 +17,12 @@
     <b>Reporting the current directory of the Pipeline step.</b>
     <p><code>sh 'pwd'</code></p>
 
-    <b>Making HTTP requests </b>
-    <p><code>sh "curl -X POST --data-urlencode \'payload=${payload}\' ${slackURL}"</code></p>
+    <b>Making HTTP requests with curl (scripted Pipeline)</b>
+    <p><pre>
+    <code>def payload='payload to send'
+    def slackURL='https://example.slack.com/archives/CCQU3EHYP'
+    sh "curl -X POST --data-urlencode \"payload=${payload}\" ${slackURL}"
+    </code></pre></p>
     
     <b>Running tests in the same workspace that the project was built </b>
     <p><code>sh 'mvn test'</code></p>
@@ -32,7 +36,7 @@
     '''
         </pre>
     </p>
-    <b>Escaping script content from groovy interpretation </b>>
+    <b>Escaping script content from groovy interpolation </b>>
     <p>The triple-double-quote (""") string literal syntax allows for variable/expression substitution (interpolation), so the backslash (\) is interpreted as a special character "escape".</p>
     <p>Since the first open parentheses is not such a special character, Groovy compilation fails. If your intent is to have literal backslashes in the resulting string, you need to escape the backslashes. That is, use a double-backslash (\\) to substitute for one literal backslash</p>
     <p><code>sh ("""
