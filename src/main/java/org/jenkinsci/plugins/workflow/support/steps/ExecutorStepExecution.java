@@ -673,7 +673,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public long getEstimatedDuration() {
             Run<?,?> r = run();
-            // Not accurate if there are multiple slaves in one build, but better than nothing:
+            // Not accurate if there are multiple agents in one build, but better than nothing:
             return r != null ? r.getEstimatedDuration() : -1;
         }
 
@@ -741,7 +741,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     } catch (ChannelClosedException x) {
                         // fine, Jenkins was shutting down
                     } catch (RequestAbortedException x) {
-                        // slave was exiting; too late to kill subprocesses
+                        // agent was exiting; too late to kill subprocesses
                     } catch (Exception x) {
                         LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
                     }
