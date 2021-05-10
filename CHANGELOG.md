@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.39
+
+Release date: 2021-05-10
+
+- Internal: Jenkins terminology update ([JENKINS-65398](https://issues.jenkins.io/browse/JENKINS-65398))
+
 ## 2.38
 
 Release date: 2021-03-03
