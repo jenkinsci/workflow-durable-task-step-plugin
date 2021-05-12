@@ -105,6 +105,7 @@ import org.junit.Test;
 import org.junit.rules.ErrorCollector;
 import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
@@ -122,6 +123,7 @@ public class ShellStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
+    @Rule public FlagRule<Boolean> useWatching = new FlagRule<>(() -> DurableTaskStep.USE_WATCHING, x -> DurableTaskStep.USE_WATCHING = x);
 
     /**
      * Failure in the shell script should mark the step as red
@@ -392,7 +394,6 @@ public class ShellStepTest {
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
         DurableTaskStep.USE_WATCHING = true;
-        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
@@ -419,9 +420,6 @@ public class ShellStepTest {
         j.assertLogNotContains(password, b);
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
-        } finally {
-            DurableTaskStep.USE_WATCHING = false;
-        }
     }
     @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
@@ -495,7 +493,6 @@ public class ShellStepTest {
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
         DurableTaskStep.USE_WATCHING = true;
-        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
@@ -521,9 +518,6 @@ public class ShellStepTest {
         assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
         assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
         assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
-        } finally {
-            DurableTaskStep.USE_WATCHING = false;
-        }
     }
     public static final class MarkUpStep extends Step {
         @DataBoundSetter public boolean smart;
@@ -645,8 +639,6 @@ public class ShellStepTest {
             "    }\n" +
             "  }\n" +
             "}", true));
-        boolean origUseWatching = DurableTaskStep.USE_WATCHING;
-        try {
             for (boolean watching : new boolean[] {false, true}) {
                 DurableTaskStep.USE_WATCHING = watching;
                 String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
@@ -659,9 +651,6 @@ public class ShellStepTest {
                 errors.checkThat(log, not(containsString("watching=false[Pipeline]")));
                 errors.checkThat(log, not(containsString("watching=true[Pipeline]")));
             }
-        } finally {
-            DurableTaskStep.USE_WATCHING = origUseWatching;
-        }
     }
 
     @Issue("JENKINS-34021")
