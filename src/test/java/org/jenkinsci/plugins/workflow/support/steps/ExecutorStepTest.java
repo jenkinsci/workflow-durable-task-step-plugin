@@ -673,7 +673,7 @@ public class ExecutorStepTest {
                 assertEquals(1, items.length);
                 assertEquals(p, items[0].task.getOwnerTask());
                 assertTrue(Queue.getInstance().cancel(items[0]));
-                story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
                 story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
             }
         });
@@ -700,7 +700,7 @@ public class ExecutorStepTest {
                 assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
 
                 assertTrue(Queue.getInstance().cancel(items[0]));
-                story.j.assertBuildStatus(Result.FAILURE, story.j.waitForCompletion(b));
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
                 story.j.assertLogContains(Messages.ExecutorStepExecution_queue_task_cancelled(), b);
 
                 FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
