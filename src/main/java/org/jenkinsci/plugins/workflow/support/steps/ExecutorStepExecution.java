@@ -813,6 +813,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             env.put("NODE_NAME", label);
                         }
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
+                        env.put("EXECUTOR_COUNT", String.valueOf(computer.countExecutors()));
                         env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
 
                         synchronized (runningTasks) {
