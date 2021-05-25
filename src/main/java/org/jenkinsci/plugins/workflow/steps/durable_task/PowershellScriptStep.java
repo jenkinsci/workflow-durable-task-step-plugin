@@ -32,11 +32,11 @@ import org.kohsuke.stapler.DataBoundConstructor;
 /**
  * Asynchronous batch script execution.
  */
-public class WindowsPowerShellScriptStep extends DurableTaskStep {
+public class PowershellScriptStep extends DurableTaskStep {
 
     private final String script;
 
-    @DataBoundConstructor public WindowsPowerShellScriptStep(String script) {
+    @DataBoundConstructor public PowershellScriptStep(String script) {
         if (script == null) {
             throw new IllegalArgumentException();
         }

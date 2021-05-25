@@ -765,7 +765,7 @@ public class ShellStepTest {
 
         MatcherAssert.assertThat(descriptors , containsInAnyOrder(
                 j.jenkins.getDescriptor(Shell.class), j.jenkins.getDescriptor(BatchFile.class),
-                j.jenkins.getDescriptor(BatchScriptStep.class), j.jenkins.getDescriptor(WindowsPowerShellScriptStep.class), j.jenkins.getDescriptor(ShellStep.class), j.jenkins.getDescriptor(PowerShellCoreScriptStep.class)));
+                j.jenkins.getDescriptor(BatchScriptStep.class), j.jenkins.getDescriptor(PowershellScriptStep.class), j.jenkins.getDescriptor(ShellStep.class), j.jenkins.getDescriptor(PowerShellCoreScriptStep.class)));
     }
 
     /**
