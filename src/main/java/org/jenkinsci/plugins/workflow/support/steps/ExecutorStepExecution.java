@@ -46,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 import jenkins.model.CauseOfInterruption;
@@ -813,7 +814,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             env.put("NODE_NAME", label);
                         }
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
-                        env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
+                        env.put("NODE_LABELS", node.getAssignedLabels().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
                         synchronized (runningTasks) {
                             runningTasks.put(cookie, new RunningTask());
