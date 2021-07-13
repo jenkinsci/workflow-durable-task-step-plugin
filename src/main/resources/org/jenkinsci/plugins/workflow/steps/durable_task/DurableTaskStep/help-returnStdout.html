@@ -4,3 +4,32 @@
     (Standard error, if any, will still be printed to the log.)
     You will often want to call <code>.trim()</code> on the result to strip off a trailing newline.
 </div>
+<p>The <code>stdout</code> command is usually unchecked by default when using
+the <a href="https://www.jenkins.io/doc/book/pipeline/getting-started/#snippet-generator">pipeline syntax generator</a>. It can be used with any of the steps in the nodes and processes plugin.
+Refer to the <a href="https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/">steps reference page</a> for more information on all the steps available.</p>
+
+<p><b>An example of a declarative pipeline using the stdout argument.</b></p>
+
+<p><code>script {
+    VARIABLE = sh (
+         script: //Run script here,
+         returnStdout: true
+     ).trim()
+     echo "Example Output: ${Variable}"
+}</code></p>
+
+<p>An example of scripted pipeline(without the script block)</p>
+<p><code>
+    VARIABLE = sh (
+        script: //Run script here,
+        returnStdout: true
+    ).trim()
+    echo "Example Output: ${Variable}"
+</code></p>
+
+<p>Use variables to store pipeline steps to encapsulate results.</p>
+<p><b>Using stdout with the bat step</b></p>
+<p>The backslashes are used to escape the quotation marks (if you need them as part 
+    of the script)
+</p>
+<p><code>bat returnStdout: true, script: '\'set\''</code></p>

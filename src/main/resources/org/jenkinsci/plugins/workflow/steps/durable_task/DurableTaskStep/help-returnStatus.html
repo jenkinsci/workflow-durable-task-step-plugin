@@ -3,3 +3,23 @@
     If this option is checked, the return value of the step will instead be the status code.
     You may then compare it to zero, for example.
 </div>
+<p>The return status step is used to return the exit status of a script. 0 equals true in shell. An exit code
+    of 1 will cause jenkins to abort.
+</p>
+<p>Use the 
+    <a href="https://www.jenkins.io/doc/book/pipeline/getting-started/#snippet-generator">Pipeline Snippet Generator</a> 
+   to generate this example by checking the <code>returnStatus</code> option
+</p>
+<p><code>sh returnStatus: true, script: 'mvn test'</code></p>
+
+<p>You can use an if statement to ascertain if the exit status returned 0 or not by assigning your script to
+    a variable.
+</p>
+<p><code>int status = sh returnStatus: true, script: 'mvn test'</code></p>
+<code>
+    if (status != 0){
+        //Take Action
+    }
+</code>
+<p>While it is not advisable, use <code>set +e</code> to ignore the exit status code 1 when running shell script</p>
+<p>See <code><a href="https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/#sh-shell-script">sh</a></code> documentation for this value</p>
