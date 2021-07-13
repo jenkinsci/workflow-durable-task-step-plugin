@@ -1,5 +1,7 @@
 # Changelog
 
+* For newer versions, see [GitHub Releases](https://github.com/jenkinsci/workflow-durable-task-step-plugin/releases)
+
 ## 2.39
 
 Release date: 2021-05-10
