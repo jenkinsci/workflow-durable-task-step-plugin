@@ -49,68 +49,60 @@ import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
-import org.jvnet.hudson.test.RestartableJenkinsRule;
+import org.jvnet.hudson.test.JenkinsSessionRule;
 
 import java.io.InterruptedIOException;
 
 public class ExecutorPickleTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public RestartableJenkinsRule r = new RestartableJenkinsRule();
+    @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     //@Rule public LoggerRule logging = new LoggerRule().record(Queue.class, Level.FINE);
 
-    @Test public void canceledQueueItem() {
-        r.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                DumbSlave s = r.j.createSlave(Label.get("remote"));
-                WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
+    @Test public void canceledQueueItem() throws Throwable {
+        sessions.then(j -> {
+                DumbSlave s = j.createSlave(Label.get("remote"));
+                WorkflowJob p = j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
-                r.j.jenkins.removeNode(s);
-            }
+                j.jenkins.removeNode(s);
         });
-        r.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
+        sessions.then(j -> {
                 SemaphoreStep.success("wait/1", null);
-                WorkflowRun b = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+                WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
                 // first prints on 2.35-: hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(); 2.36+: hudson.model.Messages.Node_LabelMissing("Jenkins", "slave0")
-                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);
-                r.j.waitForCompletion(b);
+                j.waitForCompletion(b);
                 // Do not bother with assertBuildStatus; we do not really care whether it is ABORTED or FAILURE
-            }
         });
     }
 
     @Issue("JENKINS-42556")
-    @Test public void anonDiscover() {
-        r.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
-                r.j.jenkins.setSecurityRealm(r.j.createDummySecurityRealm());
-                r.j.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().
+    @Test public void anonDiscover() throws Throwable {
+        sessions.then(j -> {
+                j.jenkins.setSecurityRealm(j.createDummySecurityRealm());
+                j.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().
                     grant(Jenkins.ADMINISTER).everywhere().to("admin").
                     grant(Jenkins.READ, Item.DISCOVER).everywhere().toEveryone());
-                DumbSlave remote = r.j.createSlave("remote", null, null);
-                WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
+                DumbSlave remote = j.createSlave("remote", null, null);
+                WorkflowJob p = j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'}", true));
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
                 remote.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getById("admin", true), "hold"));
-            }
         });
-        r.addStep(new Statement() {
-            @Override public void evaluate() throws Throwable {
+        sessions.then(j -> {
                 SemaphoreStep.success("wait/1", null);
-                WorkflowJob p = r.j.jenkins.getItemByFullName("p", WorkflowJob.class);
+                WorkflowJob p = j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 assertFalse(p.getACL().hasPermission(Jenkins.ANONYMOUS, Item.READ));
                 WorkflowRun b = p.getBuildByNumber(1);
-                r.j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
-                r.j.jenkins.getNode("remote").toComputer().setTemporarilyOffline(false, null);
-                r.j.assertBuildStatusSuccess(r.j.waitForCompletion(b));
-            }
+                j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                j.jenkins.getNode("remote").toComputer().setTemporarilyOffline(false, null);
+                j.assertBuildStatusSuccess(j.waitForCompletion(b));
         });
     }
 
@@ -121,29 +113,26 @@ public class ExecutorPickleTest {
      *  I.E. cases where the {@link RetentionStrategy} is {@link RetentionStrategy#NOOP}.
      */
     @Issue("JENKINS-36013")
-    @Test public void normalNodeDisappearance() {
-        r.addStep(new Statement() {
+    @Test public void normalNodeDisappearance() throws Throwable {
+        sessions.then(j -> {
             // Start up a build that needs executor and then reboot and take the node offline
-            @Override public void evaluate() throws Throwable {
                 // Starting job first ensures we don't immediately fail if Node comes from a Cloud
                 //  and takes a min to provision
-                WorkflowJob p = r.j.createProject(WorkflowJob.class, "p");
+                WorkflowJob p = j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition("node('ghost') {semaphore 'wait'}", true));
 
-                DumbSlave s = r.j.createSlave(Label.get("ghost"));
+                DumbSlave s = j.createSlave(Label.get("ghost"));
                 System.out.println("Agent launched, waiting for semaphore");
                 SemaphoreStep.waitForStart("wait/1", p.scheduleBuild2(0).waitForStart());
-                r.j.jenkins.removeNode(s);
-            }
+                j.jenkins.removeNode(s);
         });
 
-        r.addStep(new Statement() {
+        sessions.then(j -> {
             // Start up a build and then reboot and take the node offline
-            @Override public void evaluate() throws Throwable {
-                assertEquals(0, r.j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
-                assertNull(r.j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
-                WorkflowRun run = r.j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
-                r.j.waitForMessage("Waiting to resume", run);
+                assertEquals(0, j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
+                assertNull(j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
+                WorkflowRun run = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
+                j.waitForMessage("Waiting to resume", run);
                 Thread.sleep(1000L);
                 Assert.assertTrue(run.isBuilding());
                 Assert.assertEquals("Queue should still have single build Item waiting to resume but didn't", 1, Queue.getInstance().getItems().length);
@@ -152,8 +141,8 @@ public class ExecutorPickleTest {
                     Thread.sleep(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS + 1000L);
                     Assert.assertEquals("Should have given up and killed the Task representing the resuming build", 0, Queue.getInstance().getItems().length );
                     Assert.assertFalse(run.isBuilding());
-                    r.j.assertBuildStatus(Result.FAILURE, run);
-                    Assert.assertEquals(0, r.j.jenkins.getQueue().getItems().length);
+                    j.assertBuildStatus(Result.FAILURE, run);
+                    Assert.assertEquals(0, j.jenkins.getQueue().getItems().length);
                 } catch (InterruptedIOException ioe) {
                     throw new AssertionError("Waited for build to detect loss of node and it didn't!", ioe);
                 } finally {
@@ -161,7 +150,6 @@ public class ExecutorPickleTest {
                         run.doKill();
                     }
                 }
-            }
         });
     }
 

@@ -91,12 +91,12 @@ import org.kohsuke.stapler.QueryParameter;
 /**
  * Runs a durable task, such as a shell script, typically on an agent.
  * <p>“Durable” in this context means that Jenkins makes an attempt to keep the external process running
- * even if either the Jenkins master or an agent JVM is restarted.
+ * even if either the Jenkins controller or an agent JVM is restarted.
  * Process standard output is directed to a file near the workspace, rather than holding a file handle open.
  * Whenever a Remoting connection between the two can be reëstablished,
  * Jenkins again looks for any output sent since the last time it checked.
  * When the process exits, the status code is also written to a file and ultimately results in the step passing or failing.
- * <p>Tasks can also be run on the master node, which differs only in that there is no possibility of a network failure.
+ * <p>Tasks can also be run on the built-in node, which differs only in that there is no possibility of a network failure.
  */
 public abstract class DurableTaskStep extends Step implements EnvVarsFilterableBuilder {
 
@@ -232,7 +232,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
      * which in the default {@link StreamTaskListener} implementation sends chunks of text over Remoting.
      * When the process exits, {@link #exited} is called and the step execution also ends.
      * If Jenkins is restarted in the middle, {@link #onResume} starts a new watch task.
-     * Every {@link #WATCHING_RECURRENCE_PERIOD}, the master also checks to make sure the process still seems to be running using {@link Controller#exitStatus}.
+     * Every {@link #WATCHING_RECURRENCE_PERIOD}, the controller also checks to make sure the process still seems to be running using {@link Controller#exitStatus}.
      * If the agent connection is closed, {@link #ws} will be stale
      * ({@link FilePath#channel} will be {@link Channel#isClosingOrClosed})
      * and so {@link #getWorkspace} called from {@link #check} will call {@link #getWorkspaceProblem}
@@ -244,10 +244,10 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
      * If sending output fails for any reason other than {@link ChannelClosedException},
      * {@link #problem} will attempt to record the issue but permit the step to proceed.
      * <p>In the older pull mode, available on request by {@link #USE_WATCHING} or when encountering a noncompliant {@link Controller} implementation,
-     * the master looks for process output ({@link Controller#writeLog}) and/or exit status in {@link #check} at variable intervals,
+     * the controller looks for process output ({@link Controller#writeLog}) and/or exit status in {@link #check} at variable intervals,
      * initially {@link #MIN_RECURRENCE_PERIOD} but slowing down by {@link #RECURRENCE_PERIOD_BACKOFF} up to {@link #MAX_RECURRENCE_PERIOD}.
      * Any new output will be noted in a change to the state of {@link #controller}, which gets saved to the step state in turn.
-     * If there is any connection problem to the workspace (including master restarts and Remoting disconnects),
+     * If there is any connection problem to the workspace (including controller restarts and Remoting disconnects),
      * {@link #ws} is nulled out and Jenkins waits until a fresh handle is available.
      */
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
@@ -573,7 +573,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             }
             if (workspace == null) {
                 recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
-                return; // slave not yet ready, wait for another day
+                return; // agent not yet ready, wait for another day
             }
             TaskListener listener = listener();
             try (Timeout timeout = Timeout.limit(REMOTE_TIMEOUT, TimeUnit.SECONDS)) {
@@ -665,7 +665,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         // ditto
         @Override public void problem(Exception x) {
             Functions.printStackTrace(x, listener().getLogger());
-            // note that if there is _also_ a problem in the master-side logger, PrintStream will mask it
+            // note that if there is _also_ a problem in the controller-side logger, PrintStream will mask it
         }
 
         @Override public void onResume() {
@@ -727,10 +727,10 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                 // We are giving up on this watch. Wait for some call to getWorkspace to rewatch.
                 throw x;
             } catch (Exception x) {
-                // Try to report it to the master.
+                // Try to report it to the controller.
                 try {
                     execution.problem(x);
-                    // OK, printed to log on master side, we may have lost some text but could continue.
+                    // OK, printed to log on controller side, we may have lost some text but could continue.
                 } catch (Exception x2) { // e.g., RemotingSystemException
                     // No, channel seems to be broken, give up on this watch.
                     throw x;
