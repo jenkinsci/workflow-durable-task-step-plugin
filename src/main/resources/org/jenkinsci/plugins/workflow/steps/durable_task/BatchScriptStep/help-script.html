@@ -3,3 +3,50 @@
     When using the <code>returnStdout</code> flag, you probably wish to prefix this with <code>@</code>,
     lest the command itself be included in the output.
 </div>
+
+<p>The bat step is used to run pipelines on a windows environment,
+    if your pipeline will run on a Linux environment, use the <code><a href='https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/'>sh</a></code> step.
+<p>To use the bat step, you have to first point it to the path where your bat file exists, and then 'call' command to trigger that bat file. Examples below:</p>
+<b>This example calls mybat.bat file inside the example folder, extra backslashes are always added to every backslash</b>
+<p>Use the <a href="https://www.jenkins.io/doc/book/pipeline/getting-started/#snippet-generator">Pipeline Snippet Generator</a> to generate the example</p>
+<p><code>bat 'C:\\example\\mybat.bat'</code></p>
+
+<p>An example of a declarative pipeline executing a bat step with the command set</p>
+<p><code>
+    <blockquote>
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        bat 'set'
+                    }
+                }
+            }
+        }
+    </blockquote>
+</code></p>
+
+<p>Use the <a href="https://www.jenkins.io/doc/book/pipeline/getting-started/#snippet-generator">Pipeline Snippet Generator</a> to generate this example</p>
+<p><b>Print out all the environment variables seen by Windows.</b></p>
+<p><code>echo bat(returnStdout: true, script: 'set')</code></p>
+
+<p><b>Print out the content of the PATH environment variable on Windows</b></p>
+<p><code>bat 'echo %PATH%'</code></p>
+
+<p><b>Add the keyword call when running a multi-line script and need the commands to execute sequentially
+</b></p>
+
+<p>Failure to do so will result in only the first line
+    executing. You can also use ''&'' to chain commands into a single line
+but this will make your commands hard to read and prone to mistakes.</p>
+<p>Use the <a href="https://www.jenkins.io/doc/book/pipeline/getting-started/#snippet-generator">Pipeline Snippet Generator</a> to generate this example</p>
+<p><code>
+    <blockquote>
+        bat """
+            call c:\path\to\conda activate my_env
+            cd c:\\path\\to\\scripts
+            call python test.py ${argument}
+        """
+    </blockquote>
+</code></p>
