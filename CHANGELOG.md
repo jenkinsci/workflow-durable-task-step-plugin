@@ -1,5 +1,13 @@
 # Changelog
 
+* For newer versions, see [GitHub Releases](https://github.com/jenkinsci/workflow-durable-task-step-plugin/releases)
+
+## 2.39
+
+Release date: 2021-05-10
+
+- Internal: Jenkins terminology update ([JENKINS-65398](https://issues.jenkins.io/browse/JENKINS-65398))
+
 ## 2.38
 
 Release date: 2021-03-03
@@ -164,7 +172,7 @@ Oct 24, 2018
 -   Fix: Disables
     the [JENKINS-52165](https://issues.jenkins-ci.org/browse/JENKINS-52165) changes
     in 2.22 pending fixes for issues introduced by those changes. Logs
-    are now pulled from build agents by the Jenkins master again instead
+    are now pulled from build agents by the Jenkins controller again instead
     of being pushed from build agents.
     ([JENKINS-54133](https://issues.jenkins-ci.org/browse/JENKINS-54133), [JENKINS-54081](https://issues.jenkins-ci.org/browse/JENKINS-54081),
     possibly
@@ -196,7 +204,7 @@ Sep 25, 2018
 
 -   Major Enhancement: Durable task logs are now pushed from build
     agents directly instead of being pulled from the build agent by the
-    Jenkins master. This reduces master and network resource usage and
+    Jenkins controller. This reduces controller and network resource usage and
     will be required for external logging as described in
     [JEP-210](https://github.com/jenkinsci/jep/tree/master/jep/210).
     ([JENKINS-52165](https://issues.jenkins-ci.org/browse/JENKINS-52165))
@@ -268,7 +276,7 @@ Aug 23, 2017
         by default)
         -   This ONLY happens if the Node is removed, not for simply
             disconnected nodes, and only is triggered upon restart of
-            the master
+            the controller
     -   Added System property
         'org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis'
         for how long to wait before aborting builds
