@@ -54,7 +54,7 @@ public class PowershellScriptStep extends DurableTaskStep {
     @Extension public static final class DescriptorImpl extends DurableTaskStepDescriptor {
 
         @Override public String getDisplayName() {
-            return "PowerShell Script";
+            return "Windows PowerShell Script";
         }
 
         @Override public String getFunctionName() {
