@@ -50,6 +50,7 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
 /**
@@ -68,13 +69,22 @@ public final class ExecutorStep extends Step implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private final @CheckForNull String label;
+    private int weight = 1;
 
     @DataBoundConstructor public ExecutorStep(String label) {
         this.label = Util.fixEmptyAndTrim(label);
     }
-    
+
     public @CheckForNull String getLabel() {
         return label;
+    }
+
+    @DataBoundSetter public void setWeight(int weight) {
+        this.weight = weight;
+    }
+
+    public int getWeight() {
+        return weight;
     }
 
     @Override public StepExecution start(StepContext context) throws Exception {

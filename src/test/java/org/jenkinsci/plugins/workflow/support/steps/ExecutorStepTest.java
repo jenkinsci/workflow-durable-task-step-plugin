@@ -1241,4 +1241,77 @@ public class ExecutorStepTest {
         }
     }
 
+    @Test public void heavyBuildRunning() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(2);
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node(weight: 2) { echo 'test' }", true));
+                WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+                story.j.waitForCompletion(b);
+            }
+        });
+    }
+
+    @Test public void heavyBuildRestart() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(2);
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition(
+                        "node(weight: 2) { semaphore 'wait' }", true));
+
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+            }
+        });
+
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                WorkflowJob p = (WorkflowJob) story.j.jenkins.getItem("demo");
+                WorkflowRun b = p.getLastBuild();
+                SemaphoreStep.success("wait/1", null);
+                story.j.waitForCompletion(b);
+                story.j.assertBuildStatusSuccess(b);
+            }
+        });
+    }
+
+    @Test public void heavyBuildWaiting() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(1);
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                // use weight = 10 to keep the build queued
+                p.setDefinition(new CpsFlowDefinition("node(weight: 10) { echo 'test' }", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForMessage("Still waiting to schedule task", b);
+                b.getExecutor().interrupt();
+                story.j.assertBuildStatus(Result.ABORTED, story.j.waitForCompletion(b));
+            }
+        });
+    }
+
+    @Test public void heavyBuildWaitingInQueue() throws Exception {
+        story.addStep(new Statement() {
+            @Override public void evaluate() throws Throwable {
+                DumbSlave s = story.j.createOnlineSlave();
+                s.setNumExecutors(2);
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "demo");
+                p.setDefinition(new CpsFlowDefinition("node(weight: 2) { semaphore 'wait' }", true));
+                WorkflowRun b1 = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b1);
+                WorkflowRun b2 = p.scheduleBuild2(0).waitForStart();
+                story.j.waitForMessage("Still waiting to schedule task", b2);
+                SemaphoreStep.success("wait/1", null);
+                story.j.assertBuildStatus(Result.SUCCESS, story.j.waitForCompletion(b1));
+                SemaphoreStep.waitForStart("wait/2", b2);
+                SemaphoreStep.success("wait/2", null);
+                story.j.assertBuildStatus(Result.SUCCESS, story.j.waitForCompletion(b2));
+            }
+        });
+    }
 }
