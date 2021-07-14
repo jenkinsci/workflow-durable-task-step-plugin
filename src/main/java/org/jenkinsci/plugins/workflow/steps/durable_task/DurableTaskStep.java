@@ -54,6 +54,7 @@ import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -210,7 +211,10 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
     public static long REMOTE_TIMEOUT = Integer.parseInt(System.getProperty(DurableTaskStep.class.getName() + ".REMOTE_TIMEOUT", "20"));
 
     private static ScheduledThreadPoolExecutor threadPool;
-    private static synchronized ScheduledThreadPoolExecutor threadPool() {
+    private static synchronized ScheduledExecutorService threadPool() {
+        if (USE_WATCHING) {
+            return Timer.get();
+        }
         if (threadPool == null) {
             threadPool = new ScheduledThreadPoolExecutor(25, new NamingThreadFactory(new DaemonThreadFactory(), DurableTaskStep.class.getName()));
             threadPool.setKeepAliveTime(1, TimeUnit.MINUTES);
