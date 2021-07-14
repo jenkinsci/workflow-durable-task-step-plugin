@@ -28,6 +28,7 @@ import hudson.Extension;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.PowershellScript;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 
 /**
  * Asynchronous batch script execution.
@@ -35,6 +36,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 public class PowershellScriptStep extends DurableTaskStep {
 
     private final String script;
+    public boolean loadProfile;
 
     @DataBoundConstructor public PowershellScriptStep(String script) {
         if (script == null) {
@@ -47,8 +49,19 @@ public class PowershellScriptStep extends DurableTaskStep {
         return script;
     }
 
+    public boolean isLoadProfile() {
+        return loadProfile;
+    }
+
+    @DataBoundSetter
+    public void setLoadProfile(boolean loadProfile) {
+        this.loadProfile = loadProfile;
+    }
+
     @Override protected DurableTask task() {
-        return new PowershellScript(script);
+        PowershellScript ps = new PowershellScript(script);
+        ps.setLoadProfile(loadProfile);
+        return ps;
     }
 
     @Extension public static final class DescriptorImpl extends DurableTaskStepDescriptor {
