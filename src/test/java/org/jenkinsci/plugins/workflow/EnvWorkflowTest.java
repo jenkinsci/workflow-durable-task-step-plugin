@@ -47,13 +47,14 @@ public class EnvWorkflowTest {
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
+        final String builtInNodeName = r.jenkins.getSelfLabel().getName();
 
         p.setDefinition(new CpsFlowDefinition(
             "node('master') {\n" +
             "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n",
             true));
-        r.assertLogContains("My name on master is master using labels master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on master is " + builtInNodeName + " using labels master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +

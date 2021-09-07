@@ -809,7 +809,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put(COOKIE_VAR, cookie);
                         // Cf. CoreEnvironmentContributor:
                         if (exec.getOwner() instanceof MasterComputer) {
-                            env.put("NODE_NAME", "master");
+                            env.put("NODE_NAME", node.getSelfLabel().getName()); // mirror https://github.com/jenkinsci/jenkins/blob/89d334145d2755f74f82aad07b5df4119d7fa6ce/core/src/main/java/jenkins/model/CoreEnvironmentContributor.java#L63
                         } else {
                             env.put("NODE_NAME", label);
                         }
