@@ -46,11 +46,12 @@ public class EnvWorkflowTest {
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
+        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
         final String builtInNodeName = r.jenkins.getSelfLabel().getName();
 
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
+            "node('" + builtInNodeLabel + "') {\n" +
             "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n",
             true));
@@ -80,10 +81,11 @@ public class EnvWorkflowTest {
     @Test public void isExecutorNumberAvailable() throws Exception {
         r.jenkins.setNumExecutors(1);
         r.createSlave("node-test", null, null);
+        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
 
         p.setDefinition(new CpsFlowDefinition(
-                "node('master') {\n" +
+                "node('" + builtInNodeLabel + "') {\n" +
                         "  echo \"My number on master is ${env.EXECUTOR_NUMBER}\"\n" +
                         "}\n",
                 true));
@@ -100,7 +102,8 @@ public class EnvWorkflowTest {
     @Issue("JENKINS-33511")
     @Test public void isWorkspaceAvailable() throws Exception {
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node('master') {echo(/running in ${env.WORKSPACE}/)}", true));
+        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
+        p.setDefinition(new CpsFlowDefinition("node('" + builtInNodeLabel + "') {echo(/running in ${env.WORKSPACE}/)}", true));
         r.assertLogContains("running in " + r.jenkins.getWorkspaceFor(p), r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         DumbSlave remote = r.createSlave("remote", null, null);
         p.setDefinition(new CpsFlowDefinition("node('remote') {echo(/running in ${env.WORKSPACE}/)}", true));
