@@ -103,7 +103,6 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.After;
-import org.junit.AfterClass;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -116,7 +115,6 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -1202,6 +1200,22 @@ public class ExecutorStepTest {
                     e.hasStopPermission(); // Throws AccessDeniedException before JENKINS-63486.
                 }
             }
+        });
+    }
+
+    @Test public void getParentExecutable() throws Throwable {
+        sessions.then(r -> {
+            DumbSlave s = r.createOnlineSlave();
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('" + s.getNodeName() + "') {semaphore('wait')}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            List<Executor> executors = s.toComputer().getExecutors();
+            assertEquals(1, executors.size());
+            Queue.Executable exec = executors.get(0).getCurrentExecutable();
+            assertNotNull(exec);
+            assertEquals(b, exec.getClass().getMethod("getParentExecutable").invoke(exec)); // TODO https://github.com/jenkinsci/jenkins/pull/5733 remove reflection
+            SemaphoreStep.success("wait/1", null);
         });
     }
 
