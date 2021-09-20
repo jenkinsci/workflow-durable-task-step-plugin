@@ -1246,6 +1246,22 @@ public class ExecutorStepTest {
         });
     }
 
+    @Test public void getParentExecutable() throws Throwable {
+        story.then(r -> {
+            DumbSlave s = r.createOnlineSlave();
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('" + s.getNodeName() + "') {semaphore('wait')}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            List<Executor> executors = s.toComputer().getExecutors();
+            assertEquals(1, executors.size());
+            Queue.Executable exec = executors.get(0).getCurrentExecutable();
+            assertNotNull(exec);
+            assertEquals(b, exec.getClass().getMethod("getParentExecutable").invoke(exec)); // TODO https://github.com/jenkinsci/jenkins/pull/5733 remove reflection
+            SemaphoreStep.success("wait/1", null);
+        });
+    }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
