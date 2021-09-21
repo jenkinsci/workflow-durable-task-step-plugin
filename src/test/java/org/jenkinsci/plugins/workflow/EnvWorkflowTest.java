@@ -48,13 +48,14 @@ public class EnvWorkflowTest {
         r.createSlave("node-test", "unix fast", null);
         String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
+        final String builtInNodeName = r.jenkins.getSelfLabel().getName();
 
         p.setDefinition(new CpsFlowDefinition(
             "node('" + builtInNodeLabel + "') {\n" +
             "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n",
             true));
-        r.assertLogContains("My name on master is master using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on master is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +
