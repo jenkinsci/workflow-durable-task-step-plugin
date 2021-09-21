@@ -55,7 +55,7 @@ public class EnvWorkflowTest {
             "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n",
             true));
-        r.assertLogContains("My name on master is " + builtInNodeName + " using labels master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on master is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +
