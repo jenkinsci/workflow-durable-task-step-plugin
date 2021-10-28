@@ -29,15 +29,16 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.Main;
+import hudson.Util;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
 import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
 
-import java.text.MessageFormat;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -47,6 +48,7 @@ import hudson.slaves.EphemeralNode;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
@@ -128,8 +130,9 @@ public class ExecutorPickle extends Pickle {
                         if (placeholder.getCookie() != null && Jenkins.get().getNode(placeholder.getAssignedLabel().getName()) == null ) {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
-                                    throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {2} is never going to appear!",
-                                            item.task.getDisplayName(), TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()));
+                                owner.getListener().getLogger().printf("Killed %s after waiting for %s because we assume unknown agent %s is never going to appear\n",
+                                        item.task.getDisplayName(), Util.getTimeSpanString(TIMEOUT_WAITING_FOR_NODE_MILLIS), placeholder.getAssignedLabel());
+                                throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
                             }
                         }
                     }

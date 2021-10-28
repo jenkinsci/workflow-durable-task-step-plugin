@@ -78,7 +78,7 @@
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
                 <artifactId>bom-2.249.x</artifactId>
-                <version>831.v9814430e6383</version>
+                <version>887.vae9c8ac09ff7</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
@@ -104,6 +104,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
+            <version>2.95-SNAPSHOT</version> <!-- TODO https://github.com/jenkinsci/workflow-cps-plugin/pull/473 -->
             <scope>test</scope>
         </dependency>
         <dependency>
