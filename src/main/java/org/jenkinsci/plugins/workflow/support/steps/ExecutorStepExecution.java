@@ -46,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 import jenkins.model.CauseOfInterruption;
@@ -431,9 +432,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public Queue.Task getOwnerTask() {
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null && runId != null) { // JENKINS-60389 shortcut
-                Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
-                if (job instanceof Queue.Task) {
-                    return (Queue.Task) job;
+                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
+                    Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                    if (job instanceof Queue.Task) {
+                        return (Queue.Task) job;
+                    }
                 }
             }
             Run<?,?> r = runForDisplay();
@@ -509,6 +512,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return r;
         }
 
+        @Exported
         @Override public String getUrl() {
             // TODO ideally this would be found via FlowExecution.owner.executable, but how do we check for something with a URL? There is no marker interface for it: JENKINS-26091
             Run<?,?> r = runForDisplay();
@@ -531,10 +535,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        @Exported
         @Override public String getName() {
             return getDisplayName();
         }
 
+        @Exported
         @Override public String getFullDisplayName() {
             return getDisplayName();
         }
@@ -668,7 +674,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public long getEstimatedDuration() {
             Run<?,?> r = run();
-            // Not accurate if there are multiple slaves in one build, but better than nothing:
+            // Not accurate if there are multiple agents in one build, but better than nothing:
             return r != null ? r.getEstimatedDuration() : -1;
         }
 
@@ -736,7 +742,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     } catch (ChannelClosedException x) {
                         // fine, Jenkins was shutting down
                     } catch (RequestAbortedException x) {
-                        // slave was exiting; too late to kill subprocesses
+                        // agent was exiting; too late to kill subprocesses
                     } catch (Exception x) {
                         LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
                     }
@@ -768,7 +774,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         /**
-         * Occupies {@link Executor} while workflow uses this slave.
+         * Occupies {@link Executor} while workflow uses this build agent.
          */
         @ExportedBean
         private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
@@ -803,12 +809,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put(COOKIE_VAR, cookie);
                         // Cf. CoreEnvironmentContributor:
                         if (exec.getOwner() instanceof MasterComputer) {
-                            env.put("NODE_NAME", "master");
+                            env.put("NODE_NAME", node.getSelfLabel().getName()); // mirror https://github.com/jenkinsci/jenkins/blob/89d334145d2755f74f82aad07b5df4119d7fa6ce/core/src/main/java/jenkins/model/CoreEnvironmentContributor.java#L63
                         } else {
                             env.put("NODE_NAME", label);
                         }
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
-                        env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
+                        env.put("NODE_LABELS", node.getAssignedLabels().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
                         synchronized (runningTasks) {
                             runningTasks.put(cookie, new RunningTask());
@@ -905,6 +911,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
             @Override public PlaceholderTask getParent() {
                 return PlaceholderTask.this;
+            }
+
+            // TODO https://github.com/jenkinsci/jenkins/pull/5733 @Override
+            public Queue.Executable getParentExecutable() {
+                Run<?, ?> b = runForDisplay();
+                if (b instanceof Queue.Executable) {
+                    return (Queue.Executable) b;
+                } else {
+                    return null;
+                }
             }
 
             @Exported

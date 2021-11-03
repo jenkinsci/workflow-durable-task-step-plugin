@@ -402,8 +402,9 @@ public class ShellStepTest {
         CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
+            "node('" + builtInNodeLabel + "') {\n" +
             "  sh 'pwd'\n" +
             "}\n" +
             "node('remote') {\n" +
@@ -496,10 +497,11 @@ public class ShellStepTest {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
+            "node('" + builtInNodeLabel +"') {\n" +
             "  markUp {\n" +
-            "    sh 'echo hello from master'\n" +
+            "    sh 'echo hello from " + builtInNodeLabel + "'\n" +
             "  }\n" +
             "}\n" +
             "node('remote') {\n" +
@@ -515,9 +517,9 @@ public class ShellStepTest {
         b.getLogText().writeRawLogTo(0, System.err);
         StringWriter w = new StringWriter();
         b.getLogText().writeHtmlTo(0, w);
-        assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
+        assertThat("a ConsoleNote created in the " + builtInNodeLabel + " is trusted", w.toString(), containsString("<b>hello</b> from " + builtInNodeLabel));
         assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
-        assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
+        assertThat("however we can pass it from the " + builtInNodeLabel + " to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
     }
     public static final class MarkUpStep extends Step {
         @DataBoundSetter public boolean smart;
@@ -630,8 +632,9 @@ public class ShellStepTest {
         j.showAgentLogs(s, logging);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.addProperty(new ParametersDefinitionProperty(new BooleanParameterDefinition("WATCHING", false, null)));
+        String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
-            "['master', 'remote'].each {label ->\n" +
+            "['" + builtInNodeLabel + "', 'remote'].each {label ->\n" +
             "  node(label) {\n" +
             "    withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
             "      sh 'set +x; echo \"with final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
@@ -642,7 +645,7 @@ public class ShellStepTest {
             for (boolean watching : new boolean[] {false, true}) {
                 DurableTaskStep.USE_WATCHING = watching;
                 String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
-                for (String node : new String[] {"master", "remote"}) {
+                for (String node : new String[] {builtInNodeLabel, "remote"}) {
                     for (String mode : new String[] {"with", "missing"}) {
                         errors.checkThat(log, containsString(mode + " final newline node=" + node + " watching=" + watching));
                     }
