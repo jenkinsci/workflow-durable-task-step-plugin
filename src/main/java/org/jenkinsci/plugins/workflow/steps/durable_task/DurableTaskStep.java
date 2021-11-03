@@ -34,6 +34,8 @@ import hudson.Launcher;
 import hudson.Util;
 import hudson.init.Terminator;
 import hudson.model.Node;
+import hudson.model.Result;
+import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
@@ -47,6 +49,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +62,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import jenkins.model.Jenkins;
+import jenkins.tasks.filters.EnvVarsFilterableBuilder;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -69,12 +74,15 @@ import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
+import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -84,14 +92,14 @@ import org.kohsuke.stapler.QueryParameter;
 /**
  * Runs a durable task, such as a shell script, typically on an agent.
  * <p>“Durable” in this context means that Jenkins makes an attempt to keep the external process running
- * even if either the Jenkins master or an agent JVM is restarted.
+ * even if either the Jenkins controller or an agent JVM is restarted.
  * Process standard output is directed to a file near the workspace, rather than holding a file handle open.
  * Whenever a Remoting connection between the two can be reëstablished,
  * Jenkins again looks for any output sent since the last time it checked.
  * When the process exits, the status code is also written to a file and ultimately results in the step passing or failing.
- * <p>Tasks can also be run on the master node, which differs only in that there is no possibility of a network failure.
+ * <p>Tasks can also be run on the built-in node, which differs only in that there is no possibility of a network failure.
  */
-public abstract class DurableTaskStep extends Step {
+public abstract class DurableTaskStep extends Step implements EnvVarsFilterableBuilder {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
@@ -127,17 +135,17 @@ public abstract class DurableTaskStep extends Step {
     @DataBoundSetter public void setReturnStatus(boolean returnStatus) {
         this.returnStatus = returnStatus;
     }
-    
+
     @DataBoundSetter public void setLabel(String label) {
-        this.label = label;
+        this.label = Util.fixEmptyAndTrim(label);
     }
-    
+
     public String getLabel() {
         return label;
     }
 
     @Override public StepExecution start(StepContext context) throws Exception {
-        if (this.label != null && !this.label.isEmpty()) {
+        if (this.label != null) {
             context.get(FlowNode.class).addAction(new LabelAction(StringUtils.left(label, MAX_LABEL_LENGTH)));
         }
         return new Execution(context, this);
@@ -228,7 +236,7 @@ public abstract class DurableTaskStep extends Step {
      * which in the default {@link StreamTaskListener} implementation sends chunks of text over Remoting.
      * When the process exits, {@link #exited} is called and the step execution also ends.
      * If Jenkins is restarted in the middle, {@link #onResume} starts a new watch task.
-     * Every {@link #WATCHING_RECURRENCE_PERIOD}, the master also checks to make sure the process still seems to be running using {@link Controller#exitStatus}.
+     * Every {@link #WATCHING_RECURRENCE_PERIOD}, the controller also checks to make sure the process still seems to be running using {@link Controller#exitStatus}.
      * If the agent connection is closed, {@link #ws} will be stale
      * ({@link FilePath#channel} will be {@link Channel#isClosingOrClosed})
      * and so {@link #getWorkspace} called from {@link #check} will call {@link #getWorkspaceProblem}
@@ -240,10 +248,10 @@ public abstract class DurableTaskStep extends Step {
      * If sending output fails for any reason other than {@link ChannelClosedException},
      * {@link #problem} will attempt to record the issue but permit the step to proceed.
      * <p>In the older pull mode, available on request by {@link #USE_WATCHING} or when encountering a noncompliant {@link Controller} implementation,
-     * the master looks for process output ({@link Controller#writeLog}) and/or exit status in {@link #check} at variable intervals,
+     * the controller looks for process output ({@link Controller#writeLog}) and/or exit status in {@link #check} at variable intervals,
      * initially {@link #MIN_RECURRENCE_PERIOD} but slowing down by {@link #RECURRENCE_PERIOD_BACKOFF} up to {@link #MAX_RECURRENCE_PERIOD}.
      * Any new output will be noted in a change to the state of {@link #controller}, which gets saved to the step state in turn.
-     * If there is any connection problem to the workspace (including master restarts and Remoting disconnects),
+     * If there is any connection problem to the workspace (including controller restarts and Remoting disconnects),
      * {@link #ws} is nulled out and Jenkins waits until a fresh handle is available.
      */
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
@@ -253,6 +261,7 @@ public abstract class DurableTaskStep extends Step {
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
         private static final float RECURRENCE_PERIOD_BACKOFF = 1.2f;
 
+        private transient TaskListener newlineSafeTaskListener;
         /** Used only during {@link #start}. */
         private transient final DurableTaskStep step;
         /** Current “live” connection to the workspace, or null if we might be offline at the moment. */
@@ -284,6 +293,8 @@ public abstract class DurableTaskStep extends Step {
         private transient boolean awaitingAsynchExit;
         /** The first throwable used to stop the task */
         private transient volatile Throwable causeOfStoppage;
+        /** If nonzero, {@link System#nanoTime} when we first discovered that the node had been removed. */
+        private transient long removedNodeDiscovered;
 
         Execution(StepContext context, DurableTaskStep step) {
             super(context);
@@ -300,13 +311,14 @@ public abstract class DurableTaskStep extends Step {
             if (returnStdout) {
                 durableTask.captureOutput();
             }
-            TaskListener listener = context.get(TaskListener.class);
+            TaskListener listener = listener();
             if (step.encoding != null) {
                 durableTask.charset(Charset.forName(step.encoding));
             } else {
                 durableTask.defaultCharset();
             }
             Launcher launcher = context.get(Launcher.class);
+            launcher.prepareFilterRules(context.get(Run.class), step);
             LOGGER.log(Level.FINE, "launching task against {0} using {1}", new Object[] {ws.getChannel(), launcher});
             try {
                 controller = durableTask.launch(context.get(EnvVars.class), ws, launcher, listener);
@@ -329,13 +341,34 @@ public abstract class DurableTaskStep extends Step {
             return false;
         }
 
-        private @CheckForNull FilePath getWorkspace() throws AbortException {
+        private @CheckForNull FilePath getWorkspace() throws IOException, InterruptedException {
             if (ws == null) {
                 ws = FilePathUtils.find(node, remote);
                 if (ws == null) {
+                    // Part of JENKINS-49707: check whether an agent has been removed.
+                    // (Note that a Computer may be missing because a Node is offline,
+                    // and conversely after removing a Node its Computer may remain for a while.
+                    // Therefore we only fail here if _both_ are absent.)
+                    // ExecutorStepExecution.RemovedNodeListener will normally do this first, so this is a fallback.
+                    Jenkins j = Jenkins.getInstanceOrNull();
+                    if (ExecutorStepExecution.RemovedNodeCause.ENABLED && !node.isEmpty() && j != null && j.getNode(node) == null) {
+                        if (removedNodeDiscovered == 0) {
+                            LOGGER.fine(() -> "discovered that " + node + " has been removed");
+                            removedNodeDiscovered = System.nanoTime();
+                            return null;
+                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                            LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
+                            return null;
+                        } else {
+                            LOGGER.fine(() -> node + " has been removed for a while, assuming it is not coming back");
+                            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+                        }
+                    }
+                    removedNodeDiscovered = 0; // something else; reset
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
+                removedNodeDiscovered = 0;
                 if (watching) {
                     try {
                         controller.watch(ws, new HandlerImpl(this, ws, listener()), listener());
@@ -374,7 +407,14 @@ public abstract class DurableTaskStep extends Step {
             }
         }
 
-        private @Nonnull TaskListener listener() {
+        private synchronized @Nonnull TaskListener listener() {
+            if (newlineSafeTaskListener == null) {
+                newlineSafeTaskListener = new NewlineSafeTaskListener(_listener());
+            }
+            return newlineSafeTaskListener;
+        }
+
+        private @Nonnull TaskListener _listener() {
             TaskListener l;
             StepContext context = getContext();
             try {
@@ -393,6 +433,56 @@ public abstract class DurableTaskStep extends Step {
             return l;
         }
 
+        /**
+         * Interprets {@link PrintStream#close} as a signal to end a final newline if necessary.
+         */
+        private static final class NewlineSafeTaskListener implements TaskListener {
+
+            private static final long serialVersionUID = 1;
+
+            private final TaskListener delegate;
+            private transient PrintStream logger;
+
+            NewlineSafeTaskListener(TaskListener delegate) {
+                this.delegate = delegate;
+            }
+
+            // Similar to DecoratedTaskListener:
+            @Override public synchronized PrintStream getLogger() {
+                if (logger == null) {
+                    LOGGER.fine("creating filtered stream");
+                    OutputStream base = delegate.getLogger();
+                    OutputStream filtered = new FilterOutputStream(base) {
+                        boolean nl = true; // empty string does not need a newline
+                        @Override public void write(int b) throws IOException {
+                            super.write(b);
+                            nl = b == '\n';
+                        }
+                        @Override public void write(byte[] b, int off, int len) throws IOException {
+                            super.write(b, off, len);
+                            if (len > 0) {
+                                nl = b[off + len - 1] == '\n';
+                            }
+                        }
+                        @Override public void close() throws IOException {
+                            LOGGER.log(Level.FINE, "calling close with nl={0}", nl);
+                            if (!nl) {
+                                super.write('\n');
+                            }
+                            flush(); // do *not* call base.close() here, unlike super.close()
+                        }
+                    };
+                    try {
+                        logger = new PrintStream(filtered, false, "UTF-8");
+                    } catch (UnsupportedEncodingException x) {
+                        throw new AssertionError(x);
+                    }
+                }
+                return logger;
+            }
+
+        }
+
         private @Nonnull Launcher launcher() throws IOException, InterruptedException {
             StepContext context = getContext();
             Launcher l = context.get(Launcher.class);
@@ -408,21 +498,19 @@ public abstract class DurableTaskStep extends Step {
             if (workspace != null) {
                 listener().getLogger().println("Sending interrupt signal to process");
                 LOGGER.log(Level.FINE, "stopping process", cause);
-                stopTask = Timer.get().schedule(new Runnable() {
-                    @Override public void run() {
-                        stopTask = null;
-                        if (recurrencePeriod > 0) {
-                            recurrencePeriod = 0;
-                            listener().getLogger().println("After " + REMOTE_TIMEOUT + "s process did not stop");
-                            getContext().onFailure(cause);
-                            try {
-                                FilePath workspace = getWorkspace();
-                                if (workspace != null) {
-                                    controller.cleanup(workspace);
-                                }
-                            } catch (IOException | InterruptedException x) {
-                                Functions.printStackTrace(x, listener().getLogger());
+                stopTask = Timer.get().schedule(() -> {
+                    stopTask = null;
+                    if (recurrencePeriod > 0) {
+                        recurrencePeriod = 0;
+                        listener().getLogger().println("After " + REMOTE_TIMEOUT + "s process did not stop");
+                        getContext().onFailure(cause);
+                        try {
+                            FilePath taskWorkspace = getWorkspace();
+                            if (taskWorkspace != null) {
+                                controller.cleanup(taskWorkspace);
                             }
+                        } catch (IOException | InterruptedException x) {
+                            Functions.printStackTrace(x, listener().getLogger());
                         }
                     }
                 }, REMOTE_TIMEOUT, TimeUnit.SECONDS);
@@ -480,14 +568,16 @@ public abstract class DurableTaskStep extends Step {
             final FilePath workspace;
             try {
                 workspace = getWorkspace();
-            } catch (AbortException x) {
+            } catch (IOException | InterruptedException x) {
                 recurrencePeriod = 0;
-                getContext().onFailure(x);
+                if (causeOfStoppage == null) { // do not doubly terminate
+                    getContext().onFailure(x);
+                }
                 return;
             }
             if (workspace == null) {
                 recurrencePeriod = Math.min((long) (recurrencePeriod * RECURRENCE_PERIOD_BACKOFF), MAX_RECURRENCE_PERIOD);
-                return; // slave not yet ready, wait for another day
+                return; // agent not yet ready, wait for another day
             }
             TaskListener listener = listener();
             try (Timeout timeout = Timeout.limit(REMOTE_TIMEOUT, TimeUnit.SECONDS)) {
@@ -573,12 +663,13 @@ public abstract class DurableTaskStep extends Step {
                     getContext().onFailure(new AbortException("script returned exit code " + exitCode));
                 }
             }
+            listener().getLogger().close();
         }
 
         // ditto
         @Override public void problem(Exception x) {
             Functions.printStackTrace(x, listener().getLogger());
-            // note that if there is _also_ a problem in the master-side logger, PrintStream will mask it
+            // note that if there is _also_ a problem in the controller-side logger, PrintStream will mask it
         }
 
         @Override public void onResume() {
@@ -640,10 +731,10 @@ public abstract class DurableTaskStep extends Step {
                 // We are giving up on this watch. Wait for some call to getWorkspace to rewatch.
                 throw x;
             } catch (Exception x) {
-                // Try to report it to the master.
+                // Try to report it to the controller.
                 try {
                     execution.problem(x);
-                    // OK, printed to log on master side, we may have lost some text but could continue.
+                    // OK, printed to log on controller side, we may have lost some text but could continue.
                 } catch (Exception x2) { // e.g., RemotingSystemException
                     // No, channel seems to be broken, give up on this watch.
                     throw x;
@@ -652,7 +743,7 @@ public abstract class DurableTaskStep extends Step {
         }
 
         @Override public void exited(int code, byte[] output) throws Exception {
-            listener.getLogger().flush();
+            listener.getLogger().close();
             execution.exited(code, output);
         }
 

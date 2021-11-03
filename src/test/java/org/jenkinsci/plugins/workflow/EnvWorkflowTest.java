@@ -43,33 +43,33 @@ public class EnvWorkflowTest {
 
     /**
      * Verifies if NODE_NAME environment variable is available on a slave node and on master.
-     *
-     * @throws Exception
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
+        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
+        final String builtInNodeName = r.jenkins.getSelfLabel().getName();
 
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
+            "node('" + builtInNodeLabel + "') {\n" +
             "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n"
-        ));
-        r.assertLogContains("My name on master is master using labels master", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+            "}\n",
+            true));
+        r.assertLogContains("My name on master is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +
             "  echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n"
-        ));
+            "}\n",
+            true));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
         r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition( // JENKINS-41446 ensure variable still available in a ws step
             "node('node-test') {\n ws('workspace/foo') {" +
             "    echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "  }\n}\n"
-        ));
+            "  }\n}\n",
+            true));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
         r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
@@ -77,33 +77,33 @@ public class EnvWorkflowTest {
 
     /**
      * Verifies if EXECUTOR_NUMBER environment variable is available on a slave node and on master.
-     *
-     * @throws Exception
      */
     @Test public void isExecutorNumberAvailable() throws Exception {
         r.jenkins.setNumExecutors(1);
         r.createSlave("node-test", null, null);
+        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
 
         p.setDefinition(new CpsFlowDefinition(
-                "node('master') {\n" +
+                "node('" + builtInNodeLabel + "') {\n" +
                         "  echo \"My number on master is ${env.EXECUTOR_NUMBER}\"\n" +
-                        "}\n"
-        ));
+                        "}\n",
+                true));
         r.assertLogContains("My number on master is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
                 "node('node-test') {\n" +
                         "  echo \"My number on a slave is ${env.EXECUTOR_NUMBER}\"\n" +
-                        "}\n"
-        ));
+                        "}\n",
+                true));
         r.assertLogContains("My number on a slave is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
     @Issue("JENKINS-33511")
     @Test public void isWorkspaceAvailable() throws Exception {
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node('master') {echo(/running in ${env.WORKSPACE}/)}", true));
+        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
+        p.setDefinition(new CpsFlowDefinition("node('" + builtInNodeLabel + "') {echo(/running in ${env.WORKSPACE}/)}", true));
         r.assertLogContains("running in " + r.jenkins.getWorkspaceFor(p), r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         DumbSlave remote = r.createSlave("remote", null, null);
         p.setDefinition(new CpsFlowDefinition("node('remote') {echo(/running in ${env.WORKSPACE}/)}", true));

@@ -25,7 +25,6 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Computer;
@@ -49,9 +48,8 @@ public class WorkspaceListLeasePickle extends Pickle {
 
     @Override public ListenableFuture<?> rehydrate(FlowExecutionOwner owner) {
         return new TryRepeatedly<WorkspaceList.Lease>(1) {
-            @SuppressFBWarnings(value="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE", justification="TODO 1.653+ switch to Jenkins.getInstanceOrNull")
             @Override protected WorkspaceList.Lease tryResolve() throws InterruptedException {
-                Jenkins j = Jenkins.getInstance();
+                Jenkins j = Jenkins.getInstanceOrNull();
                 if (j == null) {
                     return null;
                 }

@@ -25,11 +25,13 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.slaves.DumbSlave;
+import hudson.slaves.WorkspaceList;
 import java.io.File;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+import static org.junit.Assert.*;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.Rule;
@@ -68,6 +70,16 @@ public class WorkspaceStepTest {
         r.assertLogContains(location, b2);
         r.assertLogNotContains("custom-location@", b2);
         r.assertLogContains(location + "@2", b3);
+    }
+
+    @Test
+    @Issue("JENKINS-60634")
+    public void tempDirVariable() throws Exception {
+        WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node {ws {if (isUnix()) {sh 'set -u && touch \"$WORKSPACE_TMP/x\"'} else {bat(/echo ok > \"%WORKSPACE_TMP%\\x\"/)}}}", true));
+        r.buildAndAssertSuccess(p);
+        assertFalse(WorkspaceList.tempDir(r.jenkins.getWorkspaceFor(p)).child("x").exists());
+        assertTrue(WorkspaceList.tempDir(r.jenkins.getWorkspaceFor(p).sibling("p@2")).child("x").exists());
     }
 
 }
