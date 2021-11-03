@@ -59,7 +59,7 @@ import org.kohsuke.stapler.QueryParameter;
  * Used like:
  * <pre>
  *     node("foo") {
- *         // execute some stuff in a slave that has a label "foo" while workflow has this slave
+ *         // execute some stuff in a build agent that has a label "foo" while workflow has this build agent
  *     }
  * </pre>
  */
