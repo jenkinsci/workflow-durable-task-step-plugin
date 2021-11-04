@@ -1,7 +1,6 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
@@ -16,6 +15,7 @@ import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.ResourceList;
+import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
@@ -38,7 +38,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -66,12 +65,11 @@ import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
-import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
-import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
@@ -243,12 +241,18 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (li.task instanceof PlaceholderTask) {
                     PlaceholderTask task = (PlaceholderTask) li.task;
                     if (!task.stopping) {
-                        task.context.onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                        task.context.onFailure(new FlowInterruptedException(Result.ABORTED, true, new QueueTaskCancelled()));
                     }
                 }
             }
         }
 
+    }
+
+    public static final class QueueTaskCancelled extends CauseOfInterruption {
+        @Override public String getShortDescription() {
+            return Messages.ExecutorStepExecution_queue_task_cancelled();
+        }
     }
 
     @Extension public static final class RemovedNodeListener extends NodeListener {
