@@ -917,8 +917,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return PlaceholderTask.this;
             }
 
-            // TODO https://github.com/jenkinsci/jenkins/pull/5733 @Override
-            public Queue.Executable getParentExecutable() {
+            @Override public Queue.Executable getParentExecutable() {
                 Run<?, ?> b = runForDisplay();
                 if (b instanceof Queue.Executable) {
                     return (Queue.Executable) b;
