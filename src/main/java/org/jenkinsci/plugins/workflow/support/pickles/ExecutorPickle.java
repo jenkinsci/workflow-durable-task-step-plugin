@@ -141,7 +141,7 @@ public class ExecutorPickle extends Pickle {
                 }
 
                 if (future.isCancelled()) {
-                    throw new AbortException("Queue item was canceled.");
+                    throw new FlowInterruptedException(Result.ABORTED, true, new ExecutorStepExecution.QueueTaskCancelled());
                 }
 
                 Queue.Executable exec = future.get();

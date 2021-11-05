@@ -80,8 +80,10 @@ public class ExecutorPickleTest {
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);
-                j.waitForCompletion(b);
-                // Do not bother with assertBuildStatus; we do not really care whether it is ABORTED or FAILURE
+                j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+                InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
+                assertNotNull(iba);
+                assertEquals(Collections.singleton(ExecutorStepExecution.QueueTaskCancelled.class), iba.getCauses().stream().map(Object::getClass).collect(Collectors.toSet()));
         });
     }
 
