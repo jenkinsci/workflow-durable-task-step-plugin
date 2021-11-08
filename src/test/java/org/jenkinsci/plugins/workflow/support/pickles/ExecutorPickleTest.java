@@ -32,11 +32,13 @@ import hudson.model.User;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
+import jenkins.model.InterruptedBuildAction;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.*;
 
@@ -45,13 +47,14 @@ import org.junit.Test;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
-import org.junit.runners.model.Statement;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.JenkinsSessionRule;
 
 import java.io.InterruptedIOException;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 public class ExecutorPickleTest {
 
@@ -77,8 +80,10 @@ public class ExecutorPickleTest {
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);
-                j.waitForCompletion(b);
-                // Do not bother with assertBuildStatus; we do not really care whether it is ABORTED or FAILURE
+                j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+                InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
+                assertNotNull(iba);
+                assertEquals(Collections.singleton(ExecutorStepExecution.QueueTaskCancelled.class), iba.getCauses().stream().map(Object::getClass).collect(Collectors.toSet()));
         });
     }
 
@@ -141,8 +146,11 @@ public class ExecutorPickleTest {
                     Thread.sleep(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS + 1000L);
                     Assert.assertEquals("Should have given up and killed the Task representing the resuming build", 0, Queue.getInstance().getItems().length );
                     Assert.assertFalse(run.isBuilding());
-                    j.assertBuildStatus(Result.FAILURE, run);
+                    j.assertBuildStatus(Result.ABORTED, run);
                     Assert.assertEquals(0, j.jenkins.getQueue().getItems().length);
+                    InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
+                    assertNotNull(iba);
+                    assertEquals(Collections.singleton(ExecutorStepExecution.RemovedNodeCause.class), iba.getCauses().stream().map(Object::getClass).collect(Collectors.toSet()));
                 } catch (InterruptedIOException ioe) {
                     throw new AssertionError("Waited for build to detect loss of node and it didn't!", ioe);
                 } finally {
