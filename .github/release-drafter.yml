@@ -1,4 +1,2 @@
 _extends: .github
-name-template: v$NEXT_MINOR_VERSION 🌈
-tag-template: workflow-durable-task-step-$NEXT_MINOR_VERSION
 
