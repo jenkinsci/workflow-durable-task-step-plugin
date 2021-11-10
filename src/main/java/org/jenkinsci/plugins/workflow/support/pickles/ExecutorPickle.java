@@ -26,7 +26,6 @@ package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.AbortException;
 import hudson.Extension;
 import hudson.Main;
 import hudson.Util;
@@ -44,7 +43,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import hudson.slaves.EphemeralNode;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
@@ -66,8 +64,6 @@ public class ExecutorPickle extends Pickle {
 
     private final Queue.Task task;
 
-    private final boolean isEphemeral;
-
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
     @Restricted(NoExternalUse.class)
     public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
@@ -80,17 +76,12 @@ public class ExecutorPickle extends Pickle {
         if (exec == null) {
             throw new IllegalArgumentException("cannot save an Executor that is not running anything");
         }
-        this.isEphemeral = executor.getOwner().getNode() instanceof EphemeralNode;
         SubTask parent = exec.getParent();
         this.task = parent instanceof Queue.Task ? (Queue.Task) parent : parent.getOwnerTask();
         if (task instanceof Queue.TransientTask) {
             throw new IllegalArgumentException("cannot save a TransientTask");
         }
         LOGGER.log(Level.FINE, "saving {0}", task);
-    }
-
-    public boolean isEphemeral() {
-        return isEphemeral;
     }
 
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
