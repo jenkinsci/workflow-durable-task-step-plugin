@@ -105,7 +105,6 @@ public class ExecutorPickleTest { // TODO rename to ExecutorStepDynamicContextTe
                 WorkflowJob p = j.jenkins.getItemByFullName("p", WorkflowJob.class);
                 assertFalse(p.getACL().hasPermission(Jenkins.ANONYMOUS, Item.READ));
                 WorkflowRun b = p.getBuildByNumber(1);
-                j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
                 j.jenkins.getNode("remote").toComputer().setTemporarilyOffline(false, null);
                 j.assertBuildStatusSuccess(j.waitForCompletion(b));
         });
