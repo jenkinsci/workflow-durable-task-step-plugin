@@ -3,6 +3,7 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.EnvVars;
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Util;
@@ -741,23 +742,30 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /**
          * Called when the body closure is complete.
          */
+        @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled")
         private static final class Callback extends BodyExecutionCallback.TailCall {
 
             private final String cookie;
+            @Deprecated
+            private WorkspaceList.Lease lease;
+            private final ExecutorStepDynamicContext esdc;
 
-            Callback(String cookie) {
+            Callback(String cookie, ExecutorStepDynamicContext esdc) {
                 this.cookie = cookie;
+                this.esdc = esdc;
             }
 
             @Override protected void finished(StepContext context) throws Exception {
                 LOGGER.log(FINE, "finished {0}", cookie);
                 try {
-                    // TODO this is not working; wrong context perhaps? Maybe save ExecutorStepDynamicContext as a field?
-                    WorkspaceList.Lease lease = context.get(WorkspaceList.Lease.class);
-                    if (lease != null) {
-                        lease.release();
+                    if (esdc != null) {
+                        WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(esdc);
+                        if (_lease != null) {
+                            _lease.release();
+                        }
                     } else {
-                        LOGGER.warning(() -> "could not find a workspace lease to release from " + cookie);
+                        lease.release();
+                        lease = null;
                     }
                 } finally {
                     finish(cookie);
@@ -838,7 +846,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         execution.state = state;
                         body = new WeakReference<>(context.newBodyInvoker()
                                 .withContexts(env, state)
-                                .withCallback(new Callback(cookie))
+                                .withCallback(new Callback(cookie, state))
                                 .start());
                         LOGGER.log(FINE, "started {0}", cookie);
                     } else {
