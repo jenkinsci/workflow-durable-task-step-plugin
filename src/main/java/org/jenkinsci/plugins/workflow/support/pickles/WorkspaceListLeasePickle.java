@@ -34,7 +34,12 @@ import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepDynamicContext;
 
+/**
+ * @deprecated Normally now done via {@link ExecutorStepDynamicContext}.
+ */
+@Deprecated
 public class WorkspaceListLeasePickle extends Pickle {
 
     // Could perhaps just store the FilePath directly (thus using FilePathPickle implicitly), but we need the Computer anyway for its WorkspaceList:

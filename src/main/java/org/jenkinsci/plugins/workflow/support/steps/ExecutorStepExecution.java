@@ -85,6 +85,8 @@ import org.kohsuke.stapler.export.ExportedBean;
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     private final ExecutorStep step;
+    // TODO perhaps just inline it here? does not do much good as a separate class
+    private ExecutorStepDynamicContext state;
 
     ExecutorStepExecution(StepContext context, ExecutorStep step) {
         super(context);
@@ -100,7 +102,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
      */
     @Override
     public boolean start() throws Exception {
-        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel());
+        final PlaceholderTask task = new PlaceholderTask(this, step.getLabel());
         Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
         if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
@@ -180,34 +182,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @Override public void onResume() {
         super.onResume();
-        // See if we are still running, or scheduled to run. Cf. stop logic above.
         try {
             Run<?, ?> run = getContext().get(Run.class);
-            for (Queue.Item item : Queue.getInstance().getItems()) {
-                if (item.task instanceof PlaceholderTask && ((PlaceholderTask) item.task).context.equals(getContext())) {
-                    LOGGER.log(FINE, "Queue item for node block in {0} is still waiting after reload", run);
-                    return;
-                }
-            }
-            Jenkins j = Jenkins.getInstanceOrNull();
-            if (j != null) {
-                for (Computer c : j.getComputers()) {
-                    for (Executor e : c.getExecutors()) {
-                        Queue.Executable exec = e.getCurrentExecutable();
-                        if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
-                            LOGGER.log(FINE, "Node block in {0} is running on {1} after reload", new Object[] {run, c.getName()});
-                            return;
-                        }
-                    }
-                }
-            }
-            TaskListener listener = getContext().get(TaskListener.class);
-            if (step == null) { // compatibility: used to be transient
-                listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281), but cannot reschedule");
+            if (state == null) {
+                LOGGER.fine(() -> "No ExecutorStepDynamicContext found for node block in " + run + "; perhaps loading from a historical build record, hoping for the best");
                 return;
             }
-            listener.getLogger().println("Queue item for node block in " + run.getFullDisplayName() + " is missing (perhaps JENKINS-34281); rescheduling");
-            start();
+            state.resume();
         } catch (Exception x) { // JENKINS-40161
             getContext().onFailure(x);
         }
@@ -315,6 +296,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** keys are {@link #cookie}s */
         private static final Map<String,RunningTask> runningTasks = new HashMap<>();
 
+        private final ExecutorStepExecution execution;
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
@@ -336,6 +318,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * and the {@link BodyExecution} holds {@link PlaceholderTask.Callback} whose {@link WorkspaceList.Lease}
          * is not processed by {@link WorkspaceListLeasePickle} since pickles are not recursive.
          * So we make a best effort and only try to cancel a body within the current session.
+         * TODO try to rewrite this mess
          * @see RemovedNodeListener
          */
         private transient @CheckForNull WeakReference<BodyExecution> body;
@@ -346,8 +329,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed. */
         private transient boolean stopping;
 
-        PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
-            this.context = context;
+        PlaceholderTask(ExecutorStepExecution execution, String label) throws IOException, InterruptedException {
+            this.execution = execution;
+            this.context = execution.getContext();
             this.label = label;
             runId = context.get(Run.class).getExternalizableId();
             Authentication runningAuth = Jenkins.getAuthentication();
@@ -757,22 +741,27 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /**
          * Called when the body closure is complete.
          */
-        @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled")
         private static final class Callback extends BodyExecutionCallback.TailCall {
 
             private final String cookie;
-            private WorkspaceList.Lease lease;
 
-            Callback(String cookie, WorkspaceList.Lease lease) {
+            Callback(String cookie) {
                 this.cookie = cookie;
-                this.lease = lease;
             }
 
             @Override protected void finished(StepContext context) throws Exception {
                 LOGGER.log(FINE, "finished {0}", cookie);
-                lease.release();
-                lease = null;
-                finish(cookie);
+                try {
+                    // TODO this is not working; wrong context perhaps? Maybe save ExecutorStepDynamicContext as a field?
+                    WorkspaceList.Lease lease = context.get(WorkspaceList.Lease.class);
+                    if (lease != null) {
+                        lease.release();
+                    } else {
+                        LOGGER.warning(() -> "could not find a workspace lease to release from " + cookie);
+                    }
+                } finally {
+                    finish(cookie);
+                }
             }
 
         }
@@ -805,7 +794,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     if (cookie == null) {
                         // First time around.
                         cookie = UUID.randomUUID().toString();
-                        // Switches the label to a self-label, so if the executable is killed and restarted via ExecutorPickle, it will run on the same node:
+                        // Switches the label to a self-label, so if the executable is killed and restarted, it will run on the same node:
                         label = computer.getName();
 
                         EnvVars env = computer.getEnvironment();
@@ -845,10 +834,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
+                        ExecutorStepDynamicContext state = new ExecutorStepDynamicContext(PlaceholderTask.this, lease, exec);
+                        execution.state = state;
                         body = new WeakReference<>(context.newBodyInvoker()
-                                .withContexts(exec, computer, env,
-                                    FilePathDynamicContext.createContextualObject(workspace))
-                                .withCallback(new Callback(cookie, lease))
+                                .withContexts(env, state)
+                                .withCallback(new Callback(cookie))
                                 .start());
                         LOGGER.log(FINE, "started {0}", cookie);
                     } else {

@@ -70,6 +70,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class), EnvironmentExpander.constant(env)),
                     FilePathDynamicContext.createContextualObject(workspace))
+                // TODO dynamic version of lease (note that current test does not seem to cover restarts)
                 .withCallback(new Callback(lease))
                 .start();
         return false;

@@ -57,7 +57,9 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
  * That task can in turn have some way of producing a display name, a special {@link hudson.model.Queue.Executable} with a custom {@code executorCell.jelly}, and so on.
  * When rehydrated, the task is rescheduled, and when it starts executing the owning executor is produced.
  * Typically the {@link SubTask#getAssignedLabel} should be a {@link Node#getSelfLabel} so that the rehydrated executor is in fact on the same node.
+ * @deprecated Normally now done via {@link ExecutorStepDynamicContext}.
  */
+@Deprecated
 public class ExecutorPickle extends Pickle {
 
     private static final Logger LOGGER = Logger.getLogger(ExecutorPickle.class.getName());

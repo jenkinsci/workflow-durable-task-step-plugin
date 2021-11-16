@@ -30,10 +30,13 @@ import hudson.FilePath;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
+import org.jenkinsci.plugins.workflow.support.steps.FilePathDynamicContext;
 
 /**
  * @author Kohsuke Kawaguchi
+ * @deprecated Normally now done via {@link ExecutorStepDynamicContext} or {@link FilePathDynamicContext}.
  */
+@Deprecated
 public class FilePathPickle extends Pickle {
 
     private final String slave;

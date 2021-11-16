@@ -56,7 +56,7 @@ import java.io.InterruptedIOException;
 import java.util.Collections;
 import java.util.stream.Collectors;
 
-public class ExecutorPickleTest {
+public class ExecutorPickleTest { // TODO rename to ExecutorStepDynamicContextTest
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();

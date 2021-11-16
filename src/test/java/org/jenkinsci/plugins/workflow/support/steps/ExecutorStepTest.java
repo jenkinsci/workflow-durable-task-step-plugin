@@ -249,7 +249,7 @@ public class ExecutorStepTest {
     @Test public void buildShellScriptAcrossRestart() throws Throwable {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
-                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepDynamicContext.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
                 // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
                 // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
                 DumbSlave s  = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
@@ -379,6 +379,30 @@ public class ExecutorStepTest {
                 r.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 r.assertLogContains("OK, done", b);
                 killJnlpProc();
+        });
+    }
+
+    @Issue("JENKINS-49707")
+    @Test public void retryNodeBlock() throws Throwable {
+        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        sessions.then(r -> {
+            logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
+            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+            s.setNumExecutors(1);
+            s.setRetentionStrategy(RetentionStrategy.NOOP);
+            r.jenkins.addNode(s);
+            startJnlpProc(r);
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "node('dumbo') {\n" +
+                "    sh 'sleep infinity'\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("+ sleep", b);
+            killJnlpProc();
+            r.jenkins.removeNode(s);
+            // TODO status quo:
+            r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
         });
     }
 

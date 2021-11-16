@@ -34,8 +34,9 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 /**
  * Reference to {@link Computer}
  *
- * @author Kohsuke Kawaguchi
+ * @deprecated Normally now done via {@link ExecutorStepDynamicContext}.
  */
+@Deprecated
 public class ComputerPickle extends Pickle {
     private final String slave;
 
