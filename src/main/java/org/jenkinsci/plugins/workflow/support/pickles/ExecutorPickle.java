@@ -93,7 +93,7 @@ public class ExecutorPickle extends Pickle {
             @Override
             protected Executor tryResolve() throws Exception {
                 if (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED) {
-                    LOGGER.fine(() -> "not going to schedue " + task + " yet because Jenkins has not yet completed startup");
+                    LOGGER.fine(() -> "not going to schedule " + task + " yet because Jenkins has not yet completed startup");
                     return null;
                 }
                 Queue.Item item;
