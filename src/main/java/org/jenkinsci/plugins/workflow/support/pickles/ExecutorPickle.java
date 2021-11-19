@@ -88,7 +88,7 @@ public class ExecutorPickle extends Pickle {
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
             long itemID;
-            long endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
+            long endTimeNanos;
 
             @Override
             protected Executor tryResolve() throws Exception {
@@ -104,6 +104,7 @@ public class ExecutorPickle extends Pickle {
                         throw new IllegalStateException("queue refused " + task);
                     }
                     itemID = item.getId();
+                    endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
                     LOGGER.log(Level.FINE, "{0} scheduled {1}", new Object[] {ExecutorPickle.this, item});
                 } else {
                     item = Queue.getInstance().getItem(itemID);
