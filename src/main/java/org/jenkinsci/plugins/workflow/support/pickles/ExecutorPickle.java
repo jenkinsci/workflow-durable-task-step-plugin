@@ -29,6 +29,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.Main;
 import hudson.Util;
+import hudson.init.InitMilestone;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
@@ -91,6 +92,10 @@ public class ExecutorPickle extends Pickle {
 
             @Override
             protected Executor tryResolve() throws Exception {
+                if (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED) {
+                    LOGGER.fine(() -> "not going to schedue " + task + " yet because Jenkins has not yet completed startup");
+                    return null;
+                }
                 Queue.Item item;
                 if (itemID == 0) { // Not scheduled yet
                     item = Queue.getInstance().schedule2(task, 0).getItem();
