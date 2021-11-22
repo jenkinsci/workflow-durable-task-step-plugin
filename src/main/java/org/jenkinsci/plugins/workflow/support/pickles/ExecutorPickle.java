@@ -29,6 +29,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.Main;
 import hudson.Util;
+import hudson.init.InitMilestone;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
@@ -87,10 +88,14 @@ public class ExecutorPickle extends Pickle {
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
             long itemID;
-            long endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
+            long endTimeNanos;
 
             @Override
             protected Executor tryResolve() throws Exception {
+                if (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED) {
+                    LOGGER.fine(() -> "not going to schedule " + task + " yet because Jenkins has not yet completed startup");
+                    return null;
+                }
                 Queue.Item item;
                 if (itemID == 0) { // Not scheduled yet
                     item = Queue.getInstance().schedule2(task, 0).getItem();
@@ -99,6 +104,7 @@ public class ExecutorPickle extends Pickle {
                         throw new IllegalStateException("queue refused " + task);
                     }
                     itemID = item.getId();
+                    endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
                     LOGGER.log(Level.FINE, "{0} scheduled {1}", new Object[] {ExecutorPickle.this, item});
                 } else {
                     item = Queue.getInstance().getItem(itemID);
