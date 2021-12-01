@@ -35,6 +35,7 @@ import hudson.model.Executor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.Job;
+import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -79,7 +80,9 @@ import javax.annotation.Nullable;
 
 import hudson.util.VersionNumber;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardCopyOption;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import jenkins.model.Jenkins;
 import jenkins.security.MasterToSlaveCallable;
 import jenkins.security.QueueItemAuthenticator;
@@ -126,6 +129,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import org.junit.Assume;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -1264,6 +1268,44 @@ public class ExecutorStepTest {
             r.buildAndAssertSuccess(main);
         });
     }
+
+    @Ignore
+    @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
+        AtomicReference<File> rootDir = new AtomicReference<>();
+        Path tempQueueFile = Files.createTempFile("queue", ".xml");
+        sessions.then(r -> {
+            rootDir.set(r.jenkins.getRootDir());
+            System.out.println(rootDir);
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('custom-label') { }", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            // Get into a state where a PlaceholderTask is in the queue.
+            while (true) {
+                Queue.Item[] items = Queue.getInstance().getItems();
+                if (items.length == 1 && items[0].task instanceof ExecutorStepExecution.PlaceholderTask) {
+                    break;
+                }
+                Thread.sleep(500L);
+            }
+            // Copy queue.xml to a temp file while the PlaceholderTask is in the queue.
+            r.jenkins.getQueue().save();
+            Files.copy(rootDir.get().toPath().resolve("queue.xml"), tempQueueFile, StandardCopyOption.REPLACE_EXISTING);
+            // Create a node with the correct label and let the build complete.
+            DumbSlave node = r.createOnlineSlave(Label.get("custom-label"));
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+        // Copy the temp queue.xml over the real one. The associated build has already completed, so the queue now
+        // has a bogus PlaceholderTask.
+        Files.copy(tempQueueFile, rootDir.get().toPath().resolve("queue.xml"), StandardCopyOption.REPLACE_EXISTING);
+        sessions.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            assertFalse(b.isLogUpdated());
+            r.assertBuildStatusSuccess(b);
+            assertThat(Queue.getInstance().getItems(), emptyArray()); // This assertion fails.
+        });
+    }
+
     public static final class WriteBackStep extends Step {
         static File controllerFile;
         static boolean legal = true;
