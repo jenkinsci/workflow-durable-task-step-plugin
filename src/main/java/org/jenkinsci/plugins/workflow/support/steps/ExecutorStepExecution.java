@@ -777,6 +777,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     LOGGER.fine(() -> esdc.node + " is gone but this node block is eligible for retry");
                 }
                 super.onFailure(context, t);
+                // Must do this after propagating the main exception, or CancelledItemListener will trigger and fail the block with QueueTaskCancelled:
+                Queue.getInstance().cancel(esdc.task);
             }
 
         }
