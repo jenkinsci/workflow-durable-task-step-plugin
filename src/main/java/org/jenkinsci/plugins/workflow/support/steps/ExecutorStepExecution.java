@@ -772,6 +772,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
 
+            @Override public void onFailure(StepContext context, Throwable t) {
+                if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(RemovedNodeCause.class::isInstance)) {
+                    LOGGER.fine(() -> esdc.node + " is gone but this node block is eligible for retry");
+                }
+                super.onFailure(context, t);
+            }
+
         }
 
         /**

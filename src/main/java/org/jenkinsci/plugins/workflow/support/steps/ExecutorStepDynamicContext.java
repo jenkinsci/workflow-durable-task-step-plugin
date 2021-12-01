@@ -62,7 +62,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
     private static final long serialVersionUID = 1;
 
     private final @NonNull ExecutorStepExecution.PlaceholderTask task;
-    private final @CheckForNull String node;
+    final @CheckForNull String node;
     private final @NonNull String path;
     /** Non-null sometime after {@link #resume} if all goes well. */
     private transient @Nullable Executor executor;
