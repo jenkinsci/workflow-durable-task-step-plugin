@@ -1269,7 +1269,7 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore
+    @Ignore("TODO safe fix still TBD")
     @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
         AtomicReference<File> rootDir = new AtomicReference<>();
         Path tempQueueFile = Files.createTempFile("queue", ".xml");
