@@ -126,6 +126,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import org.junit.Assume;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -597,6 +598,7 @@ public class ExecutorStepTest {
         });
     }
 
+    @Ignore("TODO currently just passes right away; could perhaps be reworked to prove that a sh step prints a message")
     @Issue("JENKINS-26130")
     @Test public void unloadableExecutorPickle() throws Throwable {
         sessions.then(r -> {
@@ -614,7 +616,7 @@ public class ExecutorStepTest {
                 WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding());
-                r.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
+                SemaphoreStep.success("wait/1", null);
                 r.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
                 b.getExecutor().interrupt();
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
