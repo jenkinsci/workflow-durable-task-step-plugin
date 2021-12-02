@@ -82,7 +82,6 @@ import hudson.util.VersionNumber;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardCopyOption;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import jenkins.model.Jenkins;
 import jenkins.security.MasterToSlaveCallable;
 import jenkins.security.QueueItemAuthenticator;
@@ -1271,11 +1270,8 @@ public class ExecutorStepTest {
 
     @Ignore("TODO safe fix still TBD")
     @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
-        AtomicReference<File> rootDir = new AtomicReference<>();
-        Path tempQueueFile = Files.createTempFile("queue", ".xml");
+        Path tempQueueFile = tmp.newFile().toPath();
         sessions.then(r -> {
-            rootDir.set(r.jenkins.getRootDir());
-            System.out.println(rootDir);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('custom-label') { }", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -1289,14 +1285,14 @@ public class ExecutorStepTest {
             }
             // Copy queue.xml to a temp file while the PlaceholderTask is in the queue.
             r.jenkins.getQueue().save();
-            Files.copy(rootDir.get().toPath().resolve("queue.xml"), tempQueueFile, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(sessions.getHome().toPath().resolve("queue.xml"), tempQueueFile, StandardCopyOption.REPLACE_EXISTING);
             // Create a node with the correct label and let the build complete.
             DumbSlave node = r.createOnlineSlave(Label.get("custom-label"));
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
         });
         // Copy the temp queue.xml over the real one. The associated build has already completed, so the queue now
         // has a bogus PlaceholderTask.
-        Files.copy(tempQueueFile, rootDir.get().toPath().resolve("queue.xml"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(tempQueueFile, sessions.getHome().toPath().resolve("queue.xml"), StandardCopyOption.REPLACE_EXISTING);
         sessions.then(r -> {
             WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
             WorkflowRun b = p.getBuildByNumber(1);
