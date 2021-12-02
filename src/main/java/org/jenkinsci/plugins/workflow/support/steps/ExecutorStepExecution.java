@@ -748,18 +748,18 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             private final String cookie;
             @Deprecated
             private WorkspaceList.Lease lease;
-            private final ExecutorStepDynamicContext esdc;
+            private final ExecutorStepExecution execution;
 
-            Callback(String cookie, ExecutorStepDynamicContext esdc) {
+            Callback(String cookie, ExecutorStepExecution execution) {
                 this.cookie = cookie;
-                this.esdc = esdc;
+                this.execution = execution;
             }
 
             @Override protected void finished(StepContext context) throws Exception {
                 LOGGER.log(FINE, "finished {0}", cookie);
                 try {
-                    if (esdc != null) {
-                        WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(esdc);
+                    if (execution != null) {
+                        WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(execution.state);
                         if (_lease != null) {
                             _lease.release();
                         }
@@ -770,15 +770,32 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 } finally {
                     finish(cookie);
                 }
+                if (execution != null) {
+                    boolean _stopping = execution.state.task.stopping;
+                    execution.state.task.stopping = true;
+                    try {
+                        Queue.getInstance().cancel(execution.state.task);
+                    } finally {
+                        execution.state.task.stopping = _stopping;
+                    }
+                    execution.state = null;
+                }
             }
 
             @Override public void onFailure(StepContext context, Throwable t) {
-                if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(RemovedNodeCause.class::isInstance)) {
-                    LOGGER.fine(() -> esdc.node + " is gone but this node block is eligible for retry");
+                try {
+                    if (execution != null) {
+                        TaskListener listener = context.get(TaskListener.class);
+                        if (ExtensionList.lookup(ExecutorStepRetryEligibility.class).stream().anyMatch(e -> e.shouldRetry(t, execution.state.node, execution.step.getLabel(), listener))) {
+                            finished(context);
+                            execution.start();
+                            return;
+                        }
+                    }
+                } catch (Exception x) {
+                    t.addSuppressed(x);
                 }
                 super.onFailure(context, t);
-                // Must do this after propagating the main exception, or CancelledItemListener will trigger and fail the block with QueueTaskCancelled:
-                Queue.getInstance().cancel(esdc.task);
             }
 
         }
@@ -855,7 +872,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         execution.state = state;
                         body = new WeakReference<>(context.newBodyInvoker()
                                 .withContexts(env, state)
-                                .withCallback(new Callback(cookie, state))
+                                .withCallback(new Callback(cookie, execution))
                                 .start());
                         LOGGER.log(FINE, "started {0}", cookie);
                     } else {

@@ -360,6 +360,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
                             return null;
                         } else {
+                            // TODO print to logger
                             LOGGER.fine(() -> node + " has been removed for a while, assuming it is not coming back");
                             throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
                         }

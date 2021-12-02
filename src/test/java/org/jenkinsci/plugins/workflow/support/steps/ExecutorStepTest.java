@@ -231,9 +231,9 @@ public class ExecutorStepTest {
     }
 
     private Process jnlpProc;
-    private void startJnlpProc(JenkinsRule r) throws Exception {
+    private void startJnlpProc(JenkinsRule r, String agentName) throws Exception {
         killJnlpProc();
-        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-Djava.awt.headless=true", "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", r.getURL() + "computer/dumbo/slave-agent.jnlp");
+        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-Djava.awt.headless=true", "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", r.getURL() + "computer/" + agentName + "/slave-agent.jnlp");
         pb.redirectErrorStream(true);
         System.err.println("Running: " + pb.command());
         jnlpProc = pb.start();
@@ -256,7 +256,7 @@ public class ExecutorStepTest {
                 s.setNumExecutors(1);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
                 r.jenkins.addNode(s);
-                startJnlpProc(r);
+                startJnlpProc(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -278,7 +278,7 @@ public class ExecutorStepTest {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding()); // TODO occasionally fails; log ends with: ‘Running: Allocate node : Body : Start’ (no shell step in sight)
-                startJnlpProc(r); // Have to relaunch JNLP agent, since the Jenkins port has changed, and we cannot force JenkinsRule to reuse the same port as before.
+                startJnlpProc(r, "dumbo"); // Have to relaunch JNLP agent, since the Jenkins port has changed, and we cannot force JenkinsRule to reuse the same port as before.
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
                 assertTrue(f2.isFile());
@@ -305,7 +305,7 @@ public class ExecutorStepTest {
         sessions.then(r -> {
             DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
             r.jenkins.addNode(s);
-            startJnlpProc(r);
+            startJnlpProc(r, "dumbo");
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -314,7 +314,7 @@ public class ExecutorStepTest {
         });
         sessions.then(r -> {
             WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            startJnlpProc(r);
+            startJnlpProc(r, "dumbo");
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
             // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
             FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
@@ -344,7 +344,7 @@ public class ExecutorStepTest {
                 s.setNumExecutors(1);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
                 r.jenkins.addNode(s);
-                startJnlpProc(r);
+                startJnlpProc(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -366,7 +366,7 @@ public class ExecutorStepTest {
                 while (c.isOnline()) {
                     Thread.sleep(100);
                 }
-                startJnlpProc(r);
+                startJnlpProc(r, "dumbo");
                 while (c.isOffline()) {
                     Thread.sleep(100);
                 }
@@ -384,26 +384,45 @@ public class ExecutorStepTest {
 
     @Issue("JENKINS-49707")
     @Test public void retryNodeBlock() throws Throwable {
-        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+        Assume.assumeFalse("TODO corresponding batch script TBD", Functions.isWindows());
         sessions.then(r -> {
             logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
-            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
+            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s.setLabelString("dumb");
             s.setNumExecutors(1);
             s.setRetentionStrategy(RetentionStrategy.NOOP);
             r.jenkins.addNode(s);
-            startJnlpProc(r);
+            startJnlpProc(r, "dumbo1");
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "node('dumbo') {\n" +
-                "    sh 'sleep infinity'\n" +
+                "node('dumb') {\n" +
+                "    sh 'sleep 10'\n" +
                 "}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("+ sleep", b);
             killJnlpProc();
             r.jenkins.removeNode(s);
-            // TODO status quo:
-            r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
+            s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s.setLabelString("dumb");
+            s.setNumExecutors(1);
+            s.setRetentionStrategy(RetentionStrategy.NOOP);
+            r.jenkins.addNode(s);
+            startJnlpProc(r, "dumbo2");
+            r.waitForMessage("Running on dumbo2 in ", b);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            killJnlpProc();
         });
+    }
+    @TestExtension("retryNodeBlock") public static class RetryThis implements ExecutorStepRetryEligibility {
+        @Override public boolean shouldRetry(Throwable t, String node, String label, TaskListener listener) {
+            if (ExecutorStepRetryEligibility.isRemovedNode(t)) {
+                listener.getLogger().println("Retrying block from " + node + " as " + label);
+                return true;
+            } else {
+                return false;
+            }
+        }
     }
 
     @Issue({"JENKINS-41854", "JENKINS-50504"})
@@ -418,7 +437,7 @@ public class ExecutorStepTest {
                 s.setNumExecutors(1);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
                 r.jenkins.addNode(s);
-                startJnlpProc(r);
+                startJnlpProc(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -462,7 +481,7 @@ public class ExecutorStepTest {
                 }
                 jnlpProc = null;
                 LOGGER.info("restarting agent");
-                startJnlpProc(r);
+                startJnlpProc(r, "dumbo");
                 while (computer.isOffline()) {
                     Thread.sleep(100);
                 }
