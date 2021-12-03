@@ -30,6 +30,7 @@ import hudson.FilePath;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepDynamicContext;
 import org.jenkinsci.plugins.workflow.support.steps.FilePathDynamicContext;
 
 /**
