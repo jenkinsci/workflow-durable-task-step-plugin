@@ -128,7 +128,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import org.junit.Assume;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -1268,8 +1267,8 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore("TODO safe fix still TBD")
     @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
+        logging.record(ExecutorStepExecution.class, Level.FINE).capture(50);
         Path tempQueueFile = tmp.newFile().toPath();
         sessions.then(r -> {
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
@@ -1300,7 +1299,10 @@ public class ExecutorStepTest {
             WorkflowRun b = p.getBuildByNumber(1);
             assertFalse(b.isLogUpdated());
             r.assertBuildStatusSuccess(b);
-            assertThat(Queue.getInstance().getItems(), emptyArray()); // This assertion fails.
+            while (Queue.getInstance().getItems().length > 0) {
+                Thread.sleep(100L);
+            }
+            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
         });
     }
 

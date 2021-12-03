@@ -422,6 +422,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public CauseOfBlockage getCauseOfBlockage() {
+            Run<?, ?> run = runForDisplay();
+            if (!stopping && run != null && !run.isLogUpdated()) {
+                stopping = true;
+                LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
+                Timer.get().execute(() -> {
+                    Queue.getInstance().cancel(this);
+                });
+            }
+            if (stopping) {
+                return new CauseOfBlockage() {
+                    @Override
+                    public String getShortDescription() {
+                        return "Stopping " + getDisplayName();
+                    }
+                };
+            }
             return null;
         }
 
