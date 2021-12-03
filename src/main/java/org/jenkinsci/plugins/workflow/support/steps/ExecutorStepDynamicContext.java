@@ -33,6 +33,7 @@ import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Queue;
 import hudson.remoting.VirtualChannel;
+import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.Serializable;
@@ -42,6 +43,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Logger;
+import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
 import org.kohsuke.accmod.Restricted;
@@ -138,7 +140,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
             return get(c);
         }
 
-        abstract T get(ExecutorStepDynamicContext c);
+        abstract T get(ExecutorStepDynamicContext c) throws IOException, InterruptedException;
 
     }
 
@@ -148,7 +150,24 @@ public final class ExecutorStepDynamicContext implements Serializable {
             return FilePath.class;
         }
 
-        @Override FilePath get(ExecutorStepDynamicContext c) {
+        @Override FilePath get(ExecutorStepDynamicContext c) throws IOException {
+            if (c.lease.path.toComputer() == null) {
+                String message = "Unable to create live FilePath for " + c.node;
+                Computer comp = Jenkins.get().getComputer(c.node);
+                if (comp != null) {
+                    OfflineCause oc = comp.getOfflineCause();
+                    if (oc != null) {
+                        message += "; " + comp.getDisplayName() + " was marked offline: " + oc;
+                    }
+                }
+                IOException e = new IOException(message);
+                if (comp != null) {
+                    for (Computer.TerminationRequest tr : comp.getTerminatedBy()) {
+                        e.addSuppressed(tr);
+                    }
+                }
+                throw e;
+            }
             return c.lease.path;
         }
 
