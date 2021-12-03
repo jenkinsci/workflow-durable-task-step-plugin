@@ -152,6 +152,11 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
         @Override FilePath get(ExecutorStepDynamicContext c) throws IOException {
             if (c.lease.path.toComputer() == null) {
+                FilePath f = FilePathUtils.find(c.node, c.path);
+                if (f != null) {
+                    LOGGER.fine(() -> c.node + " disconnected and reconnected; getting a new FilePath on " + c.path + " with the new Channel");
+                    return f;
+                }
                 String message = "Unable to create live FilePath for " + c.node;
                 Computer comp = Jenkins.get().getComputer(c.node);
                 if (comp != null) {
@@ -180,6 +185,8 @@ public final class ExecutorStepDynamicContext implements Serializable {
         }
 
         @Override WorkspaceList.Lease get(ExecutorStepDynamicContext c) {
+            // Do not do a liveness check as in FilePathTranslator.
+            // We could not do anything about a stale .path even if we found out about it.
             return c.lease;
         }
 

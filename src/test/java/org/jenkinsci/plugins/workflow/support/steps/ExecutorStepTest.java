@@ -432,7 +432,7 @@ public class ExecutorStepTest {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).
-                        record(FilePathDynamicContext.class, Level.FINE).
+                        record(ExecutorStepDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
                 DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
                 s.setNumExecutors(1);
