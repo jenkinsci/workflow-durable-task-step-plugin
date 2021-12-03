@@ -27,10 +27,13 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import hudson.ExtensionPoint;
 import hudson.model.TaskListener;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.Beta;
 
 /**
  * Determines whether a failure in {@link ExecutorStep} should be retried.
  */
+@Restricted(Beta.class)
 public interface ExecutorStepRetryEligibility extends ExtensionPoint {
 
     boolean shouldRetry(Throwable t, String node, String label, TaskListener listener);
