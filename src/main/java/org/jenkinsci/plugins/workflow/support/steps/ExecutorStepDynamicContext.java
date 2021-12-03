@@ -24,7 +24,6 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.Extension;
@@ -64,7 +63,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
     private static final long serialVersionUID = 1;
 
     final @NonNull ExecutorStepExecution.PlaceholderTask task;
-    final @CheckForNull String node;
+    final @NonNull String node;
     private final @NonNull String path;
     /** Non-null sometime after {@link #resume} if all goes well. */
     private transient @Nullable Executor executor;
@@ -75,7 +74,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     ExecutorStepDynamicContext(ExecutorStepExecution.PlaceholderTask task, WorkspaceList.Lease lease, Executor executor) {
         this.task = task;
-        this.node = FilePathUtils.getNodeNameOrNull(lease.path);
+        this.node = FilePathUtils.getNodeName(lease.path);
         this.path = lease.path.getRemote();
         this.executor = executor;
         this.lease = lease;
