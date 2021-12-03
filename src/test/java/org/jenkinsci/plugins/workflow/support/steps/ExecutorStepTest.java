@@ -1289,6 +1289,8 @@ public class ExecutorStepTest {
             // Create a node with the correct label and let the build complete.
             DumbSlave node = r.createOnlineSlave(Label.get("custom-label"));
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            // Remove node so that tasks requiring custom-label are stuck in the queue.
+            Jenkins.get().removeNode(node);
         });
         // Copy the temp queue.xml over the real one. The associated build has already completed, so the queue now
         // has a bogus PlaceholderTask.
