@@ -22,7 +22,7 @@
  * THE SOFTWARE.
  */
 
-package org.jenkinsci.plugins.workflow.support.pickles;
+package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.Functions;
 import hudson.model.Label;
@@ -55,7 +55,7 @@ import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.LoggerRule;
 
-public class ExecutorPickleTest {
+public class ExecutorStepDynamicContextTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
