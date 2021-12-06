@@ -112,6 +112,7 @@ public class ExecutorPickleTest {
             assertNull(j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
             WorkflowRun run = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
+            j.assertLogContains("slave0 has been removed for ", run);
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
             assertNotNull(iba);

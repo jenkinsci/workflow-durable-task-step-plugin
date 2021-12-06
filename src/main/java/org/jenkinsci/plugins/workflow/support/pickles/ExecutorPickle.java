@@ -48,7 +48,6 @@ import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
-import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepDynamicContext;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
@@ -160,7 +159,7 @@ public class ExecutorPickle extends Pickle {
             }
             @Override protected void printWaitingMessage(TaskListener listener) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
-                String message = Messages.ExecutorPickle_waiting_to_resume(task.getFullDisplayName());
+                String message = "Waiting to resume " + task.getFullDisplayName();
                 if (item == null) { // ???
                     listener.getLogger().println(message);
                     return;
