@@ -794,6 +794,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             execution.start();
                             return;
                         }
+                        listener.getLogger().println("No plugin requested a retry of a failed node block running on " + execution.state.node);
                     }
                 } catch (Exception x) {
                     t.addSuppressed(x);
