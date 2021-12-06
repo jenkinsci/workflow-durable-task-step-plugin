@@ -81,7 +81,6 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
-import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -356,12 +355,12 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                             LOGGER.fine(() -> "discovered that " + node + " has been removed");
                             removedNodeDiscovered = System.nanoTime();
                             return null;
-                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
                             return null;
                         } else {
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed and timeout has expired");
-                            listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
+                            listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
                             throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
                         }
                     }

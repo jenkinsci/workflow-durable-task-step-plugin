@@ -6,6 +6,7 @@ import hudson.Extension;
 import hudson.ExtensionList;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.Main;
 import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
 import hudson.model.Computer;
@@ -75,8 +76,6 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
-import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
-import org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -84,6 +83,10 @@ import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
+
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
+    @Restricted(value = NoExternalUse.class)
+    public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private final ExecutorStep step;
     // TODO perhaps just inline it here? does not do much good as a separate class
@@ -269,7 +272,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         body.cancel(new RemovedNodeCause());
                     }
                 }
-            }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+            }, TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -315,9 +318,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /**
          * Needed for {@link BodyExecution#cancel}.
          * {@code transient} because we cannot save a {@link BodyExecution} in {@link PlaceholderTask}:
-         * {@link ExecutorPickle} is written to the stream first, which holds a {@link PlaceholderTask},
+         * {@code ExecutorPickle} is written to the stream first, which holds a {@link PlaceholderTask},
          * and the {@link BodyExecution} holds {@link PlaceholderTask.Callback} whose {@link WorkspaceList.Lease}
-         * is not processed by {@link WorkspaceListLeasePickle} since pickles are not recursive.
+         * is not processed by {@code WorkspaceListLeasePickle} since pickles are not recursive.
          * So we make a best effort and only try to cancel a body within the current session.
          * TODO try to rewrite this mess
          * @see RemovedNodeListener

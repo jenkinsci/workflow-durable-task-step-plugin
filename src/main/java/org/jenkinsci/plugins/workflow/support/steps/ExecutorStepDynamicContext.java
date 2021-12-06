@@ -96,7 +96,6 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     private static abstract class Translator<T> extends DynamicContext.Typed<T> {
 
-        @SuppressWarnings("deprecation")
         @Override protected T get(DelegatedContext context) throws IOException, InterruptedException {
             ExecutorStepDynamicContext c = context.get(ExecutorStepDynamicContext.class);
             if (c == null) {
@@ -110,7 +109,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
                 Queue.Executable exec;
                 try {
                     // TODO block here, or just return null? DurableTaskStep.Execution.getWorkspace will tolerate nulls, but if there are any other resumable steps expecting a workspace, they could fail
-                    exec = c.future.get(org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+                    exec = c.future.get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
                 } catch (ExecutionException | TimeoutException | CancellationException x) {
                     c.future = Futures.immediateFailedFuture(x);
                     throw new IOException(x);
