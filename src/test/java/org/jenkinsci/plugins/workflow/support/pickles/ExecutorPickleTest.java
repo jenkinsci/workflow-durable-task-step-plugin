@@ -40,7 +40,6 @@ import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
-import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.assertEquals;
@@ -48,7 +47,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import org.junit.Assume;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -64,12 +62,11 @@ public class ExecutorPickleTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public LoggerRule logging = new LoggerRule();
 
-    @Ignore("TODO needs to be adapted to new behavior, probably using sh")
     @Test public void canceledQueueItem() throws Throwable {
         sessions.then(j -> {
                 DumbSlave s = j.createSlave(Label.get("remote"));
                 WorkflowJob p = j.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'}", true));
+                p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'; sh 'true'}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
                 j.jenkins.removeNode(s);
@@ -77,9 +74,6 @@ public class ExecutorPickleTest {
         sessions.then(j -> {
                 SemaphoreStep.success("wait/1", null);
                 WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-                // first prints on 2.35-: hudson.model.Messages.Queue_WaitingForNextAvailableExecutor(); 2.36+: hudson.model.Messages.Node_LabelMissing("Jenkins", "slave0")
-                // TODO this now does not get printed; instead build just completes:
-                j.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);

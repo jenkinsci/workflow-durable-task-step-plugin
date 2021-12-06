@@ -45,6 +45,7 @@ import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
+import org.jenkinsci.plugins.workflow.support.concurrent.Futures;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 
@@ -111,7 +112,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
                     // TODO block here, or just return null? DurableTaskStep.Execution.getWorkspace will tolerate nulls, but if there are any other resumable steps expecting a workspace, they could fail
                     exec = c.future.get(org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
                 } catch (ExecutionException | TimeoutException | CancellationException x) {
-                    // TODO pretty display of error, RemovedNodeCause, etc. from ExecutorPickle also from InterruptedException
+                    c.future = Futures.immediateFailedFuture(x);
                     throw new IOException(x);
                 }
                 c.executor = Executor.of(exec);
