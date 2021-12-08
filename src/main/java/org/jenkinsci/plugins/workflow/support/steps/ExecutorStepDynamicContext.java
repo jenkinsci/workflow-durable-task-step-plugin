@@ -105,11 +105,14 @@ public final class ExecutorStepDynamicContext implements Serializable {
                 if (c.future == null) {
                     throw new IOException("Attempt to look up context from ExecutorStepExecution which has not been resumed");
                 }
+                if (!c.future.isDone()) {
+                    LOGGER.fine(() -> "queue item has not been scheduled for " + c.path + " on " + c.node + ", declining to provide any " + type().getSimpleName());
+                    return null;
+                }
                 LOGGER.fine(() -> "waiting for queue item to be scheduled for " + c.path + " on " + c.node);
                 Queue.Executable exec;
                 try {
-                    // TODO block here, or just return null? DurableTaskStep.Execution.getWorkspace will tolerate nulls, but if there are any other resumable steps expecting a workspace, they could fail
-                    exec = c.future.get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+                    exec = c.future.get(1, TimeUnit.SECONDS);
                 } catch (ExecutionException | TimeoutException | CancellationException x) {
                     c.future = Futures.immediateFailedFuture(x);
                     throw new IOException(x);
