@@ -423,7 +423,75 @@ public class ExecutorStepTest {
                 listener.getLogger().println("Retrying block from " + node + " as " + label);
                 return true;
             } else {
+                listener.getLogger().println("Ignoring " + t);
                 return false;
+            }
+        }
+    }
+
+    @Issue("JENKINS-49707")
+    @Test public void retryNodeBlockSynch() throws Throwable {
+        Assume.assumeFalse("TODO corresponding Windows process TBD", Functions.isWindows());
+        sessions.then(r -> {
+            logging.record(ExecutorStepExecution.class, Level.FINE);
+            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s.setLabelString("dumb");
+            s.setNumExecutors(1);
+            s.setRetentionStrategy(RetentionStrategy.NOOP);
+            r.jenkins.addNode(s);
+            startJnlpProc(r, "dumbo1");
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "node('dumb') {\n" +
+                "    hang()\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("$ sleep", b);
+            // Immediate kill causes RequestAbortedException from RemoteLauncher.launch, which passes test;
+            // but more realistic to see IOException: Backing channel 'JNLP4-connect connection from …' is disconnected.
+            // from RemoteLauncher$ProcImpl.isAlive via RemoteInvocationHandler.channelOrFail.
+            // Either way the top-level exception wraps ClosedChannelException:
+            Thread.sleep(1000);
+            killJnlpProc();
+            r.jenkins.removeNode(s);
+            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
+            s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s.setLabelString("dumb");
+            s.setNumExecutors(1);
+            s.setRetentionStrategy(RetentionStrategy.NOOP);
+            r.jenkins.addNode(s);
+            startJnlpProc(r, "dumbo2");
+            r.waitForMessage("Running on dumbo2 in ", b);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            killJnlpProc();
+        });
+    }
+    @TestExtension("retryNodeBlockSynch") public static class RetryThisSynch implements ExecutorStepRetryEligibility {
+        @Override public boolean shouldRetry(Throwable t, String node, String label, TaskListener listener) {
+            Functions.printStackTrace(t, listener.getLogger());
+            if (ExecutorStepRetryEligibility.isClosedChannel(t)) {
+                listener.getLogger().println("Retrying block from " + node + " as " + label);
+                return true;
+            } else {
+                listener.getLogger().println("Ignoring " + t);
+                return false;
+            }
+        }
+    }
+    public static final class HangStep extends Step {
+        @DataBoundConstructor public HangStep() {}
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return StepExecutions.synchronousNonBlocking(context, c -> {
+                c.get(hudson.Launcher.class).launch().cmds("sleep", "10").stdout(c.get(TaskListener.class)).start().join();
+                return null;
+            });
+        }
+        @TestExtension("retryNodeBlockSynch") public static final class DescriptorImpl extends StepDescriptor {
+            @Override public String getFunctionName() {
+                return "hang";
+            }
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return new HashSet<>(Arrays.asList(hudson.Launcher.class, TaskListener.class));
             }
         }
     }

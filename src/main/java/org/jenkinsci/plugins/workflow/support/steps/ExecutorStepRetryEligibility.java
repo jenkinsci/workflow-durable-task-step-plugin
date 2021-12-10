@@ -26,6 +26,8 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.ExtensionPoint;
 import hudson.model.TaskListener;
+import java.io.EOFException;
+import java.nio.channels.ClosedChannelException;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.Beta;
@@ -40,6 +42,18 @@ public interface ExecutorStepRetryEligibility extends ExtensionPoint {
 
     static boolean isRemovedNode(Throwable t) {
         return t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.RemovedNodeCause.class::isInstance);
+    }
+
+    static boolean isClosedChannel(Throwable t) {
+        if (t instanceof ClosedChannelException) {
+            return true;
+        } else if (t instanceof EOFException) {
+            return true;
+        } else if (t == null) {
+            return false;
+        } else {
+            return isClosedChannel(t.getCause());
+        }
     }
 
 }
