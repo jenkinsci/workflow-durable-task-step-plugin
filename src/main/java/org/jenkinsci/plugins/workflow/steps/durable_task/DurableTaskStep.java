@@ -305,6 +305,9 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             returnStatus = step.returnStatus;
             StepContext context = getContext();
             ws = context.get(FilePath.class);
+            if (ws == null) {
+                throw new AbortException("No workspace currently accessible");
+            }
             node = FilePathUtils.getNodeName(ws);
             DurableTask durableTask = step.task();
             if (returnStdout) {
