@@ -25,10 +25,12 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.ExtensionPoint;
+import hudson.FilePath;
 import hudson.model.TaskListener;
 import java.io.EOFException;
 import java.nio.channels.ClosedChannelException;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
+import org.jenkinsci.plugins.workflow.steps.MissingContextVariableException;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.Beta;
 
@@ -40,20 +42,32 @@ public interface ExecutorStepRetryEligibility extends ExtensionPoint {
 
     boolean shouldRetry(Throwable t, String node, String label, TaskListener listener);
 
-    static boolean isRemovedNode(Throwable t) {
-        return t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.RemovedNodeCause.class::isInstance);
+    // TODO take TaskListener so as to print messages in selective cases?
+    static boolean isGenerallyEligible(Throwable t) {
+        if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.RemovedNodeCause.class::isInstance)) {
+            return true;
+        }
+        class Holder { // TODO Java 11+ use private static method
+            boolean isClosedChannel(Throwable t) {
+                if (t instanceof ClosedChannelException) {
+                    return true;
+                } else if (t instanceof EOFException) {
+                    return true;
+                } else if (t == null) {
+                    return false;
+                } else {
+                    return isClosedChannel(t.getCause());
+                }
+            }
+        }
+        if (new Holder().isClosedChannel(t)) {
+            return true;
+        }
+        if (t instanceof MissingContextVariableException && ((MissingContextVariableException) t).getType() == FilePath.class) {
+            return true;
+        }
+        return false;
     }
 
-    static boolean isClosedChannel(Throwable t) {
-        if (t instanceof ClosedChannelException) {
-            return true;
-        } else if (t instanceof EOFException) {
-            return true;
-        } else if (t == null) {
-            return false;
-        } else {
-            return isClosedChannel(t.getCause());
-        }
-    }
 
 }
