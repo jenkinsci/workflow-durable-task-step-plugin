@@ -185,7 +185,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     @Override public void onResume() {
-        super.onResume();
         try {
             Run<?, ?> run = getContext().get(Run.class);
             if (state == null) {
