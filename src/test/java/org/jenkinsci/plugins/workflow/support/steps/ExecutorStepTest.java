@@ -516,6 +516,61 @@ public class ExecutorStepTest {
         });
     }
 
+    @Ignore("TODO JENKINS-30383 needed to either retry idempotent steps, or at least produce a well-typed exception that could restart the whole node block")
+    @Issue({"JENKINS-49707", "JENKINS-30383"})
+    @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
+        logging.record(ExecutorStepExecution.class, Level.FINE);
+        sessions.then(r -> {
+            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s.setLabelString("dumb");
+            s.setNumExecutors(1);
+            s.setRetentionStrategy(RetentionStrategy.NOOP);
+            r.jenkins.addNode(s);
+            startJnlpProc(r, "dumbo1");
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "node('dumb') {\n" +
+                "    waitWithoutAgent()\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("Sleeping without agent", b);
+        });
+        sessions.then(r -> {
+            RetryThis.activate();
+            killJnlpProc();
+            r.jenkins.removeNode(r.jenkins.getNode("dumbo1"));
+            WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
+            DumbSlave s = s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s.setLabelString("dumb");
+            s.setNumExecutors(1);
+            s.setRetentionStrategy(RetentionStrategy.NOOP);
+            r.jenkins.addNode(s);
+            startJnlpProc(r, "dumbo2");
+            r.waitForMessage("Running on dumbo2 in ", b);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            killJnlpProc();
+        });
+    }
+    public static final class WaitWithoutAgentStep extends Step {
+        @DataBoundConstructor public WaitWithoutAgentStep() {}
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return StepExecutions.synchronousNonBlocking(context, c -> {
+                c.get(TaskListener.class).getLogger().println("Sleeping without agent");
+                Thread.sleep(10_000);
+                return null;
+            });
+        }
+        @TestExtension("retryNodeBlockSynchAcrossRestarts") public static final class DescriptorImpl extends StepDescriptor {
+            @Override public String getFunctionName() {
+                return "waitWithoutAgent";
+            }
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Collections.singleton(TaskListener.class);
+            }
+        }
+    }
+
     @TestExtension public static class RetryThis implements ExecutorStepRetryEligibility {
         public static void activate() {
             ExtensionList.lookupSingleton(RetryThis.class).active = true;
