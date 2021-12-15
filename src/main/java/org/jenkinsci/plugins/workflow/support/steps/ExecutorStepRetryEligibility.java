@@ -31,6 +31,7 @@ import java.io.EOFException;
 import java.nio.channels.ClosedChannelException;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.MissingContextVariableException;
+import org.jenkinsci.plugins.workflow.steps.SynchronousResumeNotSupportedException;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.Beta;
 
@@ -64,6 +65,9 @@ public interface ExecutorStepRetryEligibility extends ExtensionPoint {
             return true;
         }
         if (t instanceof MissingContextVariableException && ((MissingContextVariableException) t).getType() == FilePath.class) {
+            return true;
+        }
+        if (t instanceof SynchronousResumeNotSupportedException) {
             return true;
         }
         return false;

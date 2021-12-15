@@ -516,7 +516,6 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore("TODO JENKINS-30383 needed to either retry idempotent steps, or at least produce a well-typed exception that could restart the whole node block")
     @Issue({"JENKINS-49707", "JENKINS-30383"})
     @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE);
