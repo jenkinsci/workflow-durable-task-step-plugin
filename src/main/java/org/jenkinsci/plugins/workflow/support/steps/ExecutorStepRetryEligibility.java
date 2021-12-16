@@ -26,7 +26,12 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.ExtensionPoint;
 import hudson.FilePath;
+import hudson.Launcher;
+import hudson.model.Computer;
+import hudson.model.Executor;
+import hudson.model.Node;
 import hudson.model.TaskListener;
+import hudson.slaves.WorkspaceList;
 import java.io.EOFException;
 import java.nio.channels.ClosedChannelException;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
@@ -64,8 +69,13 @@ public interface ExecutorStepRetryEligibility extends ExtensionPoint {
         if (new Holder().isClosedChannel(t)) {
             return true;
         }
-        if (t instanceof MissingContextVariableException && ((MissingContextVariableException) t).getType() == FilePath.class) {
-            return true;
+        if (t instanceof MissingContextVariableException) {
+            Class<?> type = ((MissingContextVariableException) t).getType();
+            // See ExecutorStepDynamicContext for four explicitly advertised types, & DefaultStepContext for two implicitly derived ones.
+            // ExecutorStepExecution also offers EnvVars in context, but this is available to all builds anyway.
+            if (type == FilePath.class || type == WorkspaceList.Lease.class || type == Computer.class || type == Executor.class || type == Node.class || type == Launcher.class) {
+                return true;
+            }
         }
         if (t instanceof SynchronousResumeNotSupportedException) {
             return true;

@@ -477,7 +477,6 @@ public class ExecutorStepTest {
 
     @Issue("JENKINS-49707")
     @Test public void retryNewStepAcrossRestarts() throws Throwable {
-        Assume.assumeFalse("TODO corresponding batch script TBD", Functions.isWindows());
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
             DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
@@ -489,9 +488,8 @@ public class ExecutorStepTest {
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
                 "node('dumb') {\n" +
-                "    writeFile file: 'x.txt', text: ''\n" +
                 "    semaphore 'wait'\n" +
-                "    archiveArtifacts 'x.txt'\n" +
+                "    isUnix()\n" +
                 "}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             SemaphoreStep.waitForStart("wait/1", b);
