@@ -64,6 +64,7 @@ import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
@@ -422,11 +423,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public CauseOfBlockage getCauseOfBlockage() {
-            Run<?, ?> run = runForDisplay();
-            if (!stopping && run != null && !run.isLogUpdated()) {
-                stopping = true;
-                LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
-                Timer.get().execute(() -> Queue.getInstance().cancel(this));
+            if (FlowExecutionList.get().isResumptionComplete()) {
+                // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
+                Run<?, ?> run = runForDisplay();
+                if (!stopping && run != null && !run.isLogUpdated()) {
+                    stopping = true;
+                    LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
+                    Timer.get().execute(() -> Queue.getInstance().cancel(this));
+                }
             }
             if (stopping) {
                 return new CauseOfBlockage() {
