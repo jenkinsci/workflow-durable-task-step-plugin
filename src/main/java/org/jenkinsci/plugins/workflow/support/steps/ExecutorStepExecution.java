@@ -706,7 +706,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     @Override public Authentication authenticate(Queue.Task task) {
                         if (task instanceof PlaceholderTask) {
                             String auth = ((PlaceholderTask) task).auth;
-                            LOGGER.log(FINE, "authenticating {0}", task);
+                            LOGGER.finer(() -> "authenticating " + task);
                             if (Jenkins.ANONYMOUS.getName().equals(auth)) {
                                 return Jenkins.ANONYMOUS;
                             } else if (auth != null) {
