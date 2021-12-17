@@ -505,7 +505,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 return context.get(Run.class);
             } catch (Exception x) {
-                LOGGER.log(FINE, "broken " + cookie, x);
+                LOGGER.log(FINE, "broken " + cookie + " in " + runId, x);
                 finish(cookie); // probably broken, so just shut it down
                 return null;
             }
@@ -895,10 +895,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 .withContexts(env, state)
                                 .withCallback(new Callback(cookie, execution))
                                 .start());
-                        LOGGER.log(FINE, "started {0}", cookie);
+                        LOGGER.fine(() -> "started " + cookie + " in " + runId);
                     } else {
                         // just rescheduled after a restart; wait for task to complete
-                        LOGGER.log(FINE, "resuming {0}", cookie);
+                        LOGGER.fine(() -> "resuming " + cookie + " in " + runId);
                     }
                 } catch (Exception x) {
                     if (computer != null) {
@@ -917,10 +917,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 // wait until the invokeBodyLater call above completes and notifies our Callback object
                 synchronized (runningTasks) {
-                    LOGGER.log(FINE, "waiting on {0}", cookie);
+                    LOGGER.fine(() -> "waiting on " + cookie + " in " + runId);
                     RunningTask runningTask = runningTasks.get(cookie);
                     if (runningTask == null) {
-                        LOGGER.log(FINE, "running task apparently finished quickly for {0}", cookie);
+                        LOGGER.fine(() -> "running task apparently finished quickly for " + cookie + " in " + runId);
                         return;
                     }
                     assert runningTask.execution == null;
@@ -932,7 +932,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             if (forShutdown) {
                                 return;
                             }
-                            LOGGER.log(FINE, "interrupted {0}", cookie);
+                            LOGGER.fine(() -> "interrupted " + cookie + " in " + runId);
                             // TODO save the BodyExecution somehow and call .cancel() here; currently we just interrupt the build as a whole:
                             Timer.get().submit(() -> { // JENKINS-46738
                                 Executor masterExecutor = r.getExecutor();
