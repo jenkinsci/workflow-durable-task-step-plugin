@@ -799,6 +799,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         execution.state.task.stopping = _stopping;
                     }
                     execution.state = null;
+                    context.saveState();
                 }
             }
 
@@ -896,6 +897,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 .withCallback(new Callback(cookie, execution))
                                 .start());
                         LOGGER.fine(() -> "started " + cookie + " in " + runId);
+                        context.saveState();
                     } else {
                         // just rescheduled after a restart; wait for task to complete
                         LOGGER.fine(() -> "resuming " + cookie + " in " + runId);
