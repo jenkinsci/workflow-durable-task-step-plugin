@@ -423,15 +423,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public CauseOfBlockage getCauseOfBlockage() {
-            if (!FlowExecutionList.get().isResumptionComplete()) {
-                // We do not want to load the run and resume its execution in this context in normal scenarios.
-                return null;
-            }
-            Run<?, ?> run = runForDisplay();
-            if (!stopping && run != null && !run.isLogUpdated()) {
-                stopping = true;
-                LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
-                Timer.get().execute(() -> Queue.getInstance().cancel(this));
+            if (FlowExecutionList.get().isResumptionComplete()) {
+                // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
+                Run<?, ?> run = runForDisplay();
+                if (!stopping && run != null && !run.isLogUpdated()) {
+                    stopping = true;
+                    LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
+                    Timer.get().execute(() -> Queue.getInstance().cancel(this));
+                }
             }
             if (stopping) {
                 return new CauseOfBlockage() {
