@@ -27,6 +27,7 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableSet;
+import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.ExtensionList;
 import hudson.FilePath;
 import hudson.Functions;
@@ -76,7 +77,6 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import javax.annotation.Nullable;
 
 import hudson.util.VersionNumber;
 import java.nio.charset.StandardCharsets;

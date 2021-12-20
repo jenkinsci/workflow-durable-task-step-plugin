@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.Main;
@@ -152,10 +153,11 @@ public class ExecutorPickle extends Pickle {
                 // Or can we schedule a placeholder Task whose Executable does nothing but return Executor.currentExecutor and then end?
                 throw new IllegalStateException(exec + " was scheduled but no executor claimed it");
             }
+            @NonNull
             @Override protected FlowExecutionOwner getOwner() {
                 return owner;
             }
-            @Override protected void printWaitingMessage(TaskListener listener) {
+            @Override protected void printWaitingMessage(@NonNull TaskListener listener) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
                 String message = Messages.ExecutorPickle_waiting_to_resume(task.getFullDisplayName());
                 if (item == null) { // ???
@@ -195,7 +197,8 @@ public class ExecutorPickle extends Pickle {
     }
 
     @Extension public static final class Factory extends SingleTypedPickleFactory<Executor> {
-        @Override protected Pickle pickle(Executor object) {
+        @NonNull
+        @Override protected Pickle pickle(@NonNull Executor object) {
             return new ExecutorPickle(object);
         }
     }

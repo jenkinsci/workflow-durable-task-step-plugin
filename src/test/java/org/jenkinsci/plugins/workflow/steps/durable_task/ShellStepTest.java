@@ -4,6 +4,8 @@ import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.FilePath;
 import hudson.EnvVars;
 import hudson.Functions;
@@ -57,7 +59,6 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
-import javax.annotation.CheckForNull;
 import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
@@ -269,7 +270,8 @@ public class ShellStepTest {
         }
         private static class Decorator extends LauncherDecorator implements Serializable {
             private static final long serialVersionUID = 1;
-            @Override public Launcher decorate(Launcher launcher, Node node) {
+            @NonNull
+            @Override public Launcher decorate(Launcher launcher, @NonNull Node node) {
                 return launcher.decorateByPrefix("nice");
             }
         }
@@ -280,6 +282,7 @@ public class ShellStepTest {
             @Override public String getFunctionName() {
                 return "nice";
             }
+            @NonNull
             @Override public String getDisplayName() {
                 return "Nice";
             }
@@ -431,16 +434,20 @@ public class ShellStepTest {
                 return new BrokenLogStorage(x);
             }
             return new LogStorage() {
+                @NonNull
                 @Override public BuildListener overallListener() throws IOException, InterruptedException {
                     return new RemotableBuildListener(base.overallListener());
                 }
-                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
+                @NonNull
+                @Override public TaskListener nodeListener(@NonNull FlowNode node) throws IOException, InterruptedException {
                     return new RemotableBuildListener(base.nodeListener(node));
                 }
-                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
+                @NonNull
+                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(@NonNull FlowExecutionOwner.Executable build, boolean complete) {
                     return base.overallLog(build, complete);
                 }
-                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
+                @NonNull
+                @Override public AnnotatedLargeText<FlowNode> stepLog(@NonNull FlowNode node, boolean complete) {
                     return base.stepLog(node, complete);
                 }
             };
@@ -460,6 +467,7 @@ public class ShellStepTest {
             this.delegate = delegate;
             this.id = id;
         }
+        @NonNull
         @Override public PrintStream getLogger() {
             if (logger == null) {
                 final OutputStream os = delegate.getLogger();
@@ -775,8 +783,9 @@ public class ShellStepTest {
     @TestExtension(value = "shouldInvokeLauncherDecoratorForShellStep")
     public static final class MyNodeLauncherDecorator extends LauncherDecorator {
 
+        @NonNull
         @Override
-        public Launcher decorate(Launcher lnchr, Node node) {
+        public Launcher decorate(@NonNull Launcher lnchr, @NonNull Node node) {
             // Just inject the environment variable
             Map<String, String> env = new HashMap<>();
             env.put("INJECTED", "MYVAR-" + node.getNodeName());
