@@ -1,5 +1,8 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.Nullable;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.EnvVars;
 import hudson.Extension;
@@ -46,8 +49,6 @@ import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
 import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
@@ -130,7 +131,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     @Override
-    public void stop(Throwable cause) throws Exception {
+    public void stop(@NonNull Throwable cause) throws Exception {
         Queue.Item[] items;
         try (ACLContext as = ACL.as(ACL.SYSTEM)) {
             items = Queue.getInstance().getItems();
@@ -257,7 +258,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     @Extension public static final class RemovedNodeListener extends NodeListener {
-        @Override protected void onDeleted(Node node) {
+        @Override protected void onDeleted(@NonNull Node node) {
             if (!RemovedNodeCause.ENABLED) {
                 return;
             }
@@ -451,6 +452,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return Collections.singleton(this);
         }
 
+        @NonNull
         @Override public Queue.Task getOwnerTask() {
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null && runId != null) { // JENKINS-60389 shortcut
@@ -482,6 +484,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * TODO make {@link FlowExecutionOwner} implement {@link AccessControlled}
          * so that an implementation could fall back to checking {@link Job} permission.
          */
+        @NonNull
         @Override public ACL getACL() {
             try {
                 if (!context.isReady()) {
@@ -704,16 +707,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return new ResourceList();
         }
 
+        @NonNull
         @Override public Authentication getDefaultAuthentication() {
             return ACL.SYSTEM;
         }
 
+        @NonNull
         @Override public Authentication getDefaultAuthentication(Queue.Item item) {
             return getDefaultAuthentication();
         }
 
         @Restricted(NoExternalUse.class)
         @Extension(ordinal=959) public static class AuthenticationFromBuild extends QueueItemAuthenticatorProvider {
+            @NonNull
             @Override public List<QueueItemAuthenticator> getAuthenticators() {
                 return Collections.singletonList(new QueueItemAuthenticator() {
                     @Override public Authentication authenticate(Queue.Task task) {
@@ -931,6 +937,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
 
+            @NonNull
             @Override public PlaceholderTask getParent() {
                 return PlaceholderTask.this;
             }
@@ -1007,18 +1014,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
             private static final long serialVersionUID = 1L;
 
+            @NonNull
             @Override
             public ACL getACL() {
                 return getParent().getACL();
             }
 
             @Override
-            public void checkPermission(Permission permission) throws AccessDeniedException {
+            public void checkPermission(@NonNull Permission permission) throws AccessDeniedException {
                 getACL().checkPermission(permission);
             }
 
             @Override
-            public boolean hasPermission(Permission permission) {
+            public boolean hasPermission(@NonNull Permission permission) {
                 return getACL().hasPermission(permission);
             }
         }

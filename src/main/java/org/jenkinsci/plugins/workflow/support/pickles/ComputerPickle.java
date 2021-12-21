@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.pickles;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import com.google.common.util.concurrent.ListenableFuture;
 import hudson.Extension;
@@ -62,7 +63,8 @@ public class ComputerPickle extends Pickle {
 
     @Extension
     public static final class Factory extends SingleTypedPickleFactory<Computer> {
-        @Override protected Pickle pickle(Computer computer) {
+        @NonNull
+        @Override protected Pickle pickle(@NonNull Computer computer) {
             return new ComputerPickle(computer);
         }
     }

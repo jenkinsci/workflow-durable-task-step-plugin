@@ -25,6 +25,8 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import com.google.common.collect.ImmutableSet;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
@@ -60,8 +62,6 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
-import javax.annotation.Nonnull;
 import jenkins.model.Jenkins;
 import jenkins.tasks.filters.EnvVarsFilterableBuilder;
 import jenkins.util.Timer;
@@ -407,14 +407,14 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             }
         }
 
-        private synchronized @Nonnull TaskListener listener() {
+        private synchronized @NonNull TaskListener listener() {
             if (newlineSafeTaskListener == null) {
                 newlineSafeTaskListener = new NewlineSafeTaskListener(_listener());
             }
             return newlineSafeTaskListener;
         }
 
-        private @Nonnull TaskListener _listener() {
+        private @NonNull TaskListener _listener() {
             TaskListener l;
             StepContext context = getContext();
             try {
@@ -448,6 +448,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             }
 
             // Similar to DecoratedTaskListener:
+            @NonNull
             @Override public synchronized PrintStream getLogger() {
                 if (logger == null) {
                     LOGGER.fine("creating filtered stream");
@@ -458,7 +459,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                             super.write(b);
                             nl = b == '\n';
                         }
-                        @Override public void write(byte[] b, int off, int len) throws IOException {
+                        @Override public void write(@NonNull byte[] b, int off, int len) throws IOException {
                             super.write(b, off, len);
                             if (len > 0) {
                                 nl = b[off + len - 1] == '\n';
@@ -483,7 +484,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
 
         }
 
-        private @Nonnull Launcher launcher() throws IOException, InterruptedException {
+        private @NonNull Launcher launcher() throws IOException, InterruptedException {
             StepContext context = getContext();
             Launcher l = context.get(Launcher.class);
             if (l == null) {
@@ -492,7 +493,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             return l;
         }
 
-        @Override public void stop(final Throwable cause) throws Exception {
+        @Override public void stop(@NonNull final Throwable cause) throws Exception {
             causeOfStoppage = cause;
             FilePath workspace = getWorkspace();
             if (workspace != null) {
@@ -711,7 +712,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             this.listener = listener;
         }
 
-        @Override public void output(InputStream stream) throws Exception {
+        @Override public void output(@NonNull InputStream stream) throws Exception {
             PrintStream ps = listener.getLogger();
             try {
                 if (ps.getClass() == PrintStream.class) {

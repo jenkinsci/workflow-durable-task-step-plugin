@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
@@ -51,6 +52,7 @@ public class FilePathPickle extends Pickle {
             protected FilePath tryResolve() {
                 return FilePathUtils.find(slave, path);
             }
+            @NonNull
             @Override protected FlowExecutionOwner getOwner() {
                 return owner;
             }
@@ -65,7 +67,8 @@ public class FilePathPickle extends Pickle {
     }
 
     @Extension public static final class Factory extends SingleTypedPickleFactory<FilePath> {
-        @Override protected Pickle pickle(FilePath object) {
+        @NonNull
+        @Override protected Pickle pickle(@NonNull FilePath object) {
             return new FilePathPickle(object);
         }
     }

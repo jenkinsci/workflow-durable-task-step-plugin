@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.model.TaskListener;
@@ -66,6 +67,7 @@ public final class ShellStep extends DurableTaskStep {
 
     @Extension public static final class DescriptorImpl extends DurableTaskStepDescriptor {
 
+        @NonNull
         @Override public String getDisplayName() {
             return "Shell Script";
         }

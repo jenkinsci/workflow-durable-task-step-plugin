@@ -1,5 +1,6 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.PowershellScript;
@@ -30,6 +31,7 @@ public class PowerShellCoreScriptStep extends DurableTaskStep {
     @Extension
     public static final class DescriptorImpl extends DurableTaskStepDescriptor {
 
+        @NonNull
         @Override public String getDisplayName() {
             return "PowerShell Core Script";
         }
