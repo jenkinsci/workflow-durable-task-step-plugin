@@ -26,14 +26,11 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
-import com.google.common.collect.ImmutableSet;
 import edu.umd.cs.findbugs.annotations.Nullable;
-import hudson.ExtensionList;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
 import hudson.model.Executor;
-import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Label;
@@ -42,7 +39,6 @@ import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.Slave;
-import hudson.model.TaskListener;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.model.queue.CauseOfBlockage;
@@ -79,19 +75,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import hudson.util.VersionNumber;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardCopyOption;
-import java.util.Set;
 import jenkins.model.Jenkins;
-import jenkins.security.MasterToSlaveCallable;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
-import jenkins.security.s2m.AdminWhitelistRule;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.tools.ant.util.JavaEnvUtils;
 import static org.hamcrest.Matchers.*;
@@ -119,11 +110,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.hamcrest.MatcherAssert.assertThat;
-import org.jenkinsci.plugins.workflow.steps.Step;
-import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
-import org.jenkinsci.plugins.workflow.steps.StepExecution;
-import org.jenkinsci.plugins.workflow.steps.StepExecutions;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import org.junit.Assume;
@@ -139,7 +125,6 @@ import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.MockFolder;
 import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.TestExtension;
-import org.kohsuke.stapler.DataBoundConstructor;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -1231,39 +1216,8 @@ public class ExecutorStepTest {
             assertEquals(1, executors.size());
             Queue.Executable exec = executors.get(0).getCurrentExecutable();
             assertNotNull(exec);
-            assertEquals(b, exec.getClass().getMethod("getParentExecutable").invoke(exec)); // TODO https://github.com/jenkinsci/jenkins/pull/5733 remove reflection
+            assertEquals(b, exec.getParentExecutable());
             SemaphoreStep.success("wait/1", null);
-        });
-    }
-
-    @Issue("SECURITY-2428")
-    @Test
-    public void accessPermittedOnlyFromCurrentBuild() throws Throwable {
-        sessions.then(r -> {
-            // Adapted from RunningBuildFilePathFilterTest
-            ExtensionList.lookupSingleton(AdminWhitelistRule.class).setMasterKillSwitch(false);
-            WorkflowJob main = r.createProject(WorkflowJob.class, "main");
-            DumbSlave s = r.createOnlineSlave();
-            main.setDefinition(new CpsFlowDefinition("node('" + s.getNodeName() + "') {writeBack()}", true));
-            // Normal case: writing to our own build directory
-            WriteBackStep.controllerFile = new File(main.getBuildDir(), "1/stuff.txt");
-            r.buildAndAssertSuccess(main);
-            // Attacks:
-            WriteBackStep.legal = false;
-            // Writing to someone else’s build directory (covered by RunningBuildFilePathFilter)
-            FreeStyleProject other = r.createFreeStyleProject("other");
-            r.buildAndAssertSuccess(other);
-            WriteBackStep.controllerFile = new File(other.getBuildByNumber(1).getRootDir(), "hack");
-            r.buildAndAssertSuccess(main);
-            // Writing to some other directory (covered by AdminWhitelistRule)
-            WriteBackStep.controllerFile = new File(r.jenkins.getRootDir(), "hack");
-            r.buildAndAssertSuccess(main);
-            // Writing to a sensitive file even in my own build dir (covered by AdminWhitelistRule)
-            WriteBackStep.controllerFile = new File(main.getBuildDir(), "4/build.xml");
-            r.buildAndAssertSuccess(main);
-            // Writing to the directory of an earlier build
-            WriteBackStep.controllerFile = new File(main.getBuildByNumber(1).getRootDir(), "stuff.txt");
-            r.buildAndAssertSuccess(main);
         });
     }
 
@@ -1305,62 +1259,6 @@ public class ExecutorStepTest {
             }
             assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
         });
-    }
-
-    public static final class WriteBackStep extends Step {
-        static File controllerFile;
-        static boolean legal = true;
-        @DataBoundConstructor public WriteBackStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
-            return StepExecutions.synchronous(context, c -> {
-                Run<?, ?> build = c.get(Run.class);
-                TaskListener listener = c.get(TaskListener.class);
-                hudson.Launcher launcher = c.get(hudson.Launcher.class);
-                listener.getLogger().println("Will try to write to " + controllerFile + "; legal? " + legal);
-                String text = build.getExternalizableId();
-                try {
-                    launcher.getChannel().call(new WriteBackCallable(new FilePath(controllerFile), text));
-                    if (legal) {
-                        assertEquals(text, FileUtils.readFileToString(controllerFile, StandardCharsets.UTF_8));
-                        listener.getLogger().println("Allowed as expected");
-                    } else {
-                        fail("should not have been allowed");
-                    }
-                } catch (Exception x) {
-                    if (!legal && x.toString().contains("https://www.jenkins.io/redirect/security-144")) {
-                        Functions.printStackTrace(x, listener.error("Rejected as expected!"));
-                    } else {
-                        throw x;
-                    }
-                }
-                return null;
-            });
-        }
-        @TestExtension("accessPermittedOnlyFromCurrentBuild") public static final class DescriptorImpl extends StepDescriptor {
-            @Override public String getFunctionName() {
-                return "writeBack";
-            }
-            @Override public Set<? extends Class<?>> getRequiredContext() {
-                return ImmutableSet.of(Run.class, TaskListener.class, hudson.Launcher.class);
-            }
-        }
-        private static final class WriteBackCallable extends MasterToSlaveCallable<Void, IOException> {
-            private final FilePath controllerFile;
-            private final String text;
-            WriteBackCallable(FilePath controllerFile, String text) {
-                this.controllerFile = controllerFile;
-                this.text = text;
-            }
-            @Override public Void call() throws IOException {
-                assertTrue(controllerFile.isRemote());
-                try {
-                    controllerFile.write(text, null);
-                } catch (InterruptedException x) {
-                    throw new IOException(x);
-                }
-                return null;
-            }
-        }
     }
 
     private static class MainAuthenticator extends QueueItemAuthenticator {
