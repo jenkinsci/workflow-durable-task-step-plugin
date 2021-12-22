@@ -7,7 +7,7 @@ Pipeline steps locking agents and workspaces, and running external processes tha
 
 ## Documentation
 
-* [Changelog](https://github.com/jenkinsci/workflow-durable-task-step-plugin/releases)
+* [GitHub Releases](https://github.com/jenkinsci/workflow-durable-task-step-plugin/releases)
 
 ## License
 
