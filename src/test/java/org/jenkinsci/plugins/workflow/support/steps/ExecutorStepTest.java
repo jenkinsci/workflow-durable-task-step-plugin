@@ -1216,7 +1216,7 @@ public class ExecutorStepTest {
             assertEquals(1, executors.size());
             Queue.Executable exec = executors.get(0).getCurrentExecutable();
             assertNotNull(exec);
-            assertEquals(b, exec.getClass().getMethod("getParentExecutable").invoke(exec)); // TODO https://github.com/jenkinsci/jenkins/pull/5733 remove reflection
+            assertEquals(b, exec.getParentExecutable());
             SemaphoreStep.success("wait/1", null);
         });
     }
