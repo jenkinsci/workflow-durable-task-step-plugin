@@ -71,7 +71,6 @@
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
-        <jenkins-test-harness.version>1666.vd1360abbfe9e</jenkins-test-harness.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -96,7 +95,6 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-api</artifactId>
-            <version>1108.v57edf648f5d4</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -105,7 +103,6 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
-            <version>2640.v00e79c8113de</version>
             <scope>test</scope>
         </dependency>
         <dependency>
