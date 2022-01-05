@@ -38,7 +38,6 @@ import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.Serializable;
-import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -92,6 +91,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     private final ExecutorStep step;
     private ExecutorStepDynamicContext state;
+
+    /**
+     * Needed for {@link BodyExecution#cancel} in certain scenarios.
+     */
+    private @CheckForNull BodyExecution body;
 
     ExecutorStepExecution(StepContext context, ExecutorStep step) {
         super(context);
@@ -263,7 +267,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         } catch (Exception x) {
                             LOGGER.log(Level.WARNING, null, x);
                         }
-                        BodyExecution body = task.body != null ? task.body.get() : null;
+                        BodyExecution body = task.execution.body;
                         if (body == null) {
                             listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
                             continue;
@@ -314,18 +318,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * and allows {@link Launcher#kill} to work.
          */
         private String cookie;
-
-        /**
-         * Needed for {@link BodyExecution#cancel}.
-         * {@code transient} because we cannot save a {@link BodyExecution} in {@link PlaceholderTask}:
-         * {@code ExecutorPickle} is written to the stream first, which holds a {@link PlaceholderTask},
-         * and the {@link BodyExecution} holds {@link PlaceholderTask.Callback} whose {@link WorkspaceList.Lease}
-         * is not processed by {@code WorkspaceListLeasePickle} since pickles are not recursive.
-         * So we make a best effort and only try to cancel a body within the current session.
-         * TODO try to rewrite this mess
-         * @see RemovedNodeListener
-         */
-        private transient @CheckForNull WeakReference<BodyExecution> body;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
@@ -796,6 +788,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     finish(cookie);
                 }
                 if (execution != null) {
+                    execution.body = null;
                     boolean _stopping = execution.state.task.stopping;
                     execution.state.task.stopping = true;
                     try {
@@ -897,10 +890,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
                         ExecutorStepDynamicContext state = new ExecutorStepDynamicContext(PlaceholderTask.this, lease, exec);
                         execution.state = state;
-                        body = new WeakReference<>(context.newBodyInvoker()
+                        execution.body = context.newBodyInvoker()
                                 .withContexts(env, state)
                                 .withCallback(new Callback(cookie, execution))
-                                .start());
+                                .start();
                         LOGGER.fine(() -> "started " + cookie + " in " + runId);
                         context.saveState();
                     } else {
@@ -940,13 +933,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 return;
                             }
                             LOGGER.fine(() -> "interrupted " + cookie + " in " + runId);
-                            // TODO save the BodyExecution somehow and call .cancel() here; currently we just interrupt the build as a whole:
                             Timer.get().submit(() -> { // JENKINS-46738
-                                Executor masterExecutor = r.getExecutor();
-                                if (masterExecutor != null) {
-                                    masterExecutor.interrupt();
+                                Executor thisExecutor = /* AsynchronousExecution. */ getExecutor();
+                                BodyExecution body = execution.body;
+                                if (body != null) {
+                                    body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
                                 } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                    Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
                                     if (thisExecutor != null) {
                                         thisExecutor.recordCauseOfInterruption(r, _listener);
                                     }
