@@ -91,7 +91,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private final ExecutorStep step;
-    // TODO perhaps just inline it here? does not do much good as a separate class
     private ExecutorStepDynamicContext state;
 
     ExecutorStepExecution(StepContext context, ExecutorStep step) {
