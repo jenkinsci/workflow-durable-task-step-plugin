@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Computer;
@@ -85,7 +86,8 @@ public class WorkspaceListLeasePickle extends Pickle {
     }
 
     @Extension public static final class Factory extends SingleTypedPickleFactory<WorkspaceList.Lease> {
-        @Override protected Pickle pickle(WorkspaceList.Lease lease) {
+        @NonNull
+        @Override protected Pickle pickle(@NonNull WorkspaceList.Lease lease) {
             return new WorkspaceListLeasePickle(lease);
         }
     }

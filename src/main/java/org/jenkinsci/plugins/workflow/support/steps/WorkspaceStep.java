@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import com.google.common.collect.ImmutableSet;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.Util;
 import hudson.model.Computer;
@@ -64,6 +65,7 @@ public final class WorkspaceStep extends Step {
             return "ws";
         }
 
+        @NonNull
         @Override public String getDisplayName() {
             return "Allocate workspace";
         }

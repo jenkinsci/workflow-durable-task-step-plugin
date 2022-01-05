@@ -25,6 +25,8 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import com.google.common.collect.ImmutableSet;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
@@ -41,7 +43,6 @@ import hudson.model.labels.LabelExpression;
 import hudson.util.FormValidation;
 import java.io.Serializable;
 import java.util.Set;
-import javax.annotation.CheckForNull;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -87,6 +88,7 @@ public final class ExecutorStep extends Step implements Serializable {
             return "node";
         }
 
+        @NonNull
         @Override public String getDisplayName() {
             return "Allocate node";
         }

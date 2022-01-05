@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Computer;
@@ -48,6 +49,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
 
     private static final Logger LOGGER = Logger.getLogger(FilePathDynamicContext.class.getName());
 
+    @NonNull
     @Override protected Class<FilePath> type() {
         return FilePath.class;
     }
