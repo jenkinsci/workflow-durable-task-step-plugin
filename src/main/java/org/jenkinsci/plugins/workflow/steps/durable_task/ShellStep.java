@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.model.TaskListener;
@@ -36,7 +37,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import java.util.Map;
 
 /**
- * Runs a Bourne shell script asynchronously on a slave.
+ * Runs a Bourne shell script asynchronously on a build agent.
  */
 public final class ShellStep extends DurableTaskStep {
 
@@ -66,6 +67,7 @@ public final class ShellStep extends DurableTaskStep {
 
     @Extension public static final class DescriptorImpl extends DurableTaskStepDescriptor {
 
+        @NonNull
         @Override public String getDisplayName() {
             return "Shell Script";
         }

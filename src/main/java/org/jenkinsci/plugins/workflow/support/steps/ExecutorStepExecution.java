@@ -1,7 +1,9 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.Nullable;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
@@ -16,6 +18,7 @@ import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.ResourceList;
+import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
@@ -32,14 +35,12 @@ import hudson.security.Permission;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.io.Serializable;
 import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,8 +48,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
+import java.util.stream.Collectors;
 import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
 import jenkins.model.Jenkins.MasterComputer;
@@ -59,20 +59,19 @@ import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.Timer;
 import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
-import org.acegisecurity.context.SecurityContext;
-import org.acegisecurity.context.SecurityContextHolder;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
-import org.jenkinsci.plugins.workflow.graphanalysis.FlowScanningUtils;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
@@ -111,22 +110,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
         getContext().get(FlowNode.class).addAction(new QueueItemActionImpl(waitingItem.getId()));
 
-        Timer.get().schedule(new Runnable() {
-            @Override public void run() {
-                Queue.Item item = Queue.getInstance().getItem(task);
-                if (item != null) {
-                    PrintStream logger;
-                    try {
-                        logger = getContext().get(TaskListener.class).getLogger();
-                    } catch (Exception x) { // IOException, InterruptedException
-                        LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
-                        return;
-                    }
-                    logger.println("Still waiting to schedule task");
-                    String why = item.getWhy();
-                    if (why != null) {
-                        logger.println(why);
-                    }
+        Timer.get().schedule(() -> {
+            Queue.Item item = Queue.getInstance().getItem(task);
+            if (item != null) {
+                TaskListener listener;
+                try {
+                    listener = getContext().get(TaskListener.class);
+                } catch (Exception x) { // IOException, InterruptedException
+                    LOGGER.log(FINE, "could not print message to build about " + item + "; perhaps it is already completed", x);
+                    return;
+                }
+                listener.getLogger().println("Still waiting to schedule task");
+                CauseOfBlockage cob = item.getCauseOfBlockage();
+                if (cob != null) {
+                    cob.print(listener);
                 }
             }
         }, 15, TimeUnit.SECONDS);
@@ -134,7 +131,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     }
 
     @Override
-    public void stop(Throwable cause) throws Exception {
+    public void stop(@NonNull Throwable cause) throws Exception {
         Queue.Item[] items;
         try (ACLContext as = ACL.as(ACL.SYSTEM)) {
             items = Queue.getInstance().getItems();
@@ -196,7 +193,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null) {
-                COMPUTERS: for (Computer c : j.getComputers()) {
+                for (Computer c : j.getComputers()) {
                     for (Executor e : c.getExecutors()) {
                         Queue.Executable exec = e.getCurrentExecutable();
                         if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
@@ -227,7 +224,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
         Jenkins j = Jenkins.getInstanceOrNull();
         if (j != null) {
-            COMPUTERS: for (Computer c : j.getComputers()) {
+            for (Computer c : j.getComputers()) {
                 for (Executor e : c.getExecutors()) {
                     Queue.Executable exec = e.getCurrentExecutable();
                     if (exec instanceof PlaceholderTask.PlaceholderExecutable && ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context.equals(getContext())) {
@@ -246,7 +243,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (li.task instanceof PlaceholderTask) {
                     PlaceholderTask task = (PlaceholderTask) li.task;
                     if (!task.stopping) {
-                        task.context.onFailure(new AbortException(Messages.ExecutorStepExecution_queue_task_cancelled()));
+                        task.context.onFailure(new FlowInterruptedException(Result.ABORTED, true, new QueueTaskCancelled()));
                     }
                 }
             }
@@ -254,8 +251,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     }
 
+    public static final class QueueTaskCancelled extends CauseOfInterruption {
+        @Override public String getShortDescription() {
+            return Messages.ExecutorStepExecution_queue_task_cancelled();
+        }
+    }
+
     @Extension public static final class RemovedNodeListener extends NodeListener {
-        @Override protected void onDeleted(Node node) {
+        @Override protected void onDeleted(@NonNull Node node) {
             if (!RemovedNodeCause.ENABLED) {
                 return;
             }
@@ -312,13 +315,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {
 
         /** keys are {@link #cookie}s */
-        private static final Map<String,RunningTask> runningTasks = new HashMap<String,RunningTask>();
+        private static final Map<String,RunningTask> runningTasks = new HashMap<>();
 
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
         /** Shortcut for {@link #run}. */
-        private String runId;
+        private final String runId;
         /**
          * Unique cookie set once the task starts.
          * Serves multiple purposes:
@@ -421,6 +424,23 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public CauseOfBlockage getCauseOfBlockage() {
+            if (FlowExecutionList.get().isResumptionComplete()) {
+                // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
+                Run<?, ?> run = runForDisplay();
+                if (!stopping && run != null && !run.isLogUpdated()) {
+                    stopping = true;
+                    LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
+                    Timer.get().execute(() -> Queue.getInstance().cancel(this));
+                }
+            }
+            if (stopping) {
+                return new CauseOfBlockage() {
+                    @Override
+                    public String getShortDescription() {
+                        return "Stopping " + getDisplayName();
+                    }
+                };
+            }
             return null;
         }
 
@@ -432,7 +452,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return Collections.singleton(this);
         }
 
+        @NonNull
         @Override public Queue.Task getOwnerTask() {
+            Jenkins j = Jenkins.getInstanceOrNull();
+            if (j != null && runId != null) { // JENKINS-60389 shortcut
+                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
+                    Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                    if (job instanceof Queue.Task) {
+                        return (Queue.Task) job;
+                    }
+                }
+            }
             Run<?,?> r = runForDisplay();
             if (r != null && r.getParent() instanceof Queue.Task) {
                 return (Queue.Task) r.getParent();
@@ -454,6 +484,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * TODO make {@link FlowExecutionOwner} implement {@link AccessControlled}
          * so that an implementation could fall back to checking {@link Job} permission.
          */
+        @NonNull
         @Override public ACL getACL() {
             try {
                 if (!context.isReady()) {
@@ -506,6 +537,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return r;
         }
 
+        @Exported
         @Override public String getUrl() {
             // TODO ideally this would be found via FlowExecution.owner.executable, but how do we check for something with a URL? There is no marker interface for it: JENKINS-26091
             Run<?,?> r = runForDisplay();
@@ -528,10 +560,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        @Exported
         @Override public String getName() {
             return getDisplayName();
         }
 
+        @Exported
         @Override public String getFullDisplayName() {
             return getDisplayName();
         }
@@ -633,10 +667,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 // See if this step is inside our node {} block, and track the associated label.
                 boolean match = false;
                 String enclosingLabel = null;
-                Iterator<FlowNode> it = FlowScanningUtils.fetchEnclosingBlocks(runningNode);
                 int count = 0;
-                while (it.hasNext()) {
-                    FlowNode n = it.next();
+                for (FlowNode n : runningNode.iterateEnclosingBlocks()) {
                     if (enclosingLabel == null) {
                         ThreadNameAction tna = n.getPersistentAction(ThreadNameAction.class);
                         if (tna != null) {
@@ -667,7 +699,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public long getEstimatedDuration() {
             Run<?,?> r = run();
-            // Not accurate if there are multiple slaves in one build, but better than nothing:
+            // Not accurate if there are multiple agents in one build, but better than nothing:
             return r != null ? r.getEstimatedDuration() : -1;
         }
 
@@ -675,16 +707,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return new ResourceList();
         }
 
+        @NonNull
         @Override public Authentication getDefaultAuthentication() {
             return ACL.SYSTEM;
         }
 
+        @NonNull
         @Override public Authentication getDefaultAuthentication(Queue.Item item) {
             return getDefaultAuthentication();
         }
 
         @Restricted(NoExternalUse.class)
         @Extension(ordinal=959) public static class AuthenticationFromBuild extends QueueItemAuthenticatorProvider {
+            @NonNull
             @Override public List<QueueItemAuthenticator> getAuthenticators() {
                 return Collections.singletonList(new QueueItemAuthenticator() {
                     @Override public Authentication authenticate(Queue.Task task) {
@@ -728,23 +763,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
                 assert runningTask.launcher != null;
-                Timer.get().submit(new Runnable() { // JENKINS-31614
-                    @Override public void run() {
-                        execution.completed(null);
-                    }
-                });
-                Computer.threadPoolForRemoting.submit(new Runnable() { // JENKINS-34542, JENKINS-45553
-                    @Override
-                    public void run() {
-                        try {
-                            runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
-                        } catch (ChannelClosedException x) {
-                            // fine, Jenkins was shutting down
-                        } catch (RequestAbortedException x) {
-                            // slave was exiting; too late to kill subprocesses
-                        } catch (Exception x) {
-                            LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
-                        }
+                Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
+                Computer.threadPoolForRemoting.submit(() -> { // JENKINS-34542, JENKINS-45553
+                    try {
+                        runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
+                    } catch (ChannelClosedException x) {
+                        // fine, Jenkins was shutting down
+                    } catch (RequestAbortedException x) {
+                        // agent was exiting; too late to kill subprocesses
+                    } catch (Exception x) {
+                        LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
                     }
                 });
             }
@@ -774,7 +802,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         /**
-         * Occupies {@link Executor} while workflow uses this slave.
+         * Occupies {@link Executor} while workflow uses this build agent.
          */
         @ExportedBean
         private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
@@ -809,12 +837,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put(COOKIE_VAR, cookie);
                         // Cf. CoreEnvironmentContributor:
                         if (exec.getOwner() instanceof MasterComputer) {
-                            env.put("NODE_NAME", "master");
+                            env.put("NODE_NAME", node.getSelfLabel().getName()); // mirror https://github.com/jenkinsci/jenkins/blob/89d334145d2755f74f82aad07b5df4119d7fa6ce/core/src/main/java/jenkins/model/CoreEnvironmentContributor.java#L63
                         } else {
                             env.put("NODE_NAME", label);
                         }
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
-                        env.put("NODE_LABELS", Util.join(node.getAssignedLabels(), " "));
+                        env.put("NODE_LABELS", node.getAssignedLabels().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
                         synchronized (runningTasks) {
                             runningTasks.put(cookie, new RunningTask());
@@ -832,6 +860,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         FilePath workspace = lease.path;
                         // Cf. AbstractBuild.getEnvironment:
                         env.put("WORKSPACE", workspace.getRemote());
+                        final FilePath tempDir = WorkspaceList.tempDir(workspace);
+                        if (tempDir != null) {
+                            env.put("WORKSPACE_TMP", tempDir.getRemote()); // JENKINS-60634
+                        }
                         FlowNode flowNode = context.get(FlowNode.class);
                         if (flowNode != null) {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
@@ -881,18 +913,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             }
                             LOGGER.log(FINE, "interrupted {0}", cookie);
                             // TODO save the BodyExecution somehow and call .cancel() here; currently we just interrupt the build as a whole:
-                            Timer.get().submit(new Runnable() { // JENKINS-46738
-                                @Override public void run() {
-                                    Executor masterExecutor = r.getExecutor();
-                                    if (masterExecutor != null) {
-                                        masterExecutor.interrupt();
-                                    } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                        Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
-                                        if (thisExecutor != null) {
-                                            thisExecutor.recordCauseOfInterruption(r, _listener);
-                                        }
-                                        completed(null);
+                            Timer.get().submit(() -> { // JENKINS-46738
+                                Executor masterExecutor = r.getExecutor();
+                                if (masterExecutor != null) {
+                                    masterExecutor.interrupt();
+                                } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                    Executor thisExecutor = /* AsynchronousExecution. */getExecutor();
+                                    if (thisExecutor != null) {
+                                        thisExecutor.recordCauseOfInterruption(r, _listener);
                                     }
+                                    completed(null);
                                 }
                             });
                         }
@@ -907,8 +937,18 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
 
+            @NonNull
             @Override public PlaceholderTask getParent() {
                 return PlaceholderTask.this;
+            }
+
+            @Override public Queue.Executable getParentExecutable() {
+                Run<?, ?> b = runForDisplay();
+                if (b instanceof Queue.Executable) {
+                    return (Queue.Executable) b;
+                } else {
+                    return null;
+                }
             }
 
             @Exported
@@ -974,18 +1014,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
             private static final long serialVersionUID = 1L;
 
+            @NonNull
             @Override
             public ACL getACL() {
                 return getParent().getACL();
             }
 
             @Override
-            public void checkPermission(Permission permission) throws AccessDeniedException {
+            public void checkPermission(@NonNull Permission permission) throws AccessDeniedException {
                 getACL().checkPermission(permission);
             }
 
             @Override
-            public boolean hasPermission(Permission permission) {
+            public boolean hasPermission(@NonNull Permission permission) {
                 return getACL().hasPermission(permission);
             }
         }

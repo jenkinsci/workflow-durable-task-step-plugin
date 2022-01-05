@@ -11,7 +11,8 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.slaves.WorkspaceList;
-import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
@@ -59,10 +60,15 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         FlowNode flowNode = getContext().get(FlowNode.class);
         flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
         getContext().get(TaskListener.class).getLogger().println("Running in " + workspace);
+        Map<String, String> env = new HashMap<>();
+        env.put("WORKSPACE", workspace.getRemote());
+        final FilePath tempDir = WorkspaceList.tempDir(workspace);
+        if (tempDir != null) {
+            env.put("WORKSPACE_TMP", tempDir.getRemote());
+        }
         getContext().newBodyInvoker()
                 .withContexts(
-                    EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class),
-                        EnvironmentExpander.constant(Collections.singletonMap("WORKSPACE", workspace.getRemote()))),
+                    EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class), EnvironmentExpander.constant(env)),
                     FilePathDynamicContext.createContextualObject(workspace))
                 .withCallback(new Callback(lease))
                 .start();

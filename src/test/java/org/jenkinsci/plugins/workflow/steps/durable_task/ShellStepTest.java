@@ -4,6 +4,8 @@ import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.FilePath;
 import hudson.EnvVars;
 import hudson.Functions;
@@ -19,6 +21,7 @@ import hudson.model.BallColor;
 import hudson.model.BooleanParameterDefinition;
 import hudson.model.BooleanParameterValue;
 import hudson.model.BuildListener;
+import hudson.model.Descriptor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
 import hudson.model.ParametersAction;
@@ -32,6 +35,9 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import io.jenkins.plugins.environment_filter_utils.util.BuilderUtil;
+import io.jenkins.plugins.generic_environment_filters.RemoveSpecificVariablesFilter;
+import io.jenkins.plugins.generic_environment_filters.VariableContributingFilter;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -53,11 +59,13 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
-import javax.annotation.CheckForNull;
+import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 
 import static org.hamcrest.Matchers.*;
+
+import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
@@ -84,7 +92,12 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertTrue;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
@@ -93,6 +106,7 @@ import org.junit.Test;
 import org.junit.rules.ErrorCollector;
 import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
@@ -110,6 +124,7 @@ public class ShellStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
+    @Rule public FlagRule<Boolean> useWatching = new FlagRule<>(() -> DurableTaskStep.USE_WATCHING, x -> DurableTaskStep.USE_WATCHING = x);
 
     /**
      * Failure in the shell script should mark the step as red
@@ -192,6 +207,10 @@ public class ShellStepTest {
 
         b.getExecutor().interrupt();
 
+        // It can take a while for the process to exit on Windows (see JENKINS-59152), so we wait for the build to
+        // complete and confirm that the process is no longer running after the build has already completed.
+        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+
         // touching should have stopped
         final long refTimestamp = Files.getLastModifiedTime(tmp).toMillis();
         ensureForWhile(5000, tmp, tmpFile -> {
@@ -201,8 +220,6 @@ public class ShellStepTest {
                 throw new UncheckedIOException(e);
             }
         });
-
-        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
     }
 
     @Issue("JENKINS-41339")
@@ -235,7 +252,7 @@ public class ShellStepTest {
     }
     public static class NiceStep extends Step {
         @DataBoundConstructor public NiceStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
+        @Override public StepExecution start(StepContext context) {
             return new Execution(context);
         }
         public static class Execution extends StepExecution {
@@ -253,7 +270,8 @@ public class ShellStepTest {
         }
         private static class Decorator extends LauncherDecorator implements Serializable {
             private static final long serialVersionUID = 1;
-            @Override public Launcher decorate(Launcher launcher, Node node) {
+            @NonNull
+            @Override public Launcher decorate(Launcher launcher, @NonNull Node node) {
                 return launcher.decorateByPrefix("nice");
             }
         }
@@ -264,6 +282,7 @@ public class ShellStepTest {
             @Override public String getFunctionName() {
                 return "nice";
             }
+            @NonNull
             @Override public String getDisplayName() {
                 return "Nice";
             }
@@ -288,8 +307,8 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertNull(s.getEncoding());
         assertFalse(s.isReturnStatus());
-        assertEquals("", s.getLabel());
-        
+        assertNull(s.getLabel());
+
         s.setReturnStdout(true);
         s.setEncoding("ISO-8859-1");
         s = new StepConfigTester(j).configRoundTrip(s);
@@ -297,8 +316,8 @@ public class ShellStepTest {
         assertTrue(s.isReturnStdout());
         assertEquals("ISO-8859-1", s.getEncoding());
         assertFalse(s.isReturnStatus());
-        assertEquals("", s.getLabel());
-        
+        assertNull(s.getLabel());
+
         s.setReturnStdout(false);
         s.setEncoding("UTF-8");
         s.setReturnStatus(true);
@@ -307,8 +326,8 @@ public class ShellStepTest {
         assertFalse(s.isReturnStdout());
         assertEquals("UTF-8", s.getEncoding());
         assertTrue(s.isReturnStatus());
-        assertEquals("", s.getLabel());
-        
+        assertNull(s.getLabel());
+
         s.setLabel("Round Trip Test");
         s = new StepConfigTester(j).configRoundTrip(s);
         assertEquals("echo hello", s.getScript());
@@ -378,7 +397,6 @@ public class ShellStepTest {
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
         DurableTaskStep.USE_WATCHING = true;
-        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
@@ -387,8 +405,9 @@ public class ShellStepTest {
         CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
+            "node('" + builtInNodeLabel + "') {\n" +
             "  sh 'pwd'\n" +
             "}\n" +
             "node('remote') {\n" +
@@ -405,9 +424,6 @@ public class ShellStepTest {
         j.assertLogNotContains(password, b);
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
-        } finally {
-            DurableTaskStep.USE_WATCHING = false;
-        }
     }
     @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
@@ -418,16 +434,20 @@ public class ShellStepTest {
                 return new BrokenLogStorage(x);
             }
             return new LogStorage() {
+                @NonNull
                 @Override public BuildListener overallListener() throws IOException, InterruptedException {
                     return new RemotableBuildListener(base.overallListener());
                 }
-                @Override public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
+                @NonNull
+                @Override public TaskListener nodeListener(@NonNull FlowNode node) throws IOException, InterruptedException {
                     return new RemotableBuildListener(base.nodeListener(node));
                 }
-                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
+                @NonNull
+                @Override public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(@NonNull FlowExecutionOwner.Executable build, boolean complete) {
                     return base.overallLog(build, complete);
                 }
-                @Override public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
+                @NonNull
+                @Override public AnnotatedLargeText<FlowNode> stepLog(@NonNull FlowNode node, boolean complete) {
                     return base.stepLog(node, complete);
                 }
             };
@@ -447,6 +467,7 @@ public class ShellStepTest {
             this.delegate = delegate;
             this.id = id;
         }
+        @NonNull
         @Override public PrintStream getLogger() {
             if (logger == null) {
                 final OutputStream os = delegate.getLogger();
@@ -481,14 +502,14 @@ public class ShellStepTest {
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
         DurableTaskStep.USE_WATCHING = true;
-        try {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
-            "node('master') {\n" +
+            "node('" + builtInNodeLabel +"') {\n" +
             "  markUp {\n" +
-            "    sh 'echo hello from master'\n" +
+            "    sh 'echo hello from " + builtInNodeLabel + "'\n" +
             "  }\n" +
             "}\n" +
             "node('remote') {\n" +
@@ -504,17 +525,14 @@ public class ShellStepTest {
         b.getLogText().writeRawLogTo(0, System.err);
         StringWriter w = new StringWriter();
         b.getLogText().writeHtmlTo(0, w);
-        assertThat("a ConsoleNote created in the master is trusted", w.toString(), containsString("<b>hello</b> from master"));
+        assertThat("a ConsoleNote created in the " + builtInNodeLabel + " is trusted", w.toString(), containsString("<b>hello</b> from " + builtInNodeLabel));
         assertThat("but this one was created in the agent and is discarded", w.toString(), containsString("hello from agent"));
-        assertThat("however we can pass it from the master to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
-        } finally {
-            DurableTaskStep.USE_WATCHING = false;
-        }
+        assertThat("however we can pass it from the " + builtInNodeLabel + " to agent", w.toString(), containsString("<b>hello</b> from halfway in between"));
     }
     public static final class MarkUpStep extends Step {
         @DataBoundSetter public boolean smart;
         @DataBoundConstructor public MarkUpStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
+        @Override public StepExecution start(StepContext context) {
             return new Exec(context, smart);
         }
         private static final class Exec extends StepExecution {
@@ -622,8 +640,9 @@ public class ShellStepTest {
         j.showAgentLogs(s, logging);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.addProperty(new ParametersDefinitionProperty(new BooleanParameterDefinition("WATCHING", false, null)));
+        String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
-            "['master', 'remote'].each {label ->\n" +
+            "['" + builtInNodeLabel + "', 'remote'].each {label ->\n" +
             "  node(label) {\n" +
             "    withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
             "      sh 'set +x; echo \"with final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
@@ -631,12 +650,10 @@ public class ShellStepTest {
             "    }\n" +
             "  }\n" +
             "}", true));
-        boolean origUseWatching = DurableTaskStep.USE_WATCHING;
-        try {
             for (boolean watching : new boolean[] {false, true}) {
                 DurableTaskStep.USE_WATCHING = watching;
                 String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
-                for (String node : new String[] {"master", "remote"}) {
+                for (String node : new String[] {builtInNodeLabel, "remote"}) {
                     for (String mode : new String[] {"with", "missing"}) {
                         errors.checkThat(log, containsString(mode + " final newline node=" + node + " watching=" + watching));
                     }
@@ -645,9 +662,6 @@ public class ShellStepTest {
                 errors.checkThat(log, not(containsString("watching=false[Pipeline]")));
                 errors.checkThat(log, not(containsString("watching=true[Pipeline]")));
             }
-        } finally {
-            DurableTaskStep.USE_WATCHING = origUseWatching;
-        }
     }
 
     @Issue("JENKINS-34021")
@@ -724,6 +738,36 @@ public class ShellStepTest {
         j.waitForMessage("Timeout has been exceeded", b); // TODO assertLogContains fails unless a sleep is introduced; possible race condition in waitForCompletion
     }
 
+    @Issue("JENKINS-62014")
+    @Test public void envVarFilters() throws Exception {
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new RemoveSpecificVariablesFilter("FOO"));
+        EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new VariableContributingFilter("BAZ", "QUX"));
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition(
+                "node() {\n" +
+                "  withEnv(['FOO=BAR']) {\n" +
+                "    if (isUnix()) {\n" +
+                "      sh('echo FOO=$FOO and BAZ=$BAZ')\n" +
+                "    } else {\n" +
+                "      bat('ECHO FOO=%FOO% and BAZ=%BAZ%')\n" +
+                "    }\n" +
+                "  }\n" +
+                "}", true));
+        WorkflowRun b = j.buildAndAssertSuccess(p);
+        j.assertLogContains("FOO=", b);
+        j.assertLogNotContains("FOO=BAR", b);
+        j.assertLogContains("BAZ=QUX", b);
+    }
+
+    @Issue("JENKINS-62014")
+    @Test public void ensureTypes() {
+        final List<Descriptor> descriptors = BuilderUtil.allDescriptors();
+
+        MatcherAssert.assertThat(descriptors , containsInAnyOrder(
+                j.jenkins.getDescriptor(Shell.class), j.jenkins.getDescriptor(BatchFile.class),
+                j.jenkins.getDescriptor(BatchScriptStep.class), j.jenkins.getDescriptor(PowershellScriptStep.class), j.jenkins.getDescriptor(ShellStep.class), j.jenkins.getDescriptor(PowerShellCoreScriptStep.class)));
+    }
+
     /**
      * Asserts that the predicate remains true up to the given timeout.
      */
@@ -739,8 +783,9 @@ public class ShellStepTest {
     @TestExtension(value = "shouldInvokeLauncherDecoratorForShellStep")
     public static final class MyNodeLauncherDecorator extends LauncherDecorator {
 
+        @NonNull
         @Override
-        public Launcher decorate(Launcher lnchr, Node node) {
+        public Launcher decorate(@NonNull Launcher lnchr, @NonNull Node node) {
             // Just inject the environment variable
             Map<String, String> env = new HashMap<>();
             env.put("INJECTED", "MYVAR-" + node.getNodeName());

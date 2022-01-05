@@ -25,28 +25,30 @@
 package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.AbortException;
 import hudson.Extension;
 import hudson.Main;
+import hudson.Util;
+import hudson.init.InitMilestone;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.OneOffExecutor;
 import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
 
-import java.text.MessageFormat;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import hudson.slaves.EphemeralNode;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
@@ -64,8 +66,6 @@ public class ExecutorPickle extends Pickle {
 
     private final Queue.Task task;
 
-    private final boolean isEphemeral;
-
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
     @Restricted(NoExternalUse.class)
     public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
@@ -78,7 +78,6 @@ public class ExecutorPickle extends Pickle {
         if (exec == null) {
             throw new IllegalArgumentException("cannot save an Executor that is not running anything");
         }
-        this.isEphemeral = executor.getOwner().getNode() instanceof EphemeralNode;
         SubTask parent = exec.getParent();
         this.task = parent instanceof Queue.Task ? (Queue.Task) parent : parent.getOwnerTask();
         if (task instanceof Queue.TransientTask) {
@@ -87,17 +86,17 @@ public class ExecutorPickle extends Pickle {
         LOGGER.log(Level.FINE, "saving {0}", task);
     }
 
-    public boolean isEphemeral() {
-        return isEphemeral;
-    }
-
     @Override public ListenableFuture<Executor> rehydrate(final FlowExecutionOwner owner) {
         return new TryRepeatedly<Executor>(1, 0) {
             long itemID;
-            long endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
+            long endTimeNanos;
 
             @Override
             protected Executor tryResolve() throws Exception {
+                if (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED) {
+                    LOGGER.fine(() -> "not going to schedule " + task + " yet because Jenkins has not yet completed startup");
+                    return null;
+                }
                 Queue.Item item;
                 if (itemID == 0) { // Not scheduled yet
                     item = Queue.getInstance().schedule2(task, 0).getItem();
@@ -106,6 +105,7 @@ public class ExecutorPickle extends Pickle {
                         throw new IllegalStateException("queue refused " + task);
                     }
                     itemID = item.getId();
+                    endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
                     LOGGER.log(Level.FINE, "{0} scheduled {1}", new Object[] {ExecutorPickle.this, item});
                 } else {
                     item = Queue.getInstance().getItem(itemID);
@@ -128,8 +128,9 @@ public class ExecutorPickle extends Pickle {
                         if (placeholder.getCookie() != null && Jenkins.get().getNode(placeholder.getAssignedLabel().getName()) == null ) {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
-                                    throw new AbortException(MessageFormat.format("Killed {0} after waiting for {1} ms because we assume unknown Node {2} is never going to appear!",
-                                            new Object[]{item, TIMEOUT_WAITING_FOR_NODE_MILLIS, placeholder.getAssignedLabel().toString()}));
+                                owner.getListener().getLogger().printf("Killed %s after waiting for %s because we assume unknown agent %s is never going to appear%n",
+                                        item.task.getDisplayName(), Util.getTimeSpanString(TIMEOUT_WAITING_FOR_NODE_MILLIS), placeholder.getAssignedLabel());
+                                throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
                             }
                         }
                     }
@@ -138,7 +139,7 @@ public class ExecutorPickle extends Pickle {
                 }
 
                 if (future.isCancelled()) {
-                    throw new AbortException("Queue item was canceled.");
+                    throw new FlowInterruptedException(Result.ABORTED, true, new ExecutorStepExecution.QueueTaskCancelled());
                 }
 
                 Queue.Executable exec = future.get();
@@ -152,10 +153,11 @@ public class ExecutorPickle extends Pickle {
                 // Or can we schedule a placeholder Task whose Executable does nothing but return Executor.currentExecutor and then end?
                 throw new IllegalStateException(exec + " was scheduled but no executor claimed it");
             }
+            @NonNull
             @Override protected FlowExecutionOwner getOwner() {
                 return owner;
             }
-            @Override protected void printWaitingMessage(TaskListener listener) {
+            @Override protected void printWaitingMessage(@NonNull TaskListener listener) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
                 String message = Messages.ExecutorPickle_waiting_to_resume(task.getFullDisplayName());
                 if (item == null) { // ???
@@ -195,7 +197,8 @@ public class ExecutorPickle extends Pickle {
     }
 
     @Extension public static final class Factory extends SingleTypedPickleFactory<Executor> {
-        @Override protected Pickle pickle(Executor object) {
+        @NonNull
+        @Override protected Pickle pickle(@NonNull Executor object) {
             return new ExecutorPickle(object);
         }
     }
