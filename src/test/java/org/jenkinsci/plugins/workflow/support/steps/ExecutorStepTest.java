@@ -706,6 +706,7 @@ public class ExecutorStepTest {
                 SemaphoreStep.waitForStart("wait/2", b2);
                 assertTrue(b2.isBuilding());
         });
+        logging.record(WorkspaceStepExecution.class, Level.FINE);
         sessions.then(r -> {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();

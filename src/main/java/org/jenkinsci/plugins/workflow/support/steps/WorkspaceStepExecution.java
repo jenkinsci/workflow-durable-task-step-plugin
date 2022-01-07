@@ -13,6 +13,7 @@ import hudson.model.TopLevelItem;
 import hudson.slaves.WorkspaceList;
 import java.util.HashMap;
 import java.util.Map;
+import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
@@ -70,7 +71,6 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class), EnvironmentExpander.constant(env)),
                     FilePathDynamicContext.createContextualObject(workspace))
-                // TODO dynamic version of lease (note that current test does not seem to cover restarts)
                 .withCallback(new Callback(lease))
                 .start();
         return false;
@@ -88,16 +88,48 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         }
     }
 
-    @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled")
+    @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled") // TODO delete if switching to node/path
     private static final class Callback extends BodyExecutionCallback.TailCall {
 
         private final WorkspaceList.Lease lease;
+        /* TODO see below
+        private transient WorkspaceList.Lease lease;
+        private final String node;
+        private final String path;
+        */
 
         Callback(WorkspaceList.Lease lease) {
             this.lease = lease;
+            /* TODO see below
+            node = FilePathUtils.getNodeName(lease.path);
+            path = lease.path.getRemote();
+            */
         }
 
         @Override protected void finished(StepContext context) throws Exception {
+            /* TODO causes ExecutorStepTest.acquireWorkspace to fail in pwd: java.io.IOException: Unable to create live FilePath for slave
+            if (lease == null) { // after restart, unless using historical pickled version
+                FilePath fp = FilePathUtils.find(node, path);
+                if (fp == null) {
+                    LOGGER.fine(() -> "can no longer find " + path + " on " + node + " to release");
+                    // Should be harmless: no one could be waiting for a lock if the agent is not even online anyway.
+                    return;
+                }
+                LOGGER.fine(() -> "recreating lease on " + fp);
+                Computer c = fp.toComputer();
+                if (c == null) {
+                    LOGGER.warning(() -> node + " no longer connected");
+                    return;
+                }
+                // See ExecutorStepDynamicContext for background:
+                lease = c.getWorkspaceList().allocate(fp);
+                if (!lease.path.equals(fp)) {
+                    lease.release();
+                    LOGGER.warning(() -> "JENKINS-37121: something already locked " + fp);
+                    return;
+                }
+            }
+            */
             lease.release();
         }
 
