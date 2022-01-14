@@ -1253,7 +1253,6 @@ public class ExecutorStepTest {
             WorkflowRun b = p.getBuildByNumber(1);
             assertFalse(b.isLogUpdated());
             r.assertBuildStatusSuccess(b);
-            Queue.getInstance().maintain(); // Otherwise we may have to wait up to 5 seconds.
             while (Queue.getInstance().getItems().length > 0) {
                 Thread.sleep(100L);
             }
