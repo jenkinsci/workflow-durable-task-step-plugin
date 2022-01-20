@@ -37,9 +37,12 @@ public class PowershellScriptStep extends DurableTaskStep {
 
     private final String script;
 
-    @DataBoundConstructor public PowershellScriptStep(String script) {
+    @DataBoundConstructor public PowershellScriptStep(String script, boolean stopOnError) {
         if (script == null) {
             throw new IllegalArgumentException();
+        }
+        if(stopOnError){
+            script = "$ErrorActionPreference=\"Stop\"" + script;
         }
         this.script = script;
     }

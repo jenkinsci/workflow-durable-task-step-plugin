@@ -65,6 +65,13 @@ public class PowerShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {powershell 'throw \"bogus error\"'}", true));
         j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
+
+    // Test that a powershell step that fails indeed causes the underlying build to fail with stopOnFailure: true
+    @Test public void testStopOnFailure() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "stopfailure");
+        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"', stopOnFailure: true)}", true));
+        j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
+    }
     
     @Test public void testUnicode() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "foobar");
