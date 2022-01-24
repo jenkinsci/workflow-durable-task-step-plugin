@@ -65,11 +65,11 @@ public class PowerShellStepTest {
         p.setDefinition(new CpsFlowDefinition("node {powershell 'throw \"bogus error\"'}", true));
         j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
-
+    
     // Test that a powershell step that fails indeed causes the underlying build to fail with stopOnError: true
     @Test public void testStopOnFailure() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "stopOnError");
-        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"; Write-output \"We made it past the error\"', stopOnError: true)}", true));
+        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"', stopOnError: true) powershell( script: 'Write-output \"We made it past the error\"') }", true));
         j.assertLogNotContains("We made it past the error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
         j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
@@ -77,7 +77,7 @@ public class PowerShellStepTest {
     // Test that a powershell step that fails does not cause the underlying build to fail with stopOnError: false
     @Test public void testStopOnFailureFalse() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "stopOnErrorFalse");
-        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"; Write-output \"We made it past the error\"', stopOnError: false)}", true));
+        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"', stopOnError: false) powershell( script: 'Write-output \"We made it past the error\"') }", true));
         j.assertLogContains("We made it past the error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
         j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
