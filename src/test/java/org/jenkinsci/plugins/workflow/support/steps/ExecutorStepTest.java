@@ -34,7 +34,6 @@ import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
 import hudson.model.Job;
-import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -77,7 +76,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import hudson.util.VersionNumber;
-import java.nio.file.StandardCopyOption;
 import java.util.Set;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
@@ -1432,46 +1430,6 @@ public class ExecutorStepTest {
             assertNotNull(exec);
             assertEquals(b, exec.getParentExecutable());
             SemaphoreStep.success("wait/1", null);
-        });
-    }
-
-    @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
-        logging.record(ExecutorStepExecution.class, Level.FINE).capture(50);
-        Path tempQueueFile = tmp.newFile().toPath();
-        sessions.then(r -> {
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition("node('custom-label') { }", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            // Get into a state where a PlaceholderTask is in the queue.
-            while (true) {
-                Queue.Item[] items = Queue.getInstance().getItems();
-                if (items.length == 1 && items[0].task instanceof ExecutorStepExecution.PlaceholderTask) {
-                    break;
-                }
-                Thread.sleep(500L);
-            }
-            // Copy queue.xml to a temp file while the PlaceholderTask is in the queue.
-            r.jenkins.getQueue().save();
-            Files.copy(sessions.getHome().toPath().resolve("queue.xml"), tempQueueFile, StandardCopyOption.REPLACE_EXISTING);
-            // Create a node with the correct label and let the build complete.
-            DumbSlave node = r.createOnlineSlave(Label.get("custom-label"));
-            r.assertBuildStatusSuccess(r.waitForCompletion(b));
-            // Remove node so that tasks requiring custom-label are stuck in the queue.
-            Jenkins.get().removeNode(node);
-        });
-        // Copy the temp queue.xml over the real one. The associated build has already completed, so the queue now
-        // has a bogus PlaceholderTask.
-        Files.copy(tempQueueFile, sessions.getHome().toPath().resolve("queue.xml"), StandardCopyOption.REPLACE_EXISTING);
-        sessions.then(r -> {
-            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
-            WorkflowRun b = p.getBuildByNumber(1);
-            assertFalse(b.isLogUpdated());
-            r.assertBuildStatusSuccess(b);
-            Queue.getInstance().maintain(); // Otherwise we may have to wait up to 5 seconds.
-            while (Queue.getInstance().getItems().length > 0) {
-                Thread.sleep(100L);
-            }
-            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
         });
     }
 
