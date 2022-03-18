@@ -35,6 +35,7 @@ import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
+import hudson.util.VersionNumber;
 import io.jenkins.plugins.environment_filter_utils.util.BuilderUtil;
 import io.jenkins.plugins.generic_environment_filters.RemoveSpecificVariablesFilter;
 import io.jenkins.plugins.generic_environment_filters.VariableContributingFilter;
@@ -396,6 +397,10 @@ public class ShellStepTest {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        Assume.assumeTrue(
+                "TODO JENKINS-68080 does not work on Java 17+",
+                new VersionNumber(System.getProperty("java.specification.version"))
+                        .isOlderThan(new VersionNumber("17")));
         DurableTaskStep.USE_WATCHING = true;
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
@@ -501,6 +506,10 @@ public class ShellStepTest {
 
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
+        Assume.assumeTrue(
+                "TODO JENKINS-68080 does not work on Java 17+",
+                new VersionNumber(System.getProperty("java.specification.version"))
+                        .isOlderThan(new VersionNumber("17")));
         DurableTaskStep.USE_WATCHING = true;
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
@@ -650,7 +659,12 @@ public class ShellStepTest {
             "    }\n" +
             "  }\n" +
             "}", true));
-            for (boolean watching : new boolean[] {false, true}) {
+        // TODO JENKINS-68080 does not work on Java 17+
+        boolean[] watchingConfig =
+                new VersionNumber(System.getProperty("java.specification.version")).isOlderThan(new VersionNumber("17"))
+                        ? new boolean[] {false, true}
+                        : new boolean[] {false};
+            for (boolean watching : watchingConfig) {
                 DurableTaskStep.USE_WATCHING = watching;
                 String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
                 for (String node : new String[] {builtInNodeLabel, "remote"}) {
