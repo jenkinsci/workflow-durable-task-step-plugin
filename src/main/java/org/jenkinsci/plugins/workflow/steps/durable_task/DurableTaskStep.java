@@ -699,7 +699,11 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                 // Defined in Java Platform and protected, so should not happen.
                 throw new ExceptionInInitializerError(x);
             }
-            printStreamDelegate.setAccessible(true);
+            try {
+                printStreamDelegate.setAccessible(true);
+            } catch (/* TODO Java 11+ InaccessibleObjectException */RuntimeException x) {
+                LOGGER.log(Level.WARNING, "On Java 17 error handling is degraded unless `--add-opens java.base/java.io=ALL-UNNAMED` is passed to the agent", x);
+            }
         }
 
         private static final long serialVersionUID = 1L;
@@ -717,7 +721,12 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             try {
                 if (ps.getClass() == PrintStream.class) {
                     // Try to extract the underlying stream, since swallowing exceptions is undesirable and PrintStream.checkError is useless.
-                    OutputStream os = (OutputStream) printStreamDelegate.get(ps);
+                    OutputStream os = ps;
+                    try {
+                        os = (OutputStream) printStreamDelegate.get(ps);
+                    } catch (IllegalAccessException x) {
+                        LOGGER.log(Level.FINE, "using PrintStream rather than underlying FilterOutputStream.out", x);
+                    }
                     if (os == null) { // like PrintStream.ensureOpen
                         throw new IOException("Stream closed");
                     }
