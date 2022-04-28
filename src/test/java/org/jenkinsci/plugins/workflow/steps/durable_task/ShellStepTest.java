@@ -396,6 +396,7 @@ public class ShellStepTest {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         DurableTaskStep.USE_WATCHING = true;
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
@@ -403,7 +404,9 @@ public class ShellStepTest {
         final String password = "s3cr3t";
         UsernamePasswordCredentialsImpl c = new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, credentialsId, "sample", username, password);
         CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
-        j.createSlave("remote", null, null);
+        DumbSlave s = j.createSlave("remote", null, null);
+        j.waitOnline(s);
+        j.showAgentLogs(s, logging);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
