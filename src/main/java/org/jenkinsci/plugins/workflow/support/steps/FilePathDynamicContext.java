@@ -79,6 +79,9 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
                 }
                 throw e;
             }
+            // TODO blocking the CPS VM thread should be avoided. Could we instead expose FilePathRepresentation as an API?
+            // Then various steps currently expecting FilePath could be relaxed to accept FilePathRepresentation,
+            // allowing them to run even when there is no live channel.
             LOGGER.fine(() -> "Waiting to see if " + r.slave + " will come online");
             Thread.sleep(500);
             return get(context);
