@@ -62,24 +62,27 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         FilePath f = FilePathUtils.find(r.slave, r.path);
         if (f != null) {
             LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
+            return f;
         } else {
-            IOException e = new IOException("Unable to create live FilePath for " + r.slave);
             Computer c = Jenkins.get().getComputer(r.slave);
-            if (c != null) {
+            if (c != null && !c.isConnecting()) {
+                IOException e = new IOException("Unable to create live FilePath for " + r.slave);
                 for (Computer.TerminationRequest tr : c.getTerminatedBy()) {
                     e.addSuppressed(tr);
                 }
-            }
-            TaskListener listener = context.get(TaskListener.class);
-            if (listener != null) {
-                OfflineCause oc = c.getOfflineCause();
-                if (oc != null) {
-                    listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
+                TaskListener listener = context.get(TaskListener.class);
+                if (listener != null) {
+                    OfflineCause oc = c.getOfflineCause();
+                    if (oc != null) {
+                        listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
+                    }
                 }
+                throw e;
             }
-            throw e;
+            LOGGER.fine(() -> "Waiting to see if " + r.slave + " will come online");
+            Thread.sleep(500);
+            return get(context);
         }
-        return f;
     }
 
     /**
