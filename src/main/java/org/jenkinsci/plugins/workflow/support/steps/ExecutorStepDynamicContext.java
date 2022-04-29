@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.util.concurrent.Futures;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.Extension;
@@ -45,7 +46,6 @@ import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
-import org.jenkinsci.plugins.workflow.support.concurrent.Futures;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 
@@ -114,7 +114,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
                 try {
                     exec = c.future.get(1, TimeUnit.SECONDS);
                 } catch (ExecutionException | TimeoutException | CancellationException x) {
-                    c.future = Futures.immediateFailedFuture(x);
+                    c.future = Futures.immediateFailedFuture(x); // TODO Java 11+ CompletableFuture.failedFuture
                     throw new IOException(x);
                 }
                 c.executor = Executor.of(exec);
