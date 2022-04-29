@@ -13,6 +13,7 @@ import hudson.model.TopLevelItem;
 import hudson.slaves.WorkspaceList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
@@ -22,6 +23,8 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 
 public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
+
+    private static final Logger LOGGER = Logger.getLogger(WorkspaceStepExecution.class.getName());
 
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="only used from #start")
     private transient final String dir;
@@ -88,26 +91,19 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         }
     }
 
-    @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled") // TODO delete if switching to node/path
     private static final class Callback extends BodyExecutionCallback.TailCall {
 
-        private final WorkspaceList.Lease lease;
-        /* TODO see below
         private transient WorkspaceList.Lease lease;
         private final String node;
         private final String path;
-        */
 
         Callback(WorkspaceList.Lease lease) {
             this.lease = lease;
-            /* TODO see below
             node = FilePathUtils.getNodeName(lease.path);
             path = lease.path.getRemote();
-            */
         }
 
         @Override protected void finished(StepContext context) throws Exception {
-            /* TODO causes ExecutorStepTest.acquireWorkspace to fail in pwd: java.io.IOException: Unable to create live FilePath for slave
             if (lease == null) { // after restart, unless using historical pickled version
                 FilePath fp = FilePathUtils.find(node, path);
                 if (fp == null) {
@@ -125,11 +121,10 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
                 lease = c.getWorkspaceList().allocate(fp);
                 if (!lease.path.equals(fp)) {
                     lease.release();
-                    LOGGER.warning(() -> "JENKINS-37121: something already locked " + fp);
+                    LOGGER.warning(() -> "JENKINS-37121: something already locked " + fp + " != " + lease.path);
                     return;
                 }
             }
-            */
             lease.release();
         }
 
