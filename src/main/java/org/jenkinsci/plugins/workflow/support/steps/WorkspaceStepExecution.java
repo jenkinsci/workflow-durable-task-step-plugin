@@ -128,6 +128,8 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
             lease.release();
         }
 
+        private static final long serialVersionUID = 525857611466436091L;
+
     }
 
     private static final long serialVersionUID = 1L;
