@@ -705,6 +705,7 @@ public class ExecutorStepTest {
                 assertTrue(b2.isBuilding());
         });
         logging.record(WorkspaceStepExecution.class, Level.FINE);
+        logging.record(FilePathDynamicContext.class, Level.FINE);
         sessions.then(r -> {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();

@@ -59,32 +59,33 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         if (r == null) {
             return null;
         }
-        FilePath f = FilePathUtils.find(r.slave, r.path);
-        if (f != null) {
-            LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
-            return f;
-        } else {
-            Computer c = Jenkins.get().getComputer(r.slave);
-            if (c != null && !c.isConnecting()) {
-                IOException e = new IOException("Unable to create live FilePath for " + r.slave);
-                for (Computer.TerminationRequest tr : c.getTerminatedBy()) {
-                    e.addSuppressed(tr);
-                }
-                TaskListener listener = context.get(TaskListener.class);
-                if (listener != null) {
-                    OfflineCause oc = c.getOfflineCause();
-                    if (oc != null) {
-                        listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
+        while (true) {
+            FilePath f = FilePathUtils.find(r.slave, r.path);
+            if (f != null) {
+                LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
+                return f;
+            } else {
+                Computer c = Jenkins.get().getComputer(r.slave);
+                if (c != null && !c.isConnecting()) {
+                    IOException e = new IOException("Unable to create live FilePath for " + r.slave);
+                    for (Computer.TerminationRequest tr : c.getTerminatedBy()) {
+                        e.addSuppressed(tr);
                     }
+                    TaskListener listener = context.get(TaskListener.class);
+                    if (listener != null) {
+                        OfflineCause oc = c.getOfflineCause();
+                        if (oc != null) {
+                            listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
+                        }
+                    }
+                    throw e;
                 }
-                throw e;
+                // TODO blocking the CPS VM thread should be avoided. Could we instead expose FilePathRepresentation as an API?
+                // Then various steps currently expecting FilePath could be relaxed to accept FilePathRepresentation,
+                // allowing them to run even when there is no live channel.
+                LOGGER.fine(() -> "Waiting to see if " + r.slave + " will come online");
+                Thread.sleep(500);
             }
-            // TODO blocking the CPS VM thread should be avoided. Could we instead expose FilePathRepresentation as an API?
-            // Then various steps currently expecting FilePath could be relaxed to accept FilePathRepresentation,
-            // allowing them to run even when there is no live channel.
-            LOGGER.fine(() -> "Waiting to see if " + r.slave + " will come online");
-            Thread.sleep(500);
-            return get(context);
         }
     }
 
