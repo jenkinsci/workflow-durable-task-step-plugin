@@ -31,6 +31,7 @@ import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.Computer;
 import hudson.model.Executor;
+import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.OfflineCause;
@@ -46,6 +47,7 @@ import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
+import org.jenkinsci.plugins.workflow.support.DefaultStepContext;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 
@@ -214,6 +216,27 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
         @Override Computer get(ExecutorStepDynamicContext c) {
             return c.executor.getOwner();
+        }
+
+    }
+
+    /**
+     * Need not use {@link Translator} since we can serve a {@link Node} even when offline.
+     * Overrides default behavior in {@link DefaultStepContext} which would delegate to {@link ComputerTranslator}.
+     */
+    @Extension public static final class NodeTranslator extends DynamicContext.Typed<Node> {
+
+        @Override protected Class<Node> type() {
+            return Node.class;
+        }
+
+        @Override protected Node get(DelegatedContext context) throws IOException, InterruptedException {
+            ExecutorStepDynamicContext c = context.get(ExecutorStepDynamicContext.class);
+            if (c == null) {
+                return null;
+            }
+            Jenkins j = Jenkins.get();
+            return c.node.isEmpty() ? j : j.getNode(c.node);
         }
 
     }
