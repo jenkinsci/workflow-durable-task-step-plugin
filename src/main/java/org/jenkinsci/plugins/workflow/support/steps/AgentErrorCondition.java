@@ -24,49 +24,38 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import hudson.ExtensionPoint;
+import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
-import hudson.model.TaskListener;
 import hudson.slaves.WorkspaceList;
 import java.io.EOFException;
+import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
+import org.jenkinsci.Symbol;
+import org.jenkinsci.plugins.workflow.flow.ErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.MissingContextVariableException;
-import org.jenkinsci.plugins.workflow.steps.SynchronousResumeNotSupportedException;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.Beta;
+import org.kohsuke.stapler.DataBoundConstructor;
 
 /**
  * Determines whether a failure in {@link ExecutorStep} should be retried.
  */
 @Restricted(Beta.class)
-public interface ExecutorStepRetryEligibility extends ExtensionPoint {
+public final class AgentErrorCondition extends ErrorCondition {
 
-    boolean shouldRetry(Throwable t, String node, String label, TaskListener listener);
+    @DataBoundConstructor public AgentErrorCondition() {}
 
-    // TODO take TaskListener so as to print messages in selective cases?
-    static boolean isGenerallyEligible(Throwable t) {
+    @Override public boolean test(Throwable t, StepContext context) throws IOException, InterruptedException {
         if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.RemovedNodeCause.class::isInstance)) {
             return true;
         }
-        class Holder { // TODO Java 11+ use private static method
-            boolean isClosedChannel(Throwable t) {
-                if (t instanceof ClosedChannelException) {
-                    return true;
-                } else if (t instanceof EOFException) {
-                    return true;
-                } else if (t == null) {
-                    return false;
-                } else {
-                    return isClosedChannel(t.getCause());
-                }
-            }
-        }
-        if (new Holder().isClosedChannel(t)) {
+        if (isClosedChannel(t)) {
             return true;
         }
         if (t instanceof MissingContextVariableException) {
@@ -77,11 +66,28 @@ public interface ExecutorStepRetryEligibility extends ExtensionPoint {
                 return true;
             }
         }
-        if (t instanceof SynchronousResumeNotSupportedException) {
-            return true;
-        }
         return false;
     }
 
+    private static boolean isClosedChannel(Throwable t) {
+        if (t instanceof ClosedChannelException) {
+            return true;
+        } else if (t instanceof EOFException) {
+            return true;
+        } else if (t == null) {
+            return false;
+        } else {
+            return isClosedChannel(t.getCause());
+        }
+    }
+
+    @Symbol("agent")
+    @Extension public static final class DescriptorImpl extends ErrorConditionDescriptor {
+
+        @Override public String getDisplayName() {
+            return "Agent errors";
+        }
+
+    }
 
 }

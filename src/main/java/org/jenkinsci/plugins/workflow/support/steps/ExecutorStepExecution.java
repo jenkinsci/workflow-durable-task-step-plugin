@@ -272,7 +272,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             continue;
                         }
                         listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        body.cancel(new RemovedNodeCause());
+                        body.cancel(new RemovedNodeCause()); // TODO pass actualInterruption=false https://github.com/jenkinsci/workflow-cps-plugin/blob/f642ed4fad556e100394ebb1f69f0ac8e5336248/src/main/java/org/jenkinsci/plugins/workflow/cps/CpsBodyExecution.java#L251
                     }
                 }
             }, TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
@@ -781,23 +781,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     execution.state = null;
                     context.saveState();
                 }
-            }
-
-            @Override public void onFailure(StepContext context, Throwable t) {
-                try {
-                    if (execution != null) {
-                        TaskListener listener = context.get(TaskListener.class);
-                        if (ExtensionList.lookup(ExecutorStepRetryEligibility.class).stream().anyMatch(e -> e.shouldRetry(t, execution.state.node, execution.step.getLabel(), listener))) {
-                            finished(context);
-                            execution.start();
-                            return;
-                        }
-                        listener.getLogger().println("No plugin requested a retry of a failed node block running on " + execution.state.node);
-                    }
-                } catch (Exception x) {
-                    t.addSuppressed(x);
-                }
-                super.onFailure(context, t);
             }
 
         }
