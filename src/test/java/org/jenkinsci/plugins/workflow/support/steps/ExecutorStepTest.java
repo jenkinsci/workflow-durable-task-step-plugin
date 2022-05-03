@@ -27,7 +27,6 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
-import hudson.ExtensionList;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
@@ -39,7 +38,6 @@ import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.Slave;
-import hudson.model.TaskListener;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.model.queue.CauseOfBlockage;
@@ -72,7 +70,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import hudson.util.VersionNumber;
-import java.util.Set;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -105,11 +102,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.hamcrest.MatcherAssert.assertThat;
-import org.jenkinsci.plugins.workflow.steps.Step;
-import org.jenkinsci.plugins.workflow.steps.StepContext;
-import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
-import org.jenkinsci.plugins.workflow.steps.StepExecution;
-import org.jenkinsci.plugins.workflow.steps.StepExecutions;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import org.junit.Assume;
@@ -127,7 +119,6 @@ import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.MockFolder;
 import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.TestExtension;
-import org.kohsuke.stapler.DataBoundConstructor;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 public class ExecutorStepTest {
@@ -337,180 +328,6 @@ public class ExecutorStepTest {
                 r.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 r.assertLogContains("OK, done", b);
         });
-    }
-
-    @Ignore("TODO rewrite")
-    @Issue("JENKINS-49707")
-    @Test public void retryNodeBlock() throws Throwable {
-        Assume.assumeFalse("TODO corresponding batch script TBD", Functions.isWindows());
-        sessions.then(r -> {
-            RetryThis.activate();
-            logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
-            Slave s = inboundAgents.createAgent(r, "dumbo1");
-            s.setLabelString("dumb");
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition(
-                "node('dumb') {\n" +
-                "    sh 'sleep 10'\n" +
-                "}", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            r.waitForMessage("+ sleep", b);
-            inboundAgents.stop("dumbo1");
-            r.jenkins.removeNode(s);
-            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            s = inboundAgents.createAgent(r, "dumbo2");
-            s.setLabelString("dumb");
-            r.waitForMessage("Running on dumbo2 in ", b);
-            r.assertBuildStatusSuccess(r.waitForCompletion(b));
-        });
-    }
-
-    @Ignore("TODO rewrite")
-    @Issue("JENKINS-49707")
-    @Test public void retryNodeBlockSynch() throws Throwable {
-        Assume.assumeFalse("TODO corresponding Windows process TBD", Functions.isWindows());
-        sessions.then(r -> {
-            RetryThis.activate();
-            logging.record(ExecutorStepExecution.class, Level.FINE);
-            Slave s = inboundAgents.createAgent(r, "dumbo1");
-            s.setLabelString("dumb");
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition(
-                "node('dumb') {\n" +
-                "    hang()\n" +
-                "}", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            r.waitForMessage("$ sleep", b);
-            // Immediate kill causes RequestAbortedException from RemoteLauncher.launch, which passes test;
-            // but more realistic to see IOException: Backing channel 'JNLP4-connect connection from …' is disconnected.
-            // from RemoteLauncher$ProcImpl.isAlive via RemoteInvocationHandler.channelOrFail.
-            // Either way the top-level exception wraps ClosedChannelException:
-            Thread.sleep(1000);
-            inboundAgents.stop("dumbo1");
-            r.jenkins.removeNode(s);
-            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            s = inboundAgents.createAgent(r, "dumbo2");
-            s.setLabelString("dumb");
-            r.waitForMessage("Running on dumbo2 in ", b);
-            r.assertBuildStatusSuccess(r.waitForCompletion(b));
-        });
-    }
-    public static final class HangStep extends Step {
-        @DataBoundConstructor public HangStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
-            return StepExecutions.synchronousNonBlocking(context, c -> {
-                c.get(hudson.Launcher.class).launch().cmds("sleep", "10").stdout(c.get(TaskListener.class)).start().join();
-                return null;
-            });
-        }
-        @TestExtension("retryNodeBlockSynch") public static final class DescriptorImpl extends StepDescriptor {
-            @Override public String getFunctionName() {
-                return "hang";
-            }
-            @Override public Set<? extends Class<?>> getRequiredContext() {
-                return new HashSet<>(Arrays.asList(hudson.Launcher.class, TaskListener.class));
-            }
-        }
-    }
-
-    @Ignore("TODO rewrite")
-    @Issue("JENKINS-49707")
-    @Test public void retryNewStepAcrossRestarts() throws Throwable {
-        logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
-        sessions.then(r -> {
-            Slave s = inboundAgents.createAgent(r, "dumbo1");
-            s.setLabelString("dumb");
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition(
-                "node('dumb') {\n" +
-                "    semaphore 'wait'\n" +
-                "    isUnix()\n" +
-                "}", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            SemaphoreStep.waitForStart("wait/1", b);
-        });
-        sessions.then(r -> {
-            RetryThis.activate();
-            inboundAgents.stop("dumbo1");
-            r.jenkins.removeNode(r.jenkins.getNode("dumbo1"));
-            SemaphoreStep.success("wait/1", null);
-            SemaphoreStep.success("wait/2", null);
-            WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            Slave s = inboundAgents.createAgent(r, "dumbo2");
-            s.setLabelString("dumb");
-            r.waitForMessage("Running on dumbo2 in ", b);
-            r.assertBuildStatusSuccess(r.waitForCompletion(b));
-        });
-    }
-
-    @Ignore("TODO rewrite")
-    @Issue({"JENKINS-49707", "JENKINS-30383"})
-    @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
-        logging.record(ExecutorStepExecution.class, Level.FINE);
-        sessions.then(r -> {
-            Slave s = inboundAgents.createAgent(r, "dumbo1");
-            s.setLabelString("dumb");
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition(
-                "node('dumb') {\n" +
-                "    waitWithoutAgent()\n" +
-                "}", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            r.waitForMessage("Sleeping without agent", b);
-        });
-        sessions.then(r -> {
-            RetryThis.activate();
-            inboundAgents.stop("dumbo1");
-            r.jenkins.removeNode(r.jenkins.getNode("dumbo1"));
-            WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            Slave s = inboundAgents.createAgent(r, "dumbo2");
-            s.setLabelString("dumb");
-            r.waitForMessage("Running on dumbo2 in ", b);
-            r.assertBuildStatusSuccess(r.waitForCompletion(b));
-        });
-    }
-    public static final class WaitWithoutAgentStep extends Step {
-        @DataBoundConstructor public WaitWithoutAgentStep() {}
-        @Override public StepExecution start(StepContext context) throws Exception {
-            return StepExecutions.synchronousNonBlocking(context, c -> {
-                c.get(TaskListener.class).getLogger().println("Sleeping without agent");
-                Thread.sleep(10_000);
-                return null;
-            });
-        }
-        @TestExtension("retryNodeBlockSynchAcrossRestarts") public static final class DescriptorImpl extends StepDescriptor {
-            @Override public String getFunctionName() {
-                return "waitWithoutAgent";
-            }
-            @Override public Set<? extends Class<?>> getRequiredContext() {
-                return Collections.singleton(TaskListener.class);
-            }
-        }
-    }
-
-    // TODO move this and depending tests to workflow-basic-steps and use retry(count: 2, errorConditions: [agent()]) {node…}
-    @TestExtension public static class RetryThis /*implements AgentErrorCondition*/ {
-        public static void activate() {
-            ExtensionList.lookupSingleton(RetryThis.class).active = true;
-        }
-        private boolean active;
-        /*
-        @Override public boolean shouldRetry(Throwable t, String node, String label, TaskListener listener) {
-            if (!active) {
-                return false;
-            }
-            Functions.printStackTrace(t, listener.getLogger());
-            if (AgentErrorCondition.isGenerallyEligible(t)) {
-                listener.getLogger().println("Retrying block from " + node + " as " + label);
-                return true;
-            } else {
-                listener.getLogger().println("Ignoring " + t);
-                return false;
-            }
-        }
-        */
     }
 
     @Issue({"JENKINS-41854", "JENKINS-50504"})
