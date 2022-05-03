@@ -44,17 +44,13 @@ import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueTaskDispatcher;
-import hudson.remoting.Launcher;
-import hudson.remoting.Which;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
-import hudson.slaves.JNLPLauncher;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import hudson.slaves.WorkspaceList;
-import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -85,7 +81,6 @@ import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.IOUtils;
-import org.apache.tools.ant.util.JavaEnvUtils;
 import static org.hamcrest.Matchers.*;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
@@ -105,7 +100,6 @@ import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.After;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -125,6 +119,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
@@ -141,6 +136,7 @@ public class ExecutorStepTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
+    @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
     @Rule public LoggerRule logging = new LoggerRule();
@@ -225,33 +221,11 @@ public class ExecutorStepTest {
         });
     }
 
-    private Process jnlpProc;
-    private void startJnlpProc(JenkinsRule r, String agentName) throws Exception {
-        killJnlpProc();
-        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-Djava.awt.headless=true", "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", r.getURL() + "computer/" + agentName + "/slave-agent.jnlp");
-        pb.redirectErrorStream(true);
-        System.err.println("Running: " + pb.command());
-        jnlpProc = pb.start();
-        new StreamCopyThread("jnlp", jnlpProc.getInputStream(), System.err).start();
-    }
-    @After public void killJnlpProc() {
-        if (jnlpProc != null) {
-            jnlpProc.destroyForcibly();
-            jnlpProc = null;
-        }
-    }
-
     @Test public void buildShellScriptAcrossRestart() throws Throwable {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepDynamicContext.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
-                // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
-                // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
-                DumbSlave s  = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-                s.setNumExecutors(1);
-                s.setRetentionStrategy(RetentionStrategy.NOOP);
-                r.jenkins.addNode(s);
-                startJnlpProc(r, "dumbo");
+                DumbSlave s = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -267,13 +241,11 @@ public class ExecutorStepTest {
                 }
                 r.waitForMessage("waiting", b);
                 assertTrue(b.isBuilding());
-                killJnlpProc();
         });
         sessions.then(r -> {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding()); // TODO occasionally fails; log ends with: ‘Running: Allocate node : Body : Start’ (no shell step in sight)
-                startJnlpProc(r, "dumbo"); // Have to relaunch JNLP agent, since the Jenkins port has changed, and we cannot force JenkinsRule to reuse the same port as before.
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
                 assertTrue(f2.isFile());
@@ -284,7 +256,6 @@ public class ExecutorStepTest {
                 r.assertBuildStatusSuccess(r.waitForCompletion(b));
                 r.assertLogContains("finished waiting", b);
                 r.assertLogContains("OK, done", b);
-                killJnlpProc();
         });
     }
 
@@ -298,9 +269,7 @@ public class ExecutorStepTest {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         int count = 3_000;
         sessions.then(r -> {
-            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo");
+            DumbSlave s = r.createSlave("dumbo", null, null);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -309,7 +278,6 @@ public class ExecutorStepTest {
         });
         sessions.then(r -> {
             WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            startJnlpProc(r, "dumbo");
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
             // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
             FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
@@ -327,7 +295,6 @@ public class ExecutorStepTest {
             }
             System.out.printf("Lost content: %.02f%%%n", lost * 100.0 / count);
             System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
-            killJnlpProc();
         });
     }
 
@@ -335,11 +302,7 @@ public class ExecutorStepTest {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-                s.setNumExecutors(1);
-                s.setRetentionStrategy(RetentionStrategy.NOOP);
-                r.jenkins.addNode(s);
-                startJnlpProc(r, "dumbo");
+                Slave s = inboundAgents.createAgent(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -357,11 +320,11 @@ public class ExecutorStepTest {
                 assertTrue(b.isBuilding());
                 Computer c = s.toComputer();
                 assertNotNull(c);
-                killJnlpProc();
+                inboundAgents.stop("dumbo");
                 while (c.isOnline()) {
                     Thread.sleep(100);
                 }
-                startJnlpProc(r, "dumbo");
+                inboundAgents.start(r, "dumbo");
                 while (c.isOffline()) {
                     Thread.sleep(100);
                 }
@@ -373,7 +336,6 @@ public class ExecutorStepTest {
                 r.assertBuildStatusSuccess(r.waitForCompletion(b));
                 r.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 r.assertLogContains("OK, done", b);
-                killJnlpProc();
         });
     }
 
@@ -384,12 +346,8 @@ public class ExecutorStepTest {
         sessions.then(r -> {
             RetryThis.activate();
             logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
-            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            Slave s = inboundAgents.createAgent(r, "dumbo1");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo1");
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
                 "node('dumb') {\n" +
@@ -397,18 +355,13 @@ public class ExecutorStepTest {
                 "}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("+ sleep", b);
-            killJnlpProc();
+            inboundAgents.stop("dumbo1");
             r.jenkins.removeNode(s);
             r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s = inboundAgents.createAgent(r, "dumbo2");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo2");
             r.waitForMessage("Running on dumbo2 in ", b);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
-            killJnlpProc();
         });
     }
 
@@ -419,12 +372,8 @@ public class ExecutorStepTest {
         sessions.then(r -> {
             RetryThis.activate();
             logging.record(ExecutorStepExecution.class, Level.FINE);
-            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            Slave s = inboundAgents.createAgent(r, "dumbo1");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo1");
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
                 "node('dumb') {\n" +
@@ -437,18 +386,13 @@ public class ExecutorStepTest {
             // from RemoteLauncher$ProcImpl.isAlive via RemoteInvocationHandler.channelOrFail.
             // Either way the top-level exception wraps ClosedChannelException:
             Thread.sleep(1000);
-            killJnlpProc();
+            inboundAgents.stop("dumbo1");
             r.jenkins.removeNode(s);
             r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            s = inboundAgents.createAgent(r, "dumbo2");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo2");
             r.waitForMessage("Running on dumbo2 in ", b);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
-            killJnlpProc();
         });
     }
     public static final class HangStep extends Step {
@@ -474,12 +418,8 @@ public class ExecutorStepTest {
     @Test public void retryNewStepAcrossRestarts() throws Throwable {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
-            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            Slave s = inboundAgents.createAgent(r, "dumbo1");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo1");
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
                 "node('dumb') {\n" +
@@ -491,21 +431,16 @@ public class ExecutorStepTest {
         });
         sessions.then(r -> {
             RetryThis.activate();
-            killJnlpProc();
+            inboundAgents.stop("dumbo1");
             r.jenkins.removeNode(r.jenkins.getNode("dumbo1"));
             SemaphoreStep.success("wait/1", null);
             SemaphoreStep.success("wait/2", null);
             WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
             r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            DumbSlave s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            Slave s = inboundAgents.createAgent(r, "dumbo2");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo2");
             r.waitForMessage("Running on dumbo2 in ", b);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
-            killJnlpProc();
         });
     }
 
@@ -514,12 +449,8 @@ public class ExecutorStepTest {
     @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
-            DumbSlave s = new DumbSlave("dumbo1", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            Slave s = inboundAgents.createAgent(r, "dumbo1");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo1");
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
                 "node('dumb') {\n" +
@@ -530,19 +461,14 @@ public class ExecutorStepTest {
         });
         sessions.then(r -> {
             RetryThis.activate();
-            killJnlpProc();
+            inboundAgents.stop("dumbo1");
             r.jenkins.removeNode(r.jenkins.getNode("dumbo1"));
             WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
             r.waitForMessage("Retrying block from dumbo1 as dumb", b);
-            DumbSlave s = s = new DumbSlave("dumbo2", tmp.newFolder().getAbsolutePath(), new JNLPLauncher(true));
+            Slave s = inboundAgents.createAgent(r, "dumbo2");
             s.setLabelString("dumb");
-            s.setNumExecutors(1);
-            s.setRetentionStrategy(RetentionStrategy.NOOP);
-            r.jenkins.addNode(s);
-            startJnlpProc(r, "dumbo2");
             r.waitForMessage("Running on dumbo2 in ", b);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
-            killJnlpProc();
         });
     }
     public static final class WaitWithoutAgentStep extends Step {
@@ -595,11 +521,7 @@ public class ExecutorStepTest {
                 logging.record(DurableTaskStep.class, Level.FINE).
                         record(ExecutorStepDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-                s.setNumExecutors(1);
-                s.setRetentionStrategy(RetentionStrategy.NOOP);
-                r.jenkins.addNode(s);
-                startJnlpProc(r, "dumbo");
+                Slave s = inboundAgents.createAgent(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -632,18 +554,17 @@ public class ExecutorStepTest {
                 String workspacePath = actions.get(0).getWorkspace().getRemote();
                 assertWorkspaceLocked(computer, workspacePath);
                 LOGGER.info("killing agent");
-                jnlpProc.destroyForcibly();
+                inboundAgents.stop("dumbo");
                 long lastMessageMillis = System.currentTimeMillis();
                 while (computer.isOnline()) {
                     if (TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - lastMessageMillis) > 30) {
-                        LOGGER.info(() -> "Waiting for " + computer.getNode() + " to go offline. JNLP Process is " + (jnlpProc.isAlive() ? "alive" : "not alive"));
+                        LOGGER.info(() -> "Waiting for " + computer.getNode() + " to go offline. JNLP Process is " + (inboundAgents.isAlive("dumbo") ? "alive" : "not alive"));
                         lastMessageMillis = System.currentTimeMillis();
                     }
                     Thread.sleep(100);
                 }
-                jnlpProc = null;
                 LOGGER.info("restarting agent");
-                startJnlpProc(r, "dumbo");
+                inboundAgents.start(r, "dumbo");
                 while (computer.isOffline()) {
                     Thread.sleep(100);
                 }
@@ -659,7 +580,6 @@ public class ExecutorStepTest {
                 r.assertLogContains("finished waiting", b);
                 r.assertLogContains("Back again", b);
                 r.assertLogContains("OK, done", b);
-                killJnlpProc();
         });
     }
 
