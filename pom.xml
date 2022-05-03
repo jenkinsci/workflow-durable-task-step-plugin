@@ -67,6 +67,7 @@
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
         <jenkins.version>2.303.3</jenkins.version>
+        <jenkins-test-harness.version>1746.v2b_3c5d1983b_e</jenkins-test-harness.version> <!-- TODO until in plugin-pom -->
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
