@@ -27,7 +27,6 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
-import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
@@ -107,7 +106,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import org.junit.Assume;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -497,11 +495,10 @@ public class ExecutorStepTest {
         });
     }
 
-    @Ignore("TODO currently just passes right away; could perhaps be reworked to prove that a sh step prints a message")
     @Issue("JENKINS-26130")
-    @Test public void unloadableExecutorPickle() throws Throwable {
+    @Test public void unrestorableAgent() throws Throwable {
         sessions.then(r -> {
-                DumbSlave dumbo = r.createSlave("dumbo", null, null); // unlike in buildShellScriptAcrossRestart, we *want* this to die after restart
+                DumbSlave dumbo = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('dumbo') {\n" +
@@ -520,6 +517,7 @@ public class ExecutorStepTest {
                 b.getExecutor().interrupt();
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+                r.assertLogContains("dumbo has been removed for 15 sec, assuming it is not coming back", b);
         });
     }
 

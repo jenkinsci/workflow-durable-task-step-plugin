@@ -190,12 +190,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @Override public void onResume() {
         try {
-            Run<?, ?> run = getContext().get(Run.class);
             if (state == null) {
+                Run<?, ?> run = getContext().get(Run.class);
                 LOGGER.fine(() -> "No ExecutorStepDynamicContext found for node block in " + run + "; perhaps loading from a historical build record, hoping for the best");
                 return;
             }
-            state.resume();
+            state.resume(getContext());
         } catch (Exception x) { // JENKINS-40161
             getContext().onFailure(x);
         }

@@ -24,29 +24,32 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.google.common.util.concurrent.Futures;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.Extension;
 import hudson.FilePath;
+import hudson.Util;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
 import hudson.model.Queue;
+import hudson.model.Result;
+import hudson.model.TaskListener;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.support.DefaultStepContext;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -68,12 +71,10 @@ public final class ExecutorStepDynamicContext implements Serializable {
     final @NonNull ExecutorStepExecution.PlaceholderTask task;
     final @NonNull String node;
     private final @NonNull String path;
-    /** Non-null sometime after {@link #resume} if all goes well. */
+    /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable Executor executor;
-    /** Non-null sometime after {@link #resume} if all goes well. */
+    /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable WorkspaceList.Lease lease;
-    /** Non-null after {@link #resume}. */
-    private transient @Nullable Future<Queue.Executable> future;
 
     ExecutorStepDynamicContext(ExecutorStepExecution.PlaceholderTask task, WorkspaceList.Lease lease, Executor executor) {
         this.task = task;
@@ -83,7 +84,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
         this.lease = lease;
     }
 
-    void resume() {
+    void resume(StepContext context) throws Exception {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
         }
@@ -93,53 +94,49 @@ public final class ExecutorStepDynamicContext implements Serializable {
             throw new IllegalStateException("queue refused " + task);
         }
         LOGGER.fine(() -> "scheduled " + item + " for " + path + " on " + node);
-        future = item.getFuture().getStartCondition();
+        TaskListener listener = context.get(TaskListener.class);
+        if (!node.isEmpty()) { // unlikely to be any delay for built-in node anyway
+            listener.getLogger().println("Waiting for reconnection of " + node + " before proceeding with build");
+        }
+        Queue.Executable exec;
+        try {
+            exec = item.getFuture().getStartCondition().get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException x) {
+            listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
+            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+        } catch (CancellationException x) {
+            LOGGER.log(Level.FINE, "ceased to wait for " + node, x);
+            return;
+        }
+        executor = Executor.of(exec);
+        if (executor == null) {
+            // TODO this could happen as a race condition if the executable takes <1s to run; how could that be prevented?
+            // Or can we schedule a placeholder Task whose Executable does nothing but return Executor.currentExecutor and then end?
+            throw new IOException(exec + " was scheduled but no executor claimed it");
+        }
+        Computer computer = executor.getOwner();
+        VirtualChannel channel = computer.getChannel();
+        if (channel == null) {
+            throw new IOException(computer + " is offline");
+        }
+        FilePath fp = new FilePath(channel, path);
+        // Since there is no equivalent to Lock.tryLock for WorkspaceList (.record would work but throws AssertionError and swaps the holder):
+        WorkspaceList.Lease _lease = computer.getWorkspaceList().allocate(fp);
+        if (_lease.path.equals(fp)) {
+            lease = _lease;
+        } else { // @2 or other variant, not what we expected to be able to lock without contention
+            _lease.release();
+            throw new IOException("JENKINS-37121: something already locked " + fp);
+        }
+        LOGGER.fine(() -> "fully restored for " + path + " on " + node);
     }
 
     private static abstract class Translator<T> extends DynamicContext.Typed<T> {
 
         @Override protected T get(DelegatedContext context) throws IOException, InterruptedException {
             ExecutorStepDynamicContext c = context.get(ExecutorStepDynamicContext.class);
-            if (c == null) {
+            if (c == null || c.lease == null) {
                 return null;
-            }
-            if (c.executor == null || c.lease == null) {
-                if (c.future == null) {
-                    throw new IOException("Attempt to look up context from ExecutorStepExecution which has not been resumed");
-                }
-                if (!c.future.isDone()) {
-                    LOGGER.fine(() -> "queue item has not been scheduled for " + c.path + " on " + c.node + ", declining to provide any " + type().getSimpleName());
-                    return null;
-                }
-                LOGGER.fine(() -> "waiting for queue item to be scheduled for " + c.path + " on " + c.node);
-                Queue.Executable exec;
-                try {
-                    exec = c.future.get(1, TimeUnit.SECONDS);
-                } catch (ExecutionException | TimeoutException | CancellationException x) {
-                    c.future = Futures.immediateFailedFuture(x); // TODO Java 11+ CompletableFuture.failedFuture
-                    throw new IOException(x);
-                }
-                c.executor = Executor.of(exec);
-                if (c.executor == null) {
-                    // TODO this could happen as a race condition if the executable takes <1s to run; how could that be prevented?
-                    // Or can we schedule a placeholder Task whose Executable does nothing but return Executor.currentExecutor and then end?
-                    throw new IOException(exec + " was scheduled but no executor claimed it");
-                }
-                Computer computer = c.executor.getOwner();
-                VirtualChannel channel = computer.getChannel();
-                if (channel == null) {
-                    throw new IOException(computer + " is offline");
-                }
-                FilePath fp = new FilePath(channel, c.path);
-                // Since there is no equivalent to Lock.tryLock for WorkspaceList (.record would work but throws AssertionError and swaps the holder):
-                WorkspaceList.Lease lease = computer.getWorkspaceList().allocate(fp);
-                if (lease.path.equals(fp)) {
-                    c.lease = lease;
-                } else { // @2 or other variant, not what we expected to be able to lock without contention
-                    lease.release();
-                    throw new IOException("JENKINS-37121: something already locked " + fp);
-                }
-                LOGGER.fine(() -> "fully restored for " + c.path + " on " + c.node);
             }
             return get(c);
         }

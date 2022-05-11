@@ -66,7 +66,7 @@
     </pluginRepositories>
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
-        <jenkins.version>2.303.3</jenkins.version>
+        <jenkins.version>2.332.1</jenkins.version>
         <jenkins-test-harness.version>1746.v2b_3c5d1983b_e</jenkins-test-harness.version> <!-- TODO until in plugin-pom -->
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
@@ -76,7 +76,7 @@
         <dependencies>
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
-                <artifactId>bom-2.303.x</artifactId>
+                <artifactId>bom-2.332.x</artifactId>
                 <version>1370.vfa_e23fe119c3</version>
                 <scope>import</scope>
                 <type>pom</type>
@@ -95,7 +95,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-api</artifactId>
-            <version>1150.vea_8e33e127c8</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/217 -->
+            <version>1159.v27cb_4545c3ff</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/217 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -104,11 +104,13 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
+            <version>2691.va_688a_c3d8fd0</version> <!-- TODO https://github.com/jenkinsci/workflow-cps-plugin/pull/534 -->
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-job</artifactId>
+            <version>1181.vcea_0362753c3</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/260 -->
             <scope>test</scope>
         </dependency>
         <dependency>
