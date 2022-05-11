@@ -1196,7 +1196,7 @@ public class ExecutorStepTest {
         // create all the slaves then wait for them to connect as it will be quicker as agents connect in parallel
         ArrayList<DumbSlave> agents = new ArrayList<>();
         for (int i = 0; i < number; ++i) {
-            agents.add(r.createSlave("foo bar", null));
+            agents.add(r.createSlave(label, null));
         }
         for (DumbSlave agent : agents) {
             r.waitOnline(agent);
