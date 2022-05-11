@@ -27,6 +27,7 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
+import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
@@ -139,10 +140,8 @@ public class ExecutorStepTest {
      */
     @Test public void buildShellScriptOnSlave() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
-                s.setLabelString("remote quick");
+                DumbSlave s = r.createSlave("remote quick", null);
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
-
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('" + s.getNodeName() + "') {\n" +
@@ -183,7 +182,7 @@ public class ExecutorStepTest {
      */
     @Test public void buildShellScriptWithPersistentProcesses() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
+                DumbSlave s = r.createSlave();
                 Path f1 = r.jenkins.getRootDir().toPath().resolve("test.txt");
                 String fullPathToTestFile = f1.toAbsolutePath().toString();
                 // Escape any \ in the source so that the script is valid
@@ -408,7 +407,7 @@ public class ExecutorStepTest {
 
     @Test public void buildShellScriptQuick() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
+                DumbSlave s = r.createSlave();
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
 
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
@@ -522,7 +521,7 @@ public class ExecutorStepTest {
 
     @Test public void detailsExported() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
+                DumbSlave s = r.createSlave();
 
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
@@ -681,10 +680,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodeFromPreviousRun() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 5; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 5, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
@@ -744,10 +740,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 1; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 1, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition(
@@ -778,10 +771,7 @@ public class ExecutorStepTest {
             // Note: for Jenkins versions > 2.65, the number of agents must be increased to 5.
             // This is due to changes in the Load Balancer (See JENKINS-60563).
             int totalAgents = Jenkins.getVersion().isNewerThan(new VersionNumber("2.265")) ? 5 : 3;
-            for (int i = 0; i < totalAgents; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, totalAgents, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("" +
@@ -829,10 +819,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 4; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 4, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
 
@@ -894,10 +881,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 4; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 4, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("" +
@@ -960,10 +944,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 5; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo");
-            }
+            createNOnlineAgentWithLabels(r, 5, "foo");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
@@ -1099,7 +1080,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-58900")
     @Test public void nodeDisconnectMissingContextVariableException() throws Throwable {
         sessions.then(r -> {
-            DumbSlave agent = r.createOnlineSlave();
+            DumbSlave agent = r.createSlave();
             WorkflowJob p = r.createProject(WorkflowJob.class);
             p.setDefinition(new CpsFlowDefinition(
                     "node ('" + agent.getNodeName() + "') {\n" +
@@ -1161,7 +1142,7 @@ public class ExecutorStepTest {
 
     @Test public void getParentExecutable() throws Throwable {
         sessions.then(r -> {
-            DumbSlave s = r.createOnlineSlave();
+            DumbSlave s = r.createSlave();
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('" + s.getNodeName() + "') {semaphore('wait')}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -1211,4 +1192,14 @@ public class ExecutorStepTest {
         }
     }
 
+    private void createNOnlineAgentWithLabels(JenkinsRule r, int number, String label) throws Exception {
+        // create all the slaves then wait for them to connect as it will be quicker as agents connect in parallel
+        ArrayList<DumbSlave> agents = new ArrayList<>();
+        for (int i = 0; i < number; ++i) {
+            agents.add(r.createSlave("foo bar", null));
+        }
+        for (DumbSlave agent : agents) {
+            r.waitOnline(agent);
+        }
+    }
 }
