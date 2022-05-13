@@ -42,7 +42,7 @@ public class EnvWorkflowTest {
     @Rule public JenkinsRule r = new JenkinsRule();
 
     /**
-     * Verifies if NODE_NAME environment variable is available on a slave node and on master.
+     * Verifies if NODE_NAME environment variable is available on a agent node and on controller.
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
