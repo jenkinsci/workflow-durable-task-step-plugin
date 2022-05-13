@@ -515,8 +515,6 @@ public class ExecutorStepTest {
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding());
                 SemaphoreStep.success("wait/1", null);
-                r.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
-                b.getExecutor().interrupt();
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
                 r.assertLogContains("dumbo has been removed for 15 sec, assuming it is not coming back", b);
