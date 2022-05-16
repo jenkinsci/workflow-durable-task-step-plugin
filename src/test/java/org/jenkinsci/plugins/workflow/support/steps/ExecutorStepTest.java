@@ -424,13 +424,13 @@ public class ExecutorStepTest {
     @Test public void acquireWorkspace() throws Throwable {
         sessions.then(r -> {
                 String slaveRoot = tmp.newFolder().getPath();
-                DumbSlave s = new DumbSlave("slave", slaveRoot, r.createComputerLauncher(null));
+                DumbSlave s = new DumbSlave("agent-007", slaveRoot, r.createComputerLauncher(null));
                 s.setNumExecutors(2);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
                 r.jenkins.addNode(s);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
-                        "node('slave') {\n" + // this locks the WS
+                        "node('agent-007') {\n" + // this locks the WS
                         "    echo(/default=${pwd()}/)\n" +
                         "    ws {\n" + // and this locks a second one
                         "        echo(/before=${pwd()}/)\n" +
