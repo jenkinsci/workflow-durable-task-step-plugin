@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
@@ -74,6 +75,7 @@ import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
@@ -111,7 +113,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
      */
     @Override
     public boolean start() throws Exception {
-        final PlaceholderTask task = new PlaceholderTask(this, step.getLabel());
+        final PlaceholderTask task = new PlaceholderTask(getContext(), step.getLabel());
         Queue.WaitingItem waitingItem = Queue.getInstance().schedule2(task, 0).getCreateItem();
         if (waitingItem == null) {
             // There can be no duplicates. But could be refused if a QueueDecisionHandler rejects it for some odd reason.
@@ -261,19 +263,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     Queue.Executable exec = e.getCurrentExecutable();
                     if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
                         PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
-                        TaskListener listener = TaskListener.NULL;
+                        TaskListener listener;
                         try {
                             listener = task.context.get(TaskListener.class);
                         } catch (Exception x) {
                             LOGGER.log(Level.WARNING, null, x);
-                        }
-                        BodyExecution body = task.execution.body;
-                        if (body == null) {
-                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
                             continue;
                         }
-                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        body.cancel(new RemovedNodeCause()); // TODO pass actualInterruption=false https://github.com/jenkinsci/workflow-cps-plugin/blob/f642ed4fad556e100394ebb1f69f0ac8e5336248/src/main/java/org/jenkinsci/plugins/workflow/cps/CpsBodyExecution.java#L251
+                        task.withExecution(execution -> {
+                            BodyExecution body = execution.body;
+                            if (body == null) {
+                                listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
+                                return;
+                            }
+                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
+                            body.cancel(new RemovedNodeCause()); // TODO pass actualInterruption=false https://github.com/jenkinsci/workflow-cps-plugin/blob/f642ed4fad556e100394ebb1f69f0ac8e5336248/src/main/java/org/jenkinsci/plugins/workflow/cps/CpsBodyExecution.java#L251
+                        });
                     }
                 }
             }, TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
@@ -304,7 +309,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** keys are {@link #cookie}s */
         private static final Map<String,RunningTask> runningTasks = new HashMap<>();
 
-        private final ExecutorStepExecution execution;
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
@@ -325,9 +329,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed. */
         private transient boolean stopping;
 
-        PlaceholderTask(ExecutorStepExecution execution, String label) throws IOException, InterruptedException {
-            this.execution = execution;
-            this.context = execution.getContext();
+        PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
+            this.context = context;
             this.label = label;
             runId = context.get(Run.class).getExternalizableId();
             Authentication runningAuth = Jenkins.getAuthentication();
@@ -347,6 +350,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             LOGGER.log(FINE, "deserializing previously scheduled {0}", this);
             return this;
+        }
+
+        /**
+         * We cannot keep {@link ExecutorStepExecution} as a serial field of {@link PlaceholderTask}
+         * since it could not be serialized via XStream in {@link Queue}.
+         * Instead we keep only {@link #context} and look up the execution as needed.
+         */
+        private void withExecution(Consumer<ExecutorStepExecution> executionCallback) {
+            StepExecution.applyAll(ExecutorStepExecution.class, execution -> {
+                if (execution.getContext().equals(context)) {
+                    executionCallback.accept(execution);
+                }
+                return null;
+            });
         }
 
         /**
@@ -872,13 +889,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
                         ExecutorStepDynamicContext state = new ExecutorStepDynamicContext(PlaceholderTask.this, lease, exec);
-                        execution.state = state;
-                        execution.body = context.newBodyInvoker()
+                        withExecution(execution -> {
+                            execution.state = state;
+                            execution.body = context.newBodyInvoker()
                                 .withContexts(env, state)
                                 .withCallback(new Callback(cookie, execution))
                                 .start();
-                        LOGGER.fine(() -> "started " + cookie + " in " + runId);
-                        context.saveState();
+                            LOGGER.fine(() -> "started " + cookie + " in " + runId);
+                            context.saveState();
+                        });
                     } else {
                         // just rescheduled after a restart; wait for task to complete
                         LOGGER.fine(() -> "resuming " + cookie + " in " + runId);
@@ -918,15 +937,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.fine(() -> "interrupted " + cookie + " in " + runId);
                             Timer.get().submit(() -> { // JENKINS-46738
                                 Executor thisExecutor = /* AsynchronousExecution. */ getExecutor();
-                                BodyExecution body = execution.body;
-                                if (body != null) {
-                                    body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
-                                } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                    if (thisExecutor != null) {
-                                        thisExecutor.recordCauseOfInterruption(r, _listener);
+                                withExecution(execution -> {
+                                    BodyExecution body = execution.body;
+                                    if (body != null) {
+                                        body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
+                                    } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                        if (thisExecutor != null) {
+                                            thisExecutor.recordCauseOfInterruption(r, _listener);
+                                        }
+                                        completed(null);
                                     }
-                                    completed(null);
-                                }
+                                });
                             });
                         }
                         @Override public boolean blocksRestart() {

@@ -30,7 +30,9 @@ import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.RetentionStrategy;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import jenkins.model.InterruptedBuildAction;
@@ -116,6 +118,35 @@ public class ExecutorStepDynamicContextTest {
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
             assertNotNull(iba);
             assertEquals(Collections.singleton(ExecutorStepExecution.RemovedNodeCause.class), iba.getCauses().stream().map(Object::getClass).collect(Collectors.toSet()));
+        });
+    }
+
+    @Issue("JENKINS-36013")
+    @Test public void parallelNodeDisappearance() throws Throwable {
+        logging.recordPackage(ExecutorStepExecution.class, Level.FINE);
+        sessions.then(j -> {
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("def bs = [:]; for (int _i = 0; _i < 5; _i++) {def i = _i; bs[/b$i/] = {node('remote') {semaphore(/s$i/)}}}; parallel bs", true));
+            List<DumbSlave> agents = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                agents.add(j.createSlave(Label.get("remote")));
+            }
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            for (int i = 0; i < 5; i++) {
+                SemaphoreStep.waitForStart("s" + i + "/1", b);
+            }
+            for (DumbSlave agent : agents) {
+                j.jenkins.removeNode(agent);
+            }
+        });
+        sessions.then(j -> {
+            logging.record(Queue.class, Level.INFO).capture(100);
+            for (int i = 0; i < 5; i++) {
+                SemaphoreStep.success("s" + i + "/1", null);
+            }
+            WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
+            j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+            assertThat(logging.getRecords().stream().filter(r -> r.getLevel().intValue() >= Level.WARNING.intValue()).toArray(), emptyArray());
         });
     }
 
