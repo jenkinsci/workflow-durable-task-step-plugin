@@ -39,9 +39,9 @@ import jenkins.model.InterruptedBuildAction;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.emptyArray;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
-import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -75,6 +75,9 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
                 SemaphoreStep.success("wait/1", null);
                 WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+                while (Queue.getInstance().getItems().length == 0) {
+                    Thread.sleep(100);
+                }
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 Queue.getInstance().cancel(items[0]);
@@ -94,7 +97,7 @@ public class ExecutorStepDynamicContextTest {
     @Issue("JENKINS-36013")
     @Test public void normalNodeDisappearance() throws Throwable {
         Assume.assumeFalse("TODO figure out corresponding batch script", Functions.isWindows());
-        logging.record(DurableTaskStep.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
+        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(j -> {
             // Start up a build that needs executor and then reboot and take the node offline
             // Starting job first ensures we don't immediately fail if Node comes from a Cloud
@@ -123,7 +126,7 @@ public class ExecutorStepDynamicContextTest {
 
     @Issue("JENKINS-36013")
     @Test public void parallelNodeDisappearance() throws Throwable {
-        logging.recordPackage(ExecutorStepExecution.class, Level.FINE);
+        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(j -> {
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("def bs = [:]; for (int _i = 0; _i < 5; _i++) {def i = _i; bs[/b$i/] = {node('remote') {semaphore(/s$i/)}}}; parallel bs", true));
@@ -145,7 +148,15 @@ public class ExecutorStepDynamicContextTest {
                 SemaphoreStep.success("s" + i + "/1", null);
             }
             WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
+            // Verify that all the waiting happens in parallel, not serially:
+            for (int i = 0; i < 5; i++) {
+                j.waitForMessage("Waiting for reconnection of slave" + i + " before proceeding with build", b);
+            }
+            j.assertLogNotContains("assuming it is not coming back", b);
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+            for (int i = 0; i < 5; i++) {
+                j.assertLogContains("slave" + i + " has been removed for 15 sec, assuming it is not coming back", b);
+            }
             assertThat(logging.getRecords().stream().filter(r -> r.getLevel().intValue() >= Level.WARNING.intValue()).toArray(), emptyArray());
         });
     }
