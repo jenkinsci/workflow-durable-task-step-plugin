@@ -34,6 +34,7 @@ import hudson.slaves.WorkspaceList;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
+import java.util.stream.Stream;
 import org.jenkinsci.Symbol;
 import org.jenkinsci.plugins.workflow.flow.ErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
@@ -77,7 +78,7 @@ public final class AgentErrorCondition extends ErrorCondition {
         } else if (t == null) {
             return false;
         } else {
-            return isClosedChannel(t.getCause());
+            return isClosedChannel(t.getCause()) || Stream.of(t.getSuppressed()).anyMatch(AgentErrorCondition::isClosedChannel);
         }
     }
 
