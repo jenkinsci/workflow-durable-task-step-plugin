@@ -24,7 +24,6 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import hudson.Functions;
 import hudson.model.Label;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -46,7 +45,6 @@ import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -96,14 +94,13 @@ public class ExecutorStepDynamicContextTest {
      */
     @Issue("JENKINS-36013")
     @Test public void normalNodeDisappearance() throws Throwable {
-        Assume.assumeFalse("TODO figure out corresponding batch script", Functions.isWindows());
         logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(j -> {
             // Start up a build that needs executor and then reboot and take the node offline
             // Starting job first ensures we don't immediately fail if Node comes from a Cloud
             //  and takes a min to provision
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition("node('ghost') {sh 'sleep infinity'}", true));
+            p.setDefinition(new CpsFlowDefinition("node('ghost') {if (isUnix()) {sh 'sleep infinity'} else {powershell 'echo \"+ sleep infinity\"; sleep 999999'}}", true));
 
             DumbSlave s = j.createSlave(Label.get("ghost"));
             j.waitForMessage("+ sleep infinity", p.scheduleBuild2(0).waitForStart());
