@@ -36,7 +36,9 @@ import java.util.logging.Level;
 import java.util.stream.Collectors;
 import jenkins.model.InterruptedBuildAction;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
+import static org.hamcrest.Matchers.isA;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -117,7 +119,7 @@ public class ExecutorStepDynamicContextTest {
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
             assertNotNull(iba);
-            assertEquals(Collections.singleton(ExecutorStepExecution.RemovedNodeCause.class), iba.getCauses().stream().map(Object::getClass).collect(Collectors.toSet()));
+            assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.RemovedNodeCause.class)));
         });
     }
 
