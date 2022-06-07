@@ -100,7 +100,7 @@ public class ExecutorStepDynamicContextTest {
             // Starting job first ensures we don't immediately fail if Node comes from a Cloud
             //  and takes a min to provision
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition("node('ghost') {if (isUnix()) {sh 'sleep infinity'} else {powershell 'echo \"+ sleep infinity\"; sleep 999999'}}", true));
+            p.setDefinition(new CpsFlowDefinition("node('ghost') {if (isUnix()) {sh 'sleep infinity'} else {bat 'echo + sleep infinity && ping -n 999999 localhost'}}", true));
 
             DumbSlave s = j.createSlave(Label.get("ghost"));
             j.waitForMessage("+ sleep infinity", p.scheduleBuild2(0).waitForStart());
