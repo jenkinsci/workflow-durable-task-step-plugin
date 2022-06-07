@@ -65,7 +65,7 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
                 DumbSlave s = j.createSlave(Label.get("remote"));
                 WorkflowJob p = j.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'; sh 'true'}", true));
+                p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'; isUnix()}", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
                 j.jenkins.removeNode(s);
