@@ -1,0 +1,7 @@
+<div>
+    Detects that a <code>node</code> block, or certain steps inside it such as <code>sh</code>,
+    failed for reasons which are likely due to infrastructure rather than the behavior of the build.
+    If the connection to an agent is broken or the agent is removed from the list of executors while in use
+    (typically in response to the disappearance of underlying cloud resources),
+    this condition will allow <code>retry</code> to allocate a fresh agent and try the whole block again.
+</div>
