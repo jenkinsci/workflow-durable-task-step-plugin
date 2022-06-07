@@ -30,10 +30,8 @@ import hudson.model.Result;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.RetentionStrategy;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
-import java.util.stream.Collectors;
 import jenkins.model.InterruptedBuildAction;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -84,7 +82,7 @@ public class ExecutorStepDynamicContextTest {
                 j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
                 InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
                 assertNotNull(iba);
-                assertEquals(Collections.singleton(ExecutorStepExecution.QueueTaskCancelled.class), iba.getCauses().stream().map(Object::getClass).collect(Collectors.toSet()));
+                assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.QueueTaskCancelled.class)));
         });
     }
 
