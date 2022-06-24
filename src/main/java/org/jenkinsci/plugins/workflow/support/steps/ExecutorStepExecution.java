@@ -144,8 +144,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 PlaceholderTask task = (PlaceholderTask) item.task;
                 if (task.context.equals(context)) {
                     task.stopping = true;
-                    Queue.getInstance().cancel(item);
-                    LOGGER.log(FINE, "canceling {0}", item);
+                    if (Queue.getInstance().cancel(item)) {
+                        LOGGER.fine(() -> "canceled " + item);
+                    } else {
+                        LOGGER.warning(() -> "failed to cancel " + item + " in response to " + cause);
+                    }
                     break;
                 } else {
                     LOGGER.log(FINE, "no match on {0} with {1} vs. {2}", new Object[] {item, task.context, context});
@@ -429,8 +432,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 Run<?, ?> run = runForDisplay();
                 if (!stopping && run != null && !run.isLogUpdated()) {
                     stopping = true;
-                    LOGGER.warning(() -> "Refusing to build " + this + " and cancelling it because associated build is complete");
-                    Timer.get().execute(() -> Queue.getInstance().cancel(this));
+                    Timer.get().execute(() -> {
+                        if (Queue.getInstance().cancel(this)) {
+                            LOGGER.warning(() -> "Refusing to build " + PlaceholderTask.this + " and cancelling it because associated build is complete");
+                        } else {
+                            LOGGER.warning(() -> "Refusing to build " + PlaceholderTask.this + " because associated build is complete, but failed to cancel it");
+                        }
+                    });
                 }
             }
             if (stopping) {
