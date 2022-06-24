@@ -57,16 +57,13 @@ import jenkins.model.queue.AsynchronousExecution;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.Timer;
-import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
-import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
-import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecution;
@@ -83,6 +80,7 @@ import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
+import org.springframework.security.access.AccessDeniedException;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
@@ -486,32 +484,29 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /**
          * Something we can use to check abort and read permissions.
          * Normally this will be a {@link Run}.
-         * However if things are badly broken, for example if the build has been deleted,
+         * If that has been deleted, we can fall back to the {@link Job}.
+         * If things are badly broken, for example if the whole job has been deleted,
          * then as a fallback we use the Jenkins root.
          * This allows an administrator to clean up dead queue items and executor cells.
-         * TODO make {@link FlowExecutionOwner} implement {@link AccessControlled}
-         * so that an implementation could fall back to checking {@link Job} permission.
          */
         @NonNull
         @Override public ACL getACL() {
             try {
-                if (!context.isReady()) {
-                    return Jenkins.get().getACL();
-                }
-                FlowExecution exec = context.get(FlowExecution.class);
-                if (exec == null) {
-                    return Jenkins.get().getACL();
-                }
-                Queue.Executable executable = exec.getOwner().getExecutable();
-                if (executable instanceof AccessControlled) {
-                    return ((AccessControlled) executable).getACL();
+                Run<?, ?> r = runForDisplay();
+                if (r != null) {
+                    return r.getACL();
                 } else {
-                    return Jenkins.get().getACL();
+                    Job<?, ?> job = Jenkins.get().getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                    if (job != null) {
+                        return job.getACL();
+                    }
                 }
-            } catch (Exception x) {
-                LOGGER.log(FINE, null, x);
-                return Jenkins.get().getACL();
+            } catch (AccessDeniedException x) {
+                // Cannot even read job, so presumably will lack other permissions too.
+            } catch (RuntimeException x) {
+                LOGGER.log(Level.WARNING, "checking permissions on " + this, x);
             }
+            return Jenkins.get().getACL();
         }
 
         @Override public void checkAbortPermission() {
@@ -538,8 +533,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
+                try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
                     return Run.fromExternalizableId(runId);
+                } catch (AccessDeniedException x) {
+                    return null;
                 }
             }
             return r;
