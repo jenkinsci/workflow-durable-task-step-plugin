@@ -64,9 +64,7 @@ import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
-import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
-import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.BodyExecution;
@@ -478,31 +476,24 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /**
          * Something we can use to check abort and read permissions.
          * Normally this will be a {@link Run}.
-         * However if things are badly broken, for example if the build has been deleted,
+         * If that has been deleted, we can fall back to the {@link Job}.
+         * If things are badly broken, for example if the whole job has been deleted,
          * then as a fallback we use the Jenkins root.
          * This allows an administrator to clean up dead queue items and executor cells.
-         * TODO make {@link FlowExecutionOwner} implement {@link AccessControlled}
-         * so that an implementation could fall back to checking {@link Job} permission.
          */
         @NonNull
         @Override public ACL getACL() {
-            try {
-                if (!context.isReady()) {
-                    return Jenkins.get().getACL();
-                }
-                FlowExecution exec = context.get(FlowExecution.class);
-                if (exec == null) {
-                    return Jenkins.get().getACL();
-                }
-                Queue.Executable executable = exec.getOwner().getExecutable();
-                if (executable instanceof AccessControlled) {
-                    return ((AccessControlled) executable).getACL();
+            Run<?, ?> r = runForDisplay();
+            if (r != null) {
+                return r.getACL();
+            } else {
+                Jenkins j = Jenkins.get();
+                Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                if (job != null) {
+                    return job.getACL();
                 } else {
-                    return Jenkins.get().getACL();
+                    return j.getACL();
                 }
-            } catch (Exception x) {
-                LOGGER.log(FINE, null, x);
-                return Jenkins.get().getACL();
             }
         }
 
