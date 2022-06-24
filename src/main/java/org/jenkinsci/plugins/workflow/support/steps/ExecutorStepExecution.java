@@ -57,7 +57,6 @@ import jenkins.model.queue.AsynchronousExecution;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.Timer;
-import org.acegisecurity.AccessDeniedException;
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
@@ -81,6 +80,7 @@ import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
+import org.springframework.security.access.AccessDeniedException;
 
 public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
@@ -483,18 +483,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          */
         @NonNull
         @Override public ACL getACL() {
-            Run<?, ?> r = runForDisplay();
-            if (r != null) {
-                return r.getACL();
-            } else {
-                Jenkins j = Jenkins.get();
-                Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
-                if (job != null) {
-                    return job.getACL();
+            try {
+                Run<?, ?> r = runForDisplay();
+                if (r != null) {
+                    return r.getACL();
                 } else {
-                    return j.getACL();
+                    Job<?, ?> job = Jenkins.get().getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
+                    if (job != null) {
+                        return job.getACL();
+                    }
                 }
+            } catch (AccessDeniedException x) {
+                // Cannot even read job, so presumably will lack other permissions too.
+            } catch (RuntimeException x) {
+                LOGGER.log(Level.WARNING, "checking permissions on " + this, x);
             }
+            return Jenkins.get().getACL();
         }
 
         @Override public void checkAbortPermission() {
