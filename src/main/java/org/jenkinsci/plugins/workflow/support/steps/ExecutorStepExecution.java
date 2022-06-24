@@ -525,8 +525,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
-                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
+                try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
                     return Run.fromExternalizableId(runId);
+                } catch (AccessDeniedException x) {
+                    return null;
                 }
             }
             return r;
