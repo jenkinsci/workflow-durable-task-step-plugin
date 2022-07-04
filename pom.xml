@@ -95,7 +95,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-api</artifactId>
-            <version>1164.v760c223ddb_32</version> <!-- TODO until in BOM -->
+            <version>1165.v02c3db_a_6b_e36</version> <!-- TODO until in BOM -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
