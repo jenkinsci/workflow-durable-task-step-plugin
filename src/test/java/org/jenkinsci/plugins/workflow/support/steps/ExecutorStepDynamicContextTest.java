@@ -82,6 +82,7 @@ public class ExecutorStepDynamicContextTest {
                 j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
                 InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
                 assertNotNull(iba);
+                // TODO sometimes get a RemovedNodeCause instead?
                 assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.QueueTaskCancelled.class)));
         });
     }
