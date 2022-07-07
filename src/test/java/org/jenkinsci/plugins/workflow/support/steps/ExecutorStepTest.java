@@ -424,7 +424,7 @@ public class ExecutorStepTest {
     @Test public void acquireWorkspace() throws Throwable {
         sessions.then(r -> {
                 String slaveRoot = tmp.newFolder().getPath();
-                DumbSlave s = new DumbSlave("agent-007", slaveRoot, r.createComputerLauncher(null));
+                DumbSlave s = new DumbSlave("agent", slaveRoot, r.createComputerLauncher(null));
                 s.setNumExecutors(2);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
                 r.jenkins.addNode(s);
