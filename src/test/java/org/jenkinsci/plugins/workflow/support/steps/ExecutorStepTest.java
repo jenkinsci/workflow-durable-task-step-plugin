@@ -430,7 +430,7 @@ public class ExecutorStepTest {
                 r.jenkins.addNode(s);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
-                        "node('agent-007') {\n" + // this locks the WS
+                        "node('agent') {\n" + // this locks the WS
                         "    echo(/default=${pwd()}/)\n" +
                         "    ws {\n" + // and this locks a second one
                         "        echo(/before=${pwd()}/)\n" +
