@@ -26,8 +26,10 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.Functions;
 import hudson.Launcher;
+import hudson.model.Label;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
+import hudson.slaves.OfflineCause;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -155,6 +157,32 @@ public class RetryExecutorStepTest {
                 return new HashSet<>(Arrays.asList(hudson.Launcher.class, TaskListener.class));
             }
         }
+    }
+
+    @Issue("JENKINS-49707")
+    @Test public void agentOfflineWhenStartingStep() throws Throwable {
+        sessions.then(r -> {
+            Slave s = r.createSlave(Label.get("remote"));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(count: 2, conditions: [custom()]) {\n" +
+                "  node('remote') {\n" +
+                "    semaphore 'wait'\n" +
+                "    pwd()\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            s.toComputer().disconnect(new OfflineCause.UserCause(null, null));
+            while (s.toComputer().isOnline()) {
+                Thread.sleep(100);
+            }
+            SemaphoreStep.success("wait/1", null);
+            r.waitForMessage(RetryThis.MESSAGE, b);
+            SemaphoreStep.success("wait/2", null);
+            s.toComputer().connect(false);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
     }
 
     @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")

@@ -53,6 +53,9 @@ public final class AgentErrorCondition extends ErrorCondition {
     @DataBoundConstructor public AgentErrorCondition() {}
 
     @Override public boolean test(Throwable t, StepContext context) throws IOException, InterruptedException {
+        if (t instanceof AgentOfflineException) {
+            return true;
+        }
         if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.RemovedNodeCause.class::isInstance)) {
             return true;
         }
