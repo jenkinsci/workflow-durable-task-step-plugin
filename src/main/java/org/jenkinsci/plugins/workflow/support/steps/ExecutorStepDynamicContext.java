@@ -171,7 +171,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
                         message += "; " + comp.getDisplayName() + " was marked offline: " + oc;
                     }
                 }
-                IOException e = new IOException(message);
+                AgentOfflineException e = new AgentOfflineException(message);
                 if (comp != null) {
                     for (Computer.TerminationRequest tr : comp.getTerminatedBy()) {
                         e.addSuppressed(tr);
