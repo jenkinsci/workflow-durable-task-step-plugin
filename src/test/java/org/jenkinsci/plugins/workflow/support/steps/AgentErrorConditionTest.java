@@ -69,6 +69,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 /**
  * Tests of retrying {@code node} blocks.
  */
+@Issue("JENKINS-49707")
 public class AgentErrorConditionTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
@@ -76,7 +77,6 @@ public class AgentErrorConditionTest {
     @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
     @Rule public LoggerRule logging = new LoggerRule();
 
-    @Issue("JENKINS-49707")
     @Test public void retryNodeBlock() throws Throwable {
         sessions.then(r -> {
             logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
@@ -103,7 +103,6 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Issue("JENKINS-49707")
     @Test public void retryNodeBlockSynch() throws Throwable {
         sessions.then(r -> {
             logging.record(ExecutorStepExecution.class, Level.FINE);
@@ -159,7 +158,6 @@ public class AgentErrorConditionTest {
         }
     }
 
-    @Issue("JENKINS-49707")
     @Test public void agentOfflineWhenStartingStep() throws Throwable {
         sessions.then(r -> {
             Slave s = r.createSlave(Label.get("remote"));
@@ -186,7 +184,6 @@ public class AgentErrorConditionTest {
     }
 
     @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")
-    @Issue("JENKINS-49707")
     @Test public void retryNewStepAcrossRestarts() throws Throwable {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
@@ -220,7 +217,7 @@ public class AgentErrorConditionTest {
     }
 
     @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")
-    @Issue({"JENKINS-49707", "JENKINS-30383"})
+    @Issue("JENKINS-30383")
     @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(r -> {
