@@ -111,7 +111,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
             throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
         } catch (CancellationException x) {
             LOGGER.log(Level.FINE, "ceased to wait for " + node, x);
-            return;
+            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.QueueTaskCancelled());
         }
         executor = Executor.of(exec);
         if (executor == null) {
