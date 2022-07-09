@@ -69,7 +69,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 /**
  * Tests of retrying {@code node} blocks.
  */
-public class RetryExecutorStepTest {
+public class AgentErrorConditionTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
