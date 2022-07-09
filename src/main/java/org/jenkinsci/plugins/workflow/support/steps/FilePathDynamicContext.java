@@ -63,7 +63,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         if (f != null) {
             LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
         } else {
-            IOException e = new IOException("Unable to create live FilePath for " + r.slave);
+            AgentOfflineException e = new AgentOfflineException("Unable to create live FilePath for " + r.slave);
             Computer c = Jenkins.get().getComputer(r.slave);
             if (c != null) {
                 for (Computer.TerminationRequest tr : c.getTerminatedBy()) {
