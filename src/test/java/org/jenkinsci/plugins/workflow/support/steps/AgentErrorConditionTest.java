@@ -56,7 +56,6 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import static org.junit.Assert.assertEquals;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.BuildWatcher;
@@ -224,7 +223,6 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")
     @Test public void retryNewStepAcrossRestarts() throws Throwable {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
@@ -257,7 +255,6 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")
     @Issue("JENKINS-30383")
     @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
