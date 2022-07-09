@@ -28,6 +28,7 @@ import hudson.Functions;
 import hudson.Launcher;
 import hudson.model.Label;
 import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.slaves.OfflineCause;
@@ -202,6 +203,24 @@ public class AgentErrorConditionTest {
             r.waitForMessage(RetryThis.MESSAGE, b);
             s.toComputer().setTemporarilyOffline(false, null);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+    }
+
+    @Test public void overallBuildCancelIgnored() throws Throwable {
+        sessions.then(r -> {
+            r.createSlave(Label.get("remote"));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(count: 2, conditions: [custom()]) {\n" +
+                "  node('remote') {\n" +
+                "    semaphore 'wait'\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            b.getExecutor().interrupt();
+            r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+            r.assertLogNotContains(RetryThis.MESSAGE, b);
         });
     }
 
