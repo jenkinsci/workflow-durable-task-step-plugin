@@ -27,6 +27,7 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.model.Label;
+import hudson.model.Queue;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.slaves.OfflineCause;
@@ -51,9 +52,8 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.steps.StepExecutions;
 import org.jenkinsci.plugins.workflow.steps.SynchronousResumeNotSupportedErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
-import org.jenkinsci.plugins.workflow.support.steps.AgentErrorCondition;
-import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+import static org.junit.Assert.assertEquals;
 import org.junit.ClassRule;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -179,6 +179,28 @@ public class AgentErrorConditionTest {
             r.waitForMessage(RetryThis.MESSAGE, b);
             SemaphoreStep.success("wait/2", null);
             s.toComputer().connect(false);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+    }
+
+    @Test public void queueTaskCancelled() throws Throwable {
+        sessions.then(r -> {
+            Slave s = r.createSlave(Label.get("remote"));
+            s.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(null, null));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(count: 2, conditions: [custom()]) {\n" +
+                "  node('remote') {\n" +
+                "    isUnix()\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("Still waiting to schedule task", b);
+            Queue.Item[] items = Queue.getInstance().getItems();
+            assertEquals(1, items.length);
+            Queue.getInstance().cancel(items[0]);
+            r.waitForMessage(RetryThis.MESSAGE, b);
+            s.toComputer().setTemporarilyOffline(false, null);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
         });
     }

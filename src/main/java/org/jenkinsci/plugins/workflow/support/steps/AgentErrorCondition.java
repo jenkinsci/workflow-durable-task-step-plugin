@@ -56,7 +56,8 @@ public final class AgentErrorCondition extends ErrorCondition {
         if (t instanceof AgentOfflineException) {
             return true;
         }
-        if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.RemovedNodeCause.class::isInstance)) {
+        if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(
+                c -> c instanceof ExecutorStepExecution.RemovedNodeCause || c instanceof ExecutorStepExecution.QueueTaskCancelled)) {
             return true;
         }
         if (isClosedChannel(t)) {
