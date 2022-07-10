@@ -26,8 +26,12 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.Functions;
 import hudson.Launcher;
+import hudson.model.Label;
+import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
+import hudson.slaves.OfflineCause;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -49,9 +53,8 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.steps.StepExecutions;
 import org.jenkinsci.plugins.workflow.steps.SynchronousResumeNotSupportedErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
-import org.jenkinsci.plugins.workflow.support.steps.AgentErrorCondition;
-import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+import static org.junit.Assert.assertEquals;
 import org.junit.ClassRule;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -67,14 +70,14 @@ import org.kohsuke.stapler.DataBoundConstructor;
 /**
  * Tests of retrying {@code node} blocks.
  */
-public class RetryExecutorStepTest {
+@Issue("JENKINS-49707")
+public class AgentErrorConditionTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
     @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
     @Rule public LoggerRule logging = new LoggerRule();
 
-    @Issue("JENKINS-49707")
     @Test public void retryNodeBlock() throws Throwable {
         sessions.then(r -> {
             logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
@@ -101,7 +104,6 @@ public class RetryExecutorStepTest {
         });
     }
 
-    @Issue("JENKINS-49707")
     @Test public void retryNodeBlockSynch() throws Throwable {
         sessions.then(r -> {
             logging.record(ExecutorStepExecution.class, Level.FINE);
@@ -157,8 +159,72 @@ public class RetryExecutorStepTest {
         }
     }
 
+    @Test public void agentOfflineWhenStartingStep() throws Throwable {
+        sessions.then(r -> {
+            Slave s = r.createSlave(Label.get("remote"));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(count: 2, conditions: [custom()]) {\n" +
+                "  node('remote') {\n" +
+                "    semaphore 'wait'\n" +
+                "    pwd()\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            s.toComputer().disconnect(new OfflineCause.UserCause(null, null));
+            while (s.toComputer().isOnline()) {
+                Thread.sleep(100);
+            }
+            SemaphoreStep.success("wait/1", null);
+            r.waitForMessage(RetryThis.MESSAGE, b);
+            SemaphoreStep.success("wait/2", null);
+            s.toComputer().connect(false);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+    }
+
+    @Test public void queueTaskCancelled() throws Throwable {
+        sessions.then(r -> {
+            Slave s = r.createSlave(Label.get("remote"));
+            s.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(null, null));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(count: 2, conditions: [custom()]) {\n" +
+                "  node('remote') {\n" +
+                "    isUnix()\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("Still waiting to schedule task", b);
+            Queue.Item[] items = Queue.getInstance().getItems();
+            assertEquals(1, items.length);
+            Queue.getInstance().cancel(items[0]);
+            r.waitForMessage(RetryThis.MESSAGE, b);
+            s.toComputer().setTemporarilyOffline(false, null);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+    }
+
+    @Test public void overallBuildCancelIgnored() throws Throwable {
+        sessions.then(r -> {
+            r.createSlave(Label.get("remote"));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(count: 2, conditions: [custom()]) {\n" +
+                "  node('remote') {\n" +
+                "    semaphore 'wait'\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            b.getExecutor().interrupt();
+            r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+            r.assertLogNotContains(RetryThis.MESSAGE, b);
+        });
+    }
+
     @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")
-    @Issue("JENKINS-49707")
     @Test public void retryNewStepAcrossRestarts() throws Throwable {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
@@ -192,7 +258,7 @@ public class RetryExecutorStepTest {
     }
 
     @Ignore("TODO pending https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/180")
-    @Issue({"JENKINS-49707", "JENKINS-30383"})
+    @Issue("JENKINS-30383")
     @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(r -> {
