@@ -365,7 +365,7 @@ public class ShellStepTest {
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
         t.build();
         for (Row r : t.getRows()) {
-            if (r.getDisplayName().equals("Step with label")) {
+            if (r.getDisplayName().contains("Step with label")) {
                 found = true;
             }
         }
@@ -386,7 +386,7 @@ public class ShellStepTest {
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
         t.build();
         for (Row r : t.getRows()) {
-            if (r.getDisplayName().equals(singleLabel)) {
+            if (r.getDisplayName().contains(singleLabel)) {
                 found = true;
             }
         }
