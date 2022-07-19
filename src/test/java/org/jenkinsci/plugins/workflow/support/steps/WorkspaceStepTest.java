@@ -56,7 +56,7 @@ public class WorkspaceStepTest {
     @Test public void customWorkspaceConcurrency() throws Exception {
         // Currently limited to WorkspaceList.allocate:
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
-        // Use master as it has 2 executors by default, whereas createSlave hardcodes 1, and I do not want to bother creating a slave by hand:
+        // Use the controller as it has 2 executors by default, whereas createSlave hardcodes 1, and I do not want to bother creating an agent by hand:
         p.setDefinition(new CpsFlowDefinition("node {ws('custom-location') {echo pwd(); semaphore 'customWorkspace'}}", true));
         WorkflowRun b2 = p.scheduleBuild2(0).getStartCondition().get();
         SemaphoreStep.waitForStart("customWorkspace/1", b2);

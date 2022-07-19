@@ -42,7 +42,7 @@ public class EnvWorkflowTest {
     @Rule public JenkinsRule r = new JenkinsRule();
 
     /**
-     * Verifies if NODE_NAME environment variable is available on a slave node and on master.
+     * Verifies if NODE_NAME environment variable is available on an agent node and on the built-in node.
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
@@ -52,31 +52,31 @@ public class EnvWorkflowTest {
 
         p.setDefinition(new CpsFlowDefinition(
             "node('" + builtInNodeLabel + "') {\n" +
-            "  echo \"My name on master is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
+            "  echo \"My name on the built-in node is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n",
             true));
-        r.assertLogContains("My name on master is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on the built-in node is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             "node('node-test') {\n" +
-            "  echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
+            "  echo \"My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "}\n",
             true));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
-        r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on an agent is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition( // JENKINS-41446 ensure variable still available in a ws step
             "node('node-test') {\n ws('workspace/foo') {" +
-            "    echo \"My name on a slave is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
+            "    echo \"My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
             "  }\n}\n",
             true));
         // Label.parse returns TreeSet so the result is guaranteed to be sorted:
-        r.assertLogContains("My name on a slave is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on an agent is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
 
     /**
-     * Verifies if EXECUTOR_NUMBER environment variable is available on a slave node and on master.
+     * Verifies if EXECUTOR_NUMBER environment variable is available on an agent node and on the built-in node.
      */
     @Test public void isExecutorNumberAvailable() throws Exception {
         r.jenkins.setNumExecutors(1);
@@ -86,17 +86,17 @@ public class EnvWorkflowTest {
 
         p.setDefinition(new CpsFlowDefinition(
                 "node('" + builtInNodeLabel + "') {\n" +
-                        "  echo \"My number on master is ${env.EXECUTOR_NUMBER}\"\n" +
+                        "  echo \"Executor number on built-in node is ${env.EXECUTOR_NUMBER}\"\n" +
                         "}\n",
                 true));
-        r.assertLogContains("My number on master is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("Executor number on built-in node is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
                 "node('node-test') {\n" +
-                        "  echo \"My number on a slave is ${env.EXECUTOR_NUMBER}\"\n" +
+                        "  echo \"My number on an agent is ${env.EXECUTOR_NUMBER}\"\n" +
                         "}\n",
                 true));
-        r.assertLogContains("My number on a slave is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My number on an agent is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
     @Issue("JENKINS-33511")
