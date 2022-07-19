@@ -361,16 +361,9 @@ public class ShellStepTest {
         
         WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
 
-        boolean found = false;
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
         t.build();
-        for (Row r : t.getRows()) {
-            if (r.getDisplayName().contains("Step with label")) {
-                found = true;
-            }
-        }
-
-        assertTrue(found);
+        assertThat(t.getRows().stream().map(Row::getDisplayName).toArray(String[]::new), hasItemInArray(containsString("Step with label")));
     }
     
     @Test public void labelShortened() throws Exception {
@@ -382,16 +375,9 @@ public class ShellStepTest {
         
         WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
 
-        boolean found = false;
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
         t.build();
-        for (Row r : t.getRows()) {
-            if (r.getDisplayName().contains(singleLabel)) {
-                found = true;
-            }
-        }
-
-        assertTrue(found);
+        assertThat(t.getRows().stream().map(Row::getDisplayName).toArray(String[]::new), hasItemInArray(containsString(singleLabel)));
     }
 
     @Issue("JENKINS-38381")
