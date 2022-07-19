@@ -1103,7 +1103,7 @@ public class ExecutorStepTest {
             r.assertLogContains("hello", b);
             r.assertLogNotContains("world", b);
             r.assertLogContains("going offline", b);
-            r.assertLogContains("IOException: Unable to create live FilePath for " + agent.getNodeName(), b);
+            r.assertLogContains("AgentOfflineException: Unable to create live FilePath for " + agent.getNodeName(), b);
         });
     }
 
