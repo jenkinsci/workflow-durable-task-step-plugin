@@ -30,6 +30,7 @@ import hudson.Launcher;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
+import hudson.remoting.ChannelClosedException;
 import hudson.slaves.WorkspaceList;
 import java.io.EOFException;
 import java.io.IOException;
@@ -76,6 +77,8 @@ public final class AgentErrorCondition extends ErrorCondition {
 
     private static boolean isClosedChannel(Throwable t) {
         if (t instanceof ClosedChannelException) {
+            return true;
+        } else if (t instanceof ChannelClosedException) {
             return true;
         } else if (t instanceof EOFException) {
             return true;
