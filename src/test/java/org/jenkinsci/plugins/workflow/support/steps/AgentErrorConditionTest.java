@@ -206,7 +206,6 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Ignore("TODO RemovedNodeListener implicitly passes actualInterruption=true")
     @Test public void retryUnconditionally() throws Throwable {
         sessions.then(r -> {
             Slave s = inboundAgents.createAgent(r, "dumbo1");

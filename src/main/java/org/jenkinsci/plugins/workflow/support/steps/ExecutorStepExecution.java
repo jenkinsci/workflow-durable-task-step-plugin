@@ -287,7 +287,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             continue;
                         }
                         listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        body.cancel(new RemovedNodeCause());
+                        body.cancel(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
                     }
                 }
             }, ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
