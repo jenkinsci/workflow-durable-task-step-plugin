@@ -223,7 +223,7 @@ public class AgentErrorConditionTest {
             r.waitForMessage("+ sleep", b);
             inboundAgents.stop("dumbo1");
             r.jenkins.removeNode(s);
-            r.waitForMessage(RetryThis.MESSAGE, b);
+            r.waitForMessage("Retrying", b);
             s = inboundAgents.createAgent(r, "dumbo2");
             s.setLabelString("dumb");
             r.jenkins.updateNode(s);
