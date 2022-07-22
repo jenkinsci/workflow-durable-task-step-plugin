@@ -66,7 +66,7 @@
     </pluginRepositories>
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
-        <jenkins.version>2.332.1</jenkins.version>
+        <jenkins.version>2.346.1</jenkins.version>
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
@@ -75,7 +75,7 @@
         <dependencies>
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
-                <artifactId>bom-2.332.x</artifactId>
+                <artifactId>bom-2.346.x</artifactId>
                 <version>1478.v81d3dc4f9a_43</version>
                 <scope>import</scope>
                 <type>pom</type>
@@ -86,7 +86,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-step-api</artifactId>
-            <version>999999-SNAPSHOT</version> <!-- TODO https://github.com/jenkinsci/workflow-step-api-plugin/pull/124 -->
+            <version>630.vdd28011769da_</version> <!-- TODO https://github.com/jenkinsci/workflow-step-api-plugin/pull/124 -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
@@ -103,7 +103,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
-            <version>999999-SNAPSHOT</version> <!-- TODO https://github.com/jenkinsci/workflow-cps-plugin/pull/570 -->
+            <version>2756.v639b_85967348</version> <!-- TODO https://github.com/jenkinsci/workflow-cps-plugin/pull/570 -->
             <scope>test</scope>
         </dependency>
         <dependency>
