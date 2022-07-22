@@ -64,28 +64,28 @@ public class ExecutorStepDynamicContextTest {
 
     @Test public void canceledQueueItem() throws Throwable {
         sessions.then(j -> {
-                DumbSlave s = j.createSlave(Label.get("remote"));
-                WorkflowJob p = j.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'; isUnix()}", true));
-                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                SemaphoreStep.waitForStart("wait/1", b);
-                j.jenkins.removeNode(s);
+            DumbSlave s = j.createSlave(Label.get("remote"));
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('remote') {semaphore 'wait'; isUnix()}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            j.jenkins.removeNode(s);
         });
         sessions.then(j -> {
-                SemaphoreStep.success("wait/1", null);
-                WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-                while (Queue.getInstance().getItems().length == 0) {
-                    Thread.sleep(100);
-                }
-                Queue.Item[] items = Queue.getInstance().getItems();
-                assertEquals(1, items.length);
-                Queue.getInstance().cancel(items[0]);
-                j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
-                InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
-                assertNotNull(iba);
-                assertThat(iba.getCauses(), contains(anyOf(
-                    isA(ExecutorStepExecution.QueueTaskCancelled.class), // normal
-                    isA(ExecutorStepExecution.RemovedNodeCause.class)))); // observed on occasion
+            SemaphoreStep.success("wait/1", null);
+            WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
+            while (Queue.getInstance().getItems().length == 0) {
+                Thread.sleep(100);
+            }
+            Queue.Item[] items = Queue.getInstance().getItems();
+            assertEquals(1, items.length);
+            Queue.getInstance().cancel(items[0]);
+            j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+            InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
+            assertNotNull(iba);
+            assertThat(iba.getCauses(), contains(anyOf(
+                isA(ExecutorStepExecution.QueueTaskCancelled.class), // normal
+                isA(ExecutorStepExecution.RemovedNodeCause.class)))); // observed on occasion
         });
     }
 
