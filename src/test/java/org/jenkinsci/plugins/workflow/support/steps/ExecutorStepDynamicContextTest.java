@@ -37,6 +37,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.isA;
+import static org.hamcrest.Matchers.anyOf;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -82,8 +83,9 @@ public class ExecutorStepDynamicContextTest {
                 j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
                 InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
                 assertNotNull(iba);
-                // TODO sometimes get a RemovedNodeCause instead?
-                assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.QueueTaskCancelled.class)));
+                assertThat(iba.getCauses(), contains(anyOf(
+                    isA(ExecutorStepExecution.QueueTaskCancelled.class), // normal
+                    isA(ExecutorStepExecution.RemovedNodeCause.class)))); // observed on occasion
         });
     }
 
