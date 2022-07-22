@@ -86,7 +86,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-step-api</artifactId>
-            <version>630.vdd28011769da_</version> <!-- TODO https://github.com/jenkinsci/workflow-step-api-plugin/pull/124 -->
+            <version>639.v6eca_cd8c04a_a_</version> <!-- TODO until in BOM -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
@@ -103,7 +103,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
-            <version>2756.v639b_85967348</version> <!-- TODO https://github.com/jenkinsci/workflow-cps-plugin/pull/570 -->
+            <version>2759.v87459c4eea_ca_</version> <!-- TODO until in BOM -->
             <scope>test</scope>
         </dependency>
         <dependency>
