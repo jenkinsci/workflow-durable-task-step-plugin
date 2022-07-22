@@ -205,6 +205,31 @@ public class AgentErrorConditionTest {
         });
     }
 
+    @Test public void retryUnconditionally() throws Throwable {
+        sessions.then(r -> {
+            Slave s = inboundAgents.createAgent(r, "dumbo1");
+            s.setLabelString("dumb");
+            r.jenkins.updateNode(s);
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                "retry(2) {\n" +
+                "  node('dumb') {\n" +
+                "    if (isUnix()) {sh 'sleep 10'} else {bat 'echo + sleep && ping -n 10 localhost'}\n" +
+                "  }\n" +
+                "}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("+ sleep", b);
+            inboundAgents.stop("dumbo1");
+            r.jenkins.removeNode(s);
+            r.waitForMessage("Retrying", b);
+            s = inboundAgents.createAgent(r, "dumbo2");
+            s.setLabelString("dumb");
+            r.jenkins.updateNode(s);
+            r.waitForMessage("Running on dumbo2 in ", b);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+    }
+
     @Test public void overallBuildCancelIgnored() throws Throwable {
         sessions.then(r -> {
             r.createSlave(Label.get("remote"));

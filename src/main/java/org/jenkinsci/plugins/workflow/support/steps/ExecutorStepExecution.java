@@ -278,7 +278,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 return;
                             }
                             listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                            body.cancel(new RemovedNodeCause()); // TODO pass actualInterruption=false https://github.com/jenkinsci/workflow-cps-plugin/blob/f642ed4fad556e100394ebb1f69f0ac8e5336248/src/main/java/org/jenkinsci/plugins/workflow/cps/CpsBodyExecution.java#L251
+                            if (Util.isOverridden(BodyExecution.class, body.getClass(), "cancel", Throwable.class)) {
+                                body.cancel(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
+                            } else { // TODO remove once https://github.com/jenkinsci/workflow-cps-plugin/pull/570 is widely deployed
+                                body.cancel(new RemovedNodeCause());
+                            }
                         });
                     }
                 }

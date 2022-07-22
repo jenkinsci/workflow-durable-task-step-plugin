@@ -66,7 +66,7 @@
     </pluginRepositories>
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
-        <jenkins.version>2.332.1</jenkins.version>
+        <jenkins.version>2.346.1</jenkins.version>
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
@@ -75,7 +75,7 @@
         <dependencies>
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
-                <artifactId>bom-2.332.x</artifactId>
+                <artifactId>bom-2.346.x</artifactId>
                 <version>1478.v81d3dc4f9a_43</version>
                 <scope>import</scope>
                 <type>pom</type>
@@ -86,6 +86,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-step-api</artifactId>
+            <version>639.v6eca_cd8c04a_a_</version> <!-- TODO until in BOM -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
@@ -102,13 +103,12 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
-            <version>2725.v7b_c717eb_12ce</version> <!-- TODO https://github.com/jenkinsci/bom/pull/1187 -->
+            <version>2759.v87459c4eea_ca_</version> <!-- TODO until in BOM -->
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-job</artifactId>
-            <version>1186.v8def1a_5f3944</version> <!-- TODO https://github.com/jenkinsci/bom/pull/1187 -->
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -146,7 +146,6 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>script-security</artifactId>
-            <version>1172.v35f6a_0b_8207e</version> <!-- TODO until in BOM -->
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
