@@ -432,7 +432,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             if (FlowExecutionList.get().isResumptionComplete()) {
                 // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
                 Run<?, ?> run = runForDisplay();
-                if (!stopping && run != null && !run.isLogUpdated()) {
+                if (run != null && !run.isLogUpdated()) {
                     stopping = true;
                     Timer.get().execute(() -> {
                         if (Queue.getInstance().cancel(this)) {
