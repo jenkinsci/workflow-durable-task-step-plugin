@@ -89,8 +89,11 @@ public final class ExecutorStepDynamicContext implements Serializable {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
         }
-        while (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED) {
-            LOGGER.fine(() -> "waiting to schedule task for " + path + " on " + node + " until Jenkins completes startup");
+        while (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED || Jenkins.get().isQuietingDown()) {
+            if (Jenkins.get().isTerminating()) {
+                throw new IllegalStateException("Jenkins is now shutting down");
+            }
+            LOGGER.fine(() -> "waiting to schedule task for " + path + " on " + node + " until Jenkins completes startup and is not in quiet mode");
             Thread.sleep(100);
         }
         Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
