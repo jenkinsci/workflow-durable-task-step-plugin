@@ -108,10 +108,10 @@ public final class ExecutorStepDynamicContext implements Serializable {
             exec = item.getFuture().getStartCondition().get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException x) {
             listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
-            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeCause());
         } catch (CancellationException x) {
             LOGGER.log(Level.FINE, "ceased to wait for " + node, x);
-            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.QueueTaskCancelled());
+            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.QueueTaskCancelled());
         }
         executor = Executor.of(exec);
         if (executor == null) {
