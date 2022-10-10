@@ -103,7 +103,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-cps</artifactId>
-            <version>2759.v87459c4eea_ca_</version> <!-- TODO until in BOM -->
+            <version>2802.v5ea_628154b_c2</version> <!-- TODO until in BOM -->
             <scope>test</scope>
         </dependency>
         <dependency>
