@@ -1,5 +1,8 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.MoreExecutors;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
@@ -65,6 +68,7 @@ import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
+import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
@@ -363,12 +367,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Instead we keep only {@link #context} and look up the execution as needed.
          */
         private void withExecution(Consumer<ExecutorStepExecution> executionCallback) {
-            StepExecution.applyAll(ExecutorStepExecution.class, execution -> {
-                if (execution.getContext().equals(context)) {
-                    executionCallback.accept(execution);
-                }
-                return null;
-            });
+            try {
+                Futures.addCallback(context.get(FlowExecution.class).getCurrentExecutions(false), new FutureCallback<List<StepExecution>>() {
+                    @Override public void onSuccess(List<StepExecution> result) {
+                        for (StepExecution execution : result) {
+                            if (execution instanceof ExecutorStepExecution && execution.getContext().equals(context)) {
+                                executionCallback.accept((ExecutorStepExecution) execution);
+                            }
+                        }
+                    }
+                    @Override public void onFailure(Throwable x) {
+                        LOGGER.log(Level.WARNING, null, x);
+                    }
+                }, MoreExecutors.directExecutor());
+            } catch (IOException | InterruptedException x) {
+                LOGGER.log(Level.WARNING, null, x);
+            }
         }
 
         /**
