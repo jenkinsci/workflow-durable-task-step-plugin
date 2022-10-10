@@ -29,7 +29,6 @@ import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Util;
-import hudson.init.InitMilestone;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
@@ -88,13 +87,6 @@ public final class ExecutorStepDynamicContext implements Serializable {
     void resume(StepContext context) throws Exception {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
-        }
-        while (Jenkins.get().getInitLevel() != InitMilestone.COMPLETED || Jenkins.get().isQuietingDown()) {
-            if (Jenkins.get().isTerminating()) {
-                throw new IllegalStateException("Jenkins is now shutting down");
-            }
-            LOGGER.fine(() -> "waiting to schedule task for " + path + " on " + node + " until Jenkins completes startup and is not in quiet mode");
-            Thread.sleep(100);
         }
         Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
         if (item == null) {
