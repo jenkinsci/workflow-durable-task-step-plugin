@@ -788,6 +788,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @SuppressFBWarnings(value="SE_BAD_FIELD", justification="lease is pickled")
         private static final class Callback extends BodyExecutionCallback.TailCall {
 
+            private static final long serialVersionUID = -1357584128994454363L;
+
             private final String cookie;
             @Deprecated
             private WorkspaceList.Lease lease;
