@@ -27,7 +27,6 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import com.gargoylesoftware.htmlunit.Page;
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
-import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
@@ -215,7 +214,7 @@ public class ExecutorStepTest {
     @Test public void buildShellScriptAcrossRestart() throws Throwable {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
-                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepDynamicContext.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
                 DumbSlave s = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
@@ -336,7 +335,7 @@ public class ExecutorStepTest {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).
-                        record(FilePathDynamicContext.class, Level.FINE).
+                        record(ExecutorStepDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
                 Slave s = inboundAgents.createAgent(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
@@ -449,6 +448,8 @@ public class ExecutorStepTest {
                 SemaphoreStep.waitForStart("wait/2", b2);
                 assertTrue(b2.isBuilding());
         });
+        logging.record(WorkspaceStepExecution.class, Level.FINE);
+        logging.record(FilePathDynamicContext.class, Level.FINE);
         sessions.then(r -> {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
@@ -497,9 +498,9 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-26130")
-    @Test public void unloadableExecutorPickle() throws Throwable {
+    @Test public void unrestorableAgent() throws Throwable {
         sessions.then(r -> {
-                DumbSlave dumbo = r.createSlave("dumbo", null, null); // unlike in buildShellScriptAcrossRestart, we *want* this to die after restart
+                DumbSlave dumbo = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('dumbo') {\n" +
@@ -513,11 +514,10 @@ public class ExecutorStepTest {
                 WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding());
-                r.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
-                r.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
-                b.getExecutor().interrupt();
+                SemaphoreStep.success("wait/1", null);
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+                r.assertLogContains("dumbo has been removed for 15 sec, assuming it is not coming back", b);
         });
     }
 
