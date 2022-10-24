@@ -45,7 +45,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
  * Allows a step body to save a representation of a workspace
  * without forcing a particular {@link FilePath#getChannel} to be used the whole time.
  */
-@Extension(ordinal = 100) public final class FilePathDynamicContext extends DynamicContext.Typed<FilePath> {
+@Extension public final class FilePathDynamicContext extends DynamicContext.Typed<FilePath> {
 
     private static final Logger LOGGER = Logger.getLogger(FilePathDynamicContext.class.getName());
 
@@ -92,7 +92,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         return new FilePathRepresentation(FilePathUtils.getNodeName(f), f.getRemote());
     }
 
-    static final class FilePathRepresentation implements Serializable {
+    private static final class FilePathRepresentation implements Serializable {
 
         private static final long serialVersionUID = 1;
 

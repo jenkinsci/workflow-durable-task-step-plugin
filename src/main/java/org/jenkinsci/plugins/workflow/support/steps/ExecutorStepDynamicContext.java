@@ -56,7 +56,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * Persistent representation for context of {@link ExecutorStepExecution}.
- * Supersedes {@link FilePathDynamicContext} (never mind {@link org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle}),
+ * Supersedes {@link org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle},
  * {@link org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle},
  * {@link org.jenkinsci.plugins.workflow.support.pickles.ComputerPickle},
  * and {@link org.jenkinsci.plugins.workflow.support.pickles.WorkspaceListLeasePickle}.
@@ -149,17 +149,14 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     }
 
-    @Extension public static final class FilePathTranslator extends Translator<FilePath> {
+    /**
+     * @deprecated Not used for new builds, only those for which {@link ExecutorStepExecution} used {@link ExecutorStepDynamicContext} without {@link FilePathDynamicContext}.
+     */
+    @Deprecated
+    @Extension(ordinal = -1000) public static final class FilePathTranslator extends Translator<FilePath> {
 
         @Override protected Class<FilePath> type() {
             return FilePath.class;
-        }
-
-        @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
-            }
-            return super.get(context);
         }
 
         @Override FilePath get(ExecutorStepDynamicContext c) throws IOException {
