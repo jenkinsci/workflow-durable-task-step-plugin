@@ -161,4 +161,26 @@ public class ExecutorStepDynamicContextTest {
         });
     }
 
+    @Issue("JENKINS-69936")
+    @Test public void nestedNode() throws Throwable {
+        sessions.then(j -> {
+            logging.record(ExecutorStepDynamicContext.class, Level.FINE).record(FilePathDynamicContext.class, Level.FINE);
+            DumbSlave alpha = j.createSlave("alpha", null, null);
+            DumbSlave beta = j.createSlave("beta", null, null);
+            j.waitOnline(alpha);
+            j.waitOnline(beta);
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {echo(/here ${pwd()}/)}}", true));
+            j.assertLogContains("here " + beta.getWorkspaceFor(p).getRemote(), j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {ws('alphadir') {node('beta') {echo(/here ${pwd()}/)}}}", true));
+            j.assertLogContains("here " + beta.getWorkspaceFor(p).getRemote(), j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {ws('betadir') {echo(/here ${pwd()}/)}}}", true));
+            j.assertLogContains("here " + beta.getRootPath().child("betadir").getRemote(), j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {dir('alphadir') {node('beta') {echo(/here ${pwd()}/)}}}", true));
+            j.assertLogContains("here " + beta.getWorkspaceFor(p).getRemote(), j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {dir('betadir') {echo(/here ${pwd()}/)}}}", true));
+            j.assertLogContains("here " + beta.getWorkspaceFor(p).child("betadir").getRemote(), j.buildAndAssertSuccess(p));
+        });
+    }
+
 }
