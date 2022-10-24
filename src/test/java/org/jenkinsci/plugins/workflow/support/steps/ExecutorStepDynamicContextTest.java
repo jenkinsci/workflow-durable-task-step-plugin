@@ -164,6 +164,7 @@ public class ExecutorStepDynamicContextTest {
     @Issue("JENKINS-69936")
     @Test public void nestedNode() throws Throwable {
         sessions.then(j -> {
+            logging.record(ExecutorStepDynamicContext.class, Level.FINE).record(FilePathDynamicContext.class, Level.FINE);
             DumbSlave alpha = j.createSlave("alpha", null, null);
             DumbSlave beta = j.createSlave("beta", null, null);
             j.waitOnline(alpha);

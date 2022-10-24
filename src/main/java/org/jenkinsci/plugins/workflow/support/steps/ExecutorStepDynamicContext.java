@@ -149,14 +149,17 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     }
 
-    /**
-     * @deprecated Not used for new builds, only those for which {@link ExecutorStepExecution} used {@link ExecutorStepDynamicContext} without {@link FilePathDynamicContext}.
-     */
-    @Deprecated
-    @Extension(ordinal = -1000) public static final class FilePathTranslator extends Translator<FilePath> {
+    @Extension public static final class FilePathTranslator extends Translator<FilePath> {
 
         @Override protected Class<FilePath> type() {
             return FilePath.class;
+        }
+
+        @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
+            }
+            return super.get(context);
         }
 
         @Override FilePath get(ExecutorStepDynamicContext c) throws IOException {
