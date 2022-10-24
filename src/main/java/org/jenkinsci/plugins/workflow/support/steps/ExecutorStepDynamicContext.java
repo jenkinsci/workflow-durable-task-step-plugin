@@ -131,6 +131,10 @@ public final class ExecutorStepDynamicContext implements Serializable {
         LOGGER.fine(() -> "fully restored for " + path + " on " + node);
     }
 
+    @Override public String toString() {
+        return "ExecutorStepDynamicContext[" + path + "@" + node + "]";
+    }
+
     private static abstract class Translator<T> extends DynamicContext.Typed<T> {
 
         @Override protected T get(DelegatedContext context) throws IOException, InterruptedException {
@@ -149,6 +153,13 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
         @Override protected Class<FilePath> type() {
             return FilePath.class;
+        }
+
+        @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
+            }
+            return super.get(context);
         }
 
         @Override FilePath get(ExecutorStepDynamicContext c) throws IOException {

@@ -55,6 +55,9 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
     }
 
     @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
+        }
         FilePathRepresentation r = context.get(FilePathRepresentation.class);
         if (r == null) {
             return null;
@@ -89,7 +92,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         return new FilePathRepresentation(FilePathUtils.getNodeName(f), f.getRemote());
     }
 
-    private static final class FilePathRepresentation implements Serializable {
+    static final class FilePathRepresentation implements Serializable {
 
         private static final long serialVersionUID = 1;
 
@@ -99,6 +102,10 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         FilePathRepresentation(String slave, String path) {
             this.slave = slave;
             this.path = path;
+        }
+
+        @Override public String toString() {
+            return "FilePathRepresentation[" + path + "@" + slave + "]";
         }
 
     }

@@ -917,7 +917,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         withExecution(execution -> {
                             execution.state = state;
                             execution.body = context.newBodyInvoker()
-                                .withContexts(env, state)
+                                .withContexts(env, state, FilePathDynamicContext.createContextualObject(workspace))
                                 .withCallback(new Callback(cookie, execution))
                                 .start();
                             LOGGER.fine(() -> "started " + cookie + " in " + runId);
