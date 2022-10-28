@@ -442,7 +442,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
                 Run<?, ?> run = runForDisplay();
                 if (run != null && !run.isLogUpdated()) {
-                    stopping = true;
+                    if (stopping) {
+                        LOGGER.warning(() -> "Refusing to build " + PlaceholderTask.this + " and going to cancel it, even though it was supposedly stopped already, because associated build is complete");
+                    } else {
+                        stopping = true;
+                    }
                     Timer.get().execute(() -> {
                         if (Queue.getInstance().cancel(this)) {
                             LOGGER.warning(() -> "Refusing to build " + PlaceholderTask.this + " and cancelling it because associated build is complete");
