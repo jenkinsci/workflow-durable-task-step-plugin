@@ -31,12 +31,14 @@ import hudson.Extension;
 import hudson.model.Computer;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepDynamicContext;
 
 /**
  * Reference to {@link Computer}
  *
- * @author Kohsuke Kawaguchi
+ * @deprecated Normally now done via {@link ExecutorStepDynamicContext}.
  */
+@Deprecated
 public class ComputerPickle extends Pickle {
     private final String slave;
 

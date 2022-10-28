@@ -45,7 +45,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
  * Allows a step body to save a representation of a workspace
  * without forcing a particular {@link FilePath#getChannel} to be used the whole time.
  */
-@Extension public final class FilePathDynamicContext extends DynamicContext.Typed<FilePath> {
+@Extension(ordinal = 100) public final class FilePathDynamicContext extends DynamicContext.Typed<FilePath> {
 
     private static final Logger LOGGER = Logger.getLogger(FilePathDynamicContext.class.getName());
 
@@ -57,6 +57,12 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
     @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
         FilePathRepresentation r = context.get(FilePathRepresentation.class);
         if (r == null) {
+            return null;
+        }
+        ExecutorStepDynamicContext esdc = context.get(ExecutorStepDynamicContext.class);
+        LOGGER.fine(() -> "ESDC=" + esdc + " FPR=" + r);
+        if (esdc != null && !esdc.node.equals(r.slave)) {
+            LOGGER.fine(() -> "skipping " + r.path + "@" + r.slave + " since it is on a different node than " + esdc.node);
             return null;
         }
         FilePath f = FilePathUtils.find(r.slave, r.path);
@@ -89,7 +95,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         return new FilePathRepresentation(FilePathUtils.getNodeName(f), f.getRemote());
     }
 
-    private static final class FilePathRepresentation implements Serializable {
+    static final class FilePathRepresentation implements Serializable {
 
         private static final long serialVersionUID = 1;
 
@@ -99,6 +105,10 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         FilePathRepresentation(String slave, String path) {
             this.slave = slave;
             this.path = path;
+        }
+
+        @Override public String toString() {
+            return "FilePathRepresentation[" + path + "@" + slave + "]";
         }
 
     }
