@@ -81,7 +81,6 @@ import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.jenkinsci.plugins.workflow.support.concurrent.WithThreadName;
-import org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
@@ -306,6 +305,9 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             returnStatus = step.returnStatus;
             StepContext context = getContext();
             ws = context.get(FilePath.class);
+            if (ws == null) {
+                throw new AbortException("No workspace currently accessible");
+            }
             node = FilePathUtils.getNodeName(ws);
             DurableTask durableTask = step.task();
             if (returnStdout) {
@@ -356,12 +358,13 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                             LOGGER.fine(() -> "discovered that " + node + " has been removed");
                             removedNodeDiscovered = System.nanoTime();
                             return null;
-                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorPickle.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
                             return null;
                         } else {
-                            LOGGER.fine(() -> node + " has been removed for a while, assuming it is not coming back");
-                            throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+                            LOGGER.fine(() -> "rediscovering that " + node + " has been removed and timeout has expired");
+                            listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
+                            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeCause());
                         }
                     }
                     removedNodeDiscovered = 0; // something else; reset

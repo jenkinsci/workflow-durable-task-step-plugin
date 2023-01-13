@@ -26,9 +26,7 @@ package org.jenkinsci.plugins.workflow.support.pickles;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import edu.umd.cs.findbugs.annotations.NonNull;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
-import hudson.Main;
 import hudson.Util;
 import hudson.init.InitMilestone;
 import hudson.model.Executor;
@@ -41,7 +39,6 @@ import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.SubTask;
 
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -49,26 +46,22 @@ import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.pickles.Pickle;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
-import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepDynamicContext;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
-import org.kohsuke.accmod.Restricted;
-import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * Persists an {@link Executor} as the {@link hudson.model.Queue.Task} it was running.
  * That task can in turn have some way of producing a display name, a special {@link hudson.model.Queue.Executable} with a custom {@code executorCell.jelly}, and so on.
  * When rehydrated, the task is rescheduled, and when it starts executing the owning executor is produced.
  * Typically the {@link SubTask#getAssignedLabel} should be a {@link Node#getSelfLabel} so that the rehydrated executor is in fact on the same node.
+ * @deprecated Normally now done via {@link ExecutorStepDynamicContext}.
  */
+@Deprecated
 public class ExecutorPickle extends Pickle {
 
     private static final Logger LOGGER = Logger.getLogger(ExecutorPickle.class.getName());
 
     private final Queue.Task task;
-
-    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
-    @Restricted(NoExternalUse.class)
-    public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong(ExecutorPickle.class.getName()+".timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
 
     private ExecutorPickle(Executor executor) {
         if (executor instanceof OneOffExecutor) {
@@ -105,7 +98,7 @@ public class ExecutorPickle extends Pickle {
                         throw new IllegalStateException("queue refused " + task);
                     }
                     itemID = item.getId();
-                    endTimeNanos = System.nanoTime() + TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
+                    endTimeNanos = System.nanoTime() + ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS*1000000;
                     LOGGER.log(Level.FINE, "{0} scheduled {1}", new Object[] {ExecutorPickle.this, item});
                 } else {
                     item = Queue.getInstance().getItem(itemID);
@@ -129,7 +122,7 @@ public class ExecutorPickle extends Pickle {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
                                 owner.getListener().getLogger().printf("Killed %s after waiting for %s because we assume unknown agent %s is never going to appear%n",
-                                        item.task.getDisplayName(), Util.getTimeSpanString(TIMEOUT_WAITING_FOR_NODE_MILLIS), placeholder.getAssignedLabel());
+                                        item.task.getDisplayName(), Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS), placeholder.getAssignedLabel());
                                 throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
                             }
                         }
@@ -159,7 +152,7 @@ public class ExecutorPickle extends Pickle {
             }
             @Override protected void printWaitingMessage(@NonNull TaskListener listener) {
                 Queue.Item item = Queue.getInstance().getItem(itemID);
-                String message = Messages.ExecutorPickle_waiting_to_resume(task.getFullDisplayName());
+                String message = "Waiting to resume " + task.getFullDisplayName();
                 if (item == null) { // ???
                     listener.getLogger().println(message);
                     return;

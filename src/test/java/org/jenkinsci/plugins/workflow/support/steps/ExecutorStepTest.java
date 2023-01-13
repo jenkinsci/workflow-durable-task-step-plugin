@@ -33,6 +33,7 @@ import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Item;
 import hudson.model.Job;
+import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -42,23 +43,20 @@ import hudson.model.User;
 import hudson.model.labels.LabelAtom;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueTaskDispatcher;
-import hudson.remoting.Launcher;
-import hudson.remoting.Which;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
-import hudson.slaves.JNLPLauncher;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
 import hudson.slaves.WorkspaceList;
-import hudson.util.StreamCopyThread;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -74,8 +72,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import hudson.util.VersionNumber;
-import java.nio.charset.StandardCharsets;
-import java.util.Set;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -84,7 +80,6 @@ import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.IOUtils;
-import org.apache.tools.ant.util.JavaEnvUtils;
 import static org.hamcrest.Matchers.*;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
@@ -104,7 +99,6 @@ import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.After;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -118,6 +112,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
@@ -133,6 +128,7 @@ public class ExecutorStepTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
+    @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
     @Rule public LoggerRule logging = new LoggerRule();
@@ -145,10 +141,8 @@ public class ExecutorStepTest {
      */
     @Test public void buildShellScriptOnSlave() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
-                s.setLabelString("remote quick");
+                DumbSlave s = r.createSlave("remote quick", null);
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
-
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('" + s.getNodeName() + "') {\n" +
@@ -189,7 +183,7 @@ public class ExecutorStepTest {
      */
     @Test public void buildShellScriptWithPersistentProcesses() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
+                DumbSlave s = r.createSlave();
                 Path f1 = r.jenkins.getRootDir().toPath().resolve("test.txt");
                 String fullPathToTestFile = f1.toAbsolutePath().toString();
                 // Escape any \ in the source so that the script is valid
@@ -217,33 +211,11 @@ public class ExecutorStepTest {
         });
     }
 
-    private Process jnlpProc;
-    private void startJnlpProc(JenkinsRule r) throws Exception {
-        killJnlpProc();
-        ProcessBuilder pb = new ProcessBuilder(JavaEnvUtils.getJreExecutable("java"), "-Djava.awt.headless=true", "-jar", Which.jarFile(Launcher.class).getAbsolutePath(), "-jnlpUrl", r.getURL() + "computer/dumbo/slave-agent.jnlp");
-        pb.redirectErrorStream(true);
-        System.err.println("Running: " + pb.command());
-        jnlpProc = pb.start();
-        new StreamCopyThread("jnlp", jnlpProc.getInputStream(), System.err).start();
-    }
-    @After public void killJnlpProc() {
-        if (jnlpProc != null) {
-            jnlpProc.destroyForcibly();
-            jnlpProc = null;
-        }
-    }
-
     @Test public void buildShellScriptAcrossRestart() throws Throwable {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
-                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-                // Cannot use regular JenkinsRule.createSlave due to JENKINS-26398.
-                // Nor can we can use JenkinsRule.createComputerLauncher, since spawned commands are killed by CommandLauncher somehow (it is not clear how; apparently before its onClosed kills them off).
-                DumbSlave s  = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-                s.setNumExecutors(1);
-                s.setRetentionStrategy(RetentionStrategy.NOOP);
-                r.jenkins.addNode(s);
-                startJnlpProc(r);
+                logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepDynamicContext.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
+                DumbSlave s = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -259,13 +231,11 @@ public class ExecutorStepTest {
                 }
                 r.waitForMessage("waiting", b);
                 assertTrue(b.isBuilding());
-                killJnlpProc();
         });
         sessions.then(r -> {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding()); // TODO occasionally fails; log ends with: ‘Running: Allocate node : Body : Start’ (no shell step in sight)
-                startJnlpProc(r); // Have to relaunch JNLP agent, since the Jenkins port has changed, and we cannot force JenkinsRule to reuse the same port as before.
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
                 assertTrue(f2.isFile());
@@ -276,7 +246,6 @@ public class ExecutorStepTest {
                 r.assertBuildStatusSuccess(r.waitForCompletion(b));
                 r.assertLogContains("finished waiting", b);
                 r.assertLogContains("OK, done", b);
-                killJnlpProc();
         });
     }
 
@@ -290,9 +259,7 @@ public class ExecutorStepTest {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         int count = 3_000;
         sessions.then(r -> {
-            DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-            r.jenkins.addNode(s);
-            startJnlpProc(r);
+            DumbSlave s = r.createSlave("dumbo", null, null);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('dumbo') {sh 'set +x; i=0; while [ $i -lt " + count + " ]; do echo \"<<<$i>>>\"; sleep .01; i=`expr $i + 1`; done'}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -301,7 +268,6 @@ public class ExecutorStepTest {
         });
         sessions.then(r -> {
             WorkflowRun b = r.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            startJnlpProc(r);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
             // Paying attention to the per-node log rather than whole-build log to exclude issues with copyLogs prior to JEP-210:
             FlowNode shNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NodeStepTypePredicate("sh"));
@@ -319,7 +285,6 @@ public class ExecutorStepTest {
             }
             System.out.printf("Lost content: %.02f%%%n", lost * 100.0 / count);
             System.out.printf("Duplicated content: %.02f%%%n", (seen - count) * 100.0 / count);
-            killJnlpProc();
         });
     }
 
@@ -327,11 +292,7 @@ public class ExecutorStepTest {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-                s.setNumExecutors(1);
-                s.setRetentionStrategy(RetentionStrategy.NOOP);
-                r.jenkins.addNode(s);
-                startJnlpProc(r);
+                Slave s = inboundAgents.createAgent(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -349,11 +310,11 @@ public class ExecutorStepTest {
                 assertTrue(b.isBuilding());
                 Computer c = s.toComputer();
                 assertNotNull(c);
-                killJnlpProc();
+                inboundAgents.stop("dumbo");
                 while (c.isOnline()) {
                     Thread.sleep(100);
                 }
-                startJnlpProc(r);
+                inboundAgents.start(r, "dumbo");
                 while (c.isOffline()) {
                     Thread.sleep(100);
                 }
@@ -365,7 +326,6 @@ public class ExecutorStepTest {
                 r.assertBuildStatusSuccess(r.waitForCompletion(b));
                 r.assertLogContains("finished waiting", b); // TODO sometimes is not printed to log, despite f2 having been removed
                 r.assertLogContains("OK, done", b);
-                killJnlpProc();
         });
     }
 
@@ -375,13 +335,9 @@ public class ExecutorStepTest {
         Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).
-                        record(FilePathDynamicContext.class, Level.FINE).
+                        record(ExecutorStepDynamicContext.class, Level.FINE).
                         record(WorkspaceList.class, Level.FINE);
-                DumbSlave s = new DumbSlave("dumbo", tmp.getRoot().getAbsolutePath(), new JNLPLauncher(true));
-                s.setNumExecutors(1);
-                s.setRetentionStrategy(RetentionStrategy.NOOP);
-                r.jenkins.addNode(s);
-                startJnlpProc(r);
+                Slave s = inboundAgents.createAgent(r, "dumbo");
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -414,18 +370,17 @@ public class ExecutorStepTest {
                 String workspacePath = actions.get(0).getWorkspace().getRemote();
                 assertWorkspaceLocked(computer, workspacePath);
                 LOGGER.info("killing agent");
-                jnlpProc.destroyForcibly();
+                inboundAgents.stop("dumbo");
                 long lastMessageMillis = System.currentTimeMillis();
                 while (computer.isOnline()) {
                     if (TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - lastMessageMillis) > 30) {
-                        LOGGER.info(() -> "Waiting for " + computer.getNode() + " to go offline. JNLP Process is " + (jnlpProc.isAlive() ? "alive" : "not alive"));
+                        LOGGER.info(() -> "Waiting for " + computer.getNode() + " to go offline. JNLP Process is " + (inboundAgents.isAlive("dumbo") ? "alive" : "not alive"));
                         lastMessageMillis = System.currentTimeMillis();
                     }
                     Thread.sleep(100);
                 }
-                jnlpProc = null;
                 LOGGER.info("restarting agent");
-                startJnlpProc(r);
+                inboundAgents.start(r, "dumbo");
                 while (computer.isOffline()) {
                     Thread.sleep(100);
                 }
@@ -441,7 +396,6 @@ public class ExecutorStepTest {
                 r.assertLogContains("finished waiting", b);
                 r.assertLogContains("Back again", b);
                 r.assertLogContains("OK, done", b);
-                killJnlpProc();
         });
     }
 
@@ -454,7 +408,7 @@ public class ExecutorStepTest {
 
     @Test public void buildShellScriptQuick() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
+                DumbSlave s = r.createSlave();
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
 
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
@@ -471,13 +425,13 @@ public class ExecutorStepTest {
     @Test public void acquireWorkspace() throws Throwable {
         sessions.then(r -> {
                 String slaveRoot = tmp.newFolder().getPath();
-                DumbSlave s = new DumbSlave("slave", slaveRoot, r.createComputerLauncher(null));
+                DumbSlave s = new DumbSlave("agent", slaveRoot, r.createComputerLauncher(null));
                 s.setNumExecutors(2);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
                 r.jenkins.addNode(s);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
-                        "node('slave') {\n" + // this locks the WS
+                        "node('agent') {\n" + // this locks the WS
                         "    echo(/default=${pwd()}/)\n" +
                         "    ws {\n" + // and this locks a second one
                         "        echo(/before=${pwd()}/)\n" +
@@ -494,6 +448,8 @@ public class ExecutorStepTest {
                 SemaphoreStep.waitForStart("wait/2", b2);
                 assertTrue(b2.isBuilding());
         });
+        logging.record(WorkspaceStepExecution.class, Level.FINE);
+        logging.record(FilePathDynamicContext.class, Level.FINE);
         sessions.then(r -> {
                 WorkflowJob p = (WorkflowJob) r.jenkins.getItem("demo");
                 WorkflowRun b = p.getLastBuild();
@@ -542,9 +498,9 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-26130")
-    @Test public void unloadableExecutorPickle() throws Throwable {
+    @Test public void unrestorableAgent() throws Throwable {
         sessions.then(r -> {
-                DumbSlave dumbo = r.createSlave("dumbo", null, null); // unlike in buildShellScriptAcrossRestart, we *want* this to die after restart
+                DumbSlave dumbo = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
                     "node('dumbo') {\n" +
@@ -558,17 +514,16 @@ public class ExecutorStepTest {
                 WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
                 WorkflowRun b = p.getLastBuild();
                 assertTrue(b.isBuilding());
-                r.waitForMessage(Messages.ExecutorPickle_waiting_to_resume(Messages.ExecutorStepExecution_PlaceholderTask_displayName(b.getFullDisplayName())), b);
-                r.waitForMessage(hudson.model.Messages.Queue_NodeOffline("dumbo"), b);
-                b.getExecutor().interrupt();
+                SemaphoreStep.success("wait/1", null);
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
+                r.assertLogContains("dumbo has been removed for 15 sec, assuming it is not coming back", b);
         });
     }
 
     @Test public void detailsExported() throws Throwable {
         sessions.then(r -> {
-                DumbSlave s = r.createOnlineSlave();
+                DumbSlave s = r.createSlave();
 
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition(
@@ -727,10 +682,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodeFromPreviousRun() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 5; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 5, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
@@ -790,10 +742,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 1; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 1, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition(
@@ -824,10 +773,7 @@ public class ExecutorStepTest {
             // Note: for Jenkins versions > 2.65, the number of agents must be increased to 5.
             // This is due to changes in the Load Balancer (See JENKINS-60563).
             int totalAgents = Jenkins.getVersion().isNewerThan(new VersionNumber("2.265")) ? 5 : 3;
-            for (int i = 0; i < totalAgents; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, totalAgents, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("" +
@@ -875,10 +821,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInParallelStages() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 4; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 4, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
 
@@ -940,10 +883,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 4; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo bar");
-            }
+            createNOnlineAgentWithLabels(r, 4, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("" +
@@ -1006,10 +946,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodeInSameRun() throws Throwable {
         sessions.then(r -> {
-            for (int i = 0; i < 5; ++i) {
-                DumbSlave slave = r.createOnlineSlave();
-                slave.setLabelString("foo");
-            }
+            createNOnlineAgentWithLabels(r, 5, "foo");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 20; ++i) {node('foo') {echo \"ran node block ${i}\"}}", true));
@@ -1145,7 +1082,7 @@ public class ExecutorStepTest {
     @Issue("JENKINS-58900")
     @Test public void nodeDisconnectMissingContextVariableException() throws Throwable {
         sessions.then(r -> {
-            DumbSlave agent = r.createOnlineSlave();
+            DumbSlave agent = r.createSlave();
             WorkflowJob p = r.createProject(WorkflowJob.class);
             p.setDefinition(new CpsFlowDefinition(
                     "node ('" + agent.getNodeName() + "') {\n" +
@@ -1166,7 +1103,7 @@ public class ExecutorStepTest {
             r.assertLogContains("hello", b);
             r.assertLogNotContains("world", b);
             r.assertLogContains("going offline", b);
-            r.assertLogContains("IOException: Unable to create live FilePath for " + agent.getNodeName(), b);
+            r.assertLogContains("AgentOfflineException: Unable to create live FilePath for " + agent.getNodeName(), b);
         });
     }
 
@@ -1207,7 +1144,7 @@ public class ExecutorStepTest {
 
     @Test public void getParentExecutable() throws Throwable {
         sessions.then(r -> {
-            DumbSlave s = r.createOnlineSlave();
+            DumbSlave s = r.createSlave();
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('" + s.getNodeName() + "') {semaphore('wait')}", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
@@ -1218,6 +1155,46 @@ public class ExecutorStepTest {
             assertNotNull(exec);
             assertEquals(b, exec.getParentExecutable());
             SemaphoreStep.success("wait/1", null);
+        });
+    }
+
+    @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
+        logging.record(ExecutorStepExecution.class, Level.FINE).capture(50);
+        Path tempQueueFile = tmp.newFile().toPath();
+        sessions.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('custom-label') { }", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            // Get into a state where a PlaceholderTask is in the queue.
+            while (true) {
+                Queue.Item[] items = Queue.getInstance().getItems();
+                if (items.length == 1 && items[0].task instanceof ExecutorStepExecution.PlaceholderTask) {
+                    break;
+                }
+                Thread.sleep(500L);
+            }
+            // Copy queue.xml to a temp file while the PlaceholderTask is in the queue.
+            r.jenkins.getQueue().save();
+            Files.copy(sessions.getHome().toPath().resolve("queue.xml"), tempQueueFile, StandardCopyOption.REPLACE_EXISTING);
+            // Create a node with the correct label and let the build complete.
+            DumbSlave node = r.createOnlineSlave(Label.get("custom-label"));
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            // Remove node so that tasks requiring custom-label are stuck in the queue.
+            Jenkins.get().removeNode(node);
+        });
+        // Copy the temp queue.xml over the real one. The associated build has already completed, so the queue now
+        // has a bogus PlaceholderTask.
+        Files.copy(tempQueueFile, sessions.getHome().toPath().resolve("queue.xml"), StandardCopyOption.REPLACE_EXISTING);
+        sessions.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            assertFalse(b.isLogUpdated());
+            r.assertBuildStatusSuccess(b);
+            Queue.getInstance().maintain(); // Otherwise we may have to wait up to 5 seconds.
+            while (Queue.getInstance().getItems().length > 0) {
+                Thread.sleep(100L);
+            }
+            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
         });
     }
 
@@ -1257,4 +1234,14 @@ public class ExecutorStepTest {
         }
     }
 
+    private void createNOnlineAgentWithLabels(JenkinsRule r, int number, String label) throws Exception {
+        // create all the slaves then wait for them to connect as it will be quicker as agents connect in parallel
+        ArrayList<DumbSlave> agents = new ArrayList<>();
+        for (int i = 0; i < number; ++i) {
+            agents.add(r.createSlave(label, null));
+        }
+        for (DumbSlave agent : agents) {
+            r.waitOnline(agent);
+        }
+    }
 }
