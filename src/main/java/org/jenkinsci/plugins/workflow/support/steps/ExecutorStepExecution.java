@@ -61,6 +61,7 @@ import jenkins.model.NodeListener;
 import jenkins.model.queue.AsynchronousExecution;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
+import jenkins.util.SystemProperties;
 import jenkins.util.Timer;
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
@@ -91,7 +92,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
     @Restricted(value = NoExternalUse.class)
-    public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : Long.getLong("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", TimeUnit.MINUTES.toMillis(5));
+    public static long TIMEOUT_WAITING_FOR_NODE_MILLIS = SystemProperties.getLong("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", Main.isUnitTest ? /* fail faster */ TimeUnit.SECONDS.toMillis(15) : TimeUnit.MINUTES.toMillis(5));
 
     private final ExecutorStep step;
     private ExecutorStepDynamicContext state;
