@@ -572,7 +572,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         // TODO https://github.com/jenkinsci/jenkins/pull/7599 @Override
         public @CheckForNull Queue.Executable getOwnerExecutable() {
             Run<?, ?> r = runForDisplay();
-            System.err.println("TODO gOE " + r);
             return r instanceof Queue.Executable ? (Queue.Executable) r : null;
         }
 
