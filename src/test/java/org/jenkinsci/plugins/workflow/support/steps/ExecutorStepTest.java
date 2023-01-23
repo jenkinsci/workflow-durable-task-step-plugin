@@ -613,6 +613,7 @@ public class ExecutorStepTest {
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 assertEquals(p, items[0].task.getOwnerTask());
+                assertEquals(b, items[0].task.getOwnerExecutable());
                 assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
 
                 assertTrue(Queue.getInstance().cancel(items[0]));
