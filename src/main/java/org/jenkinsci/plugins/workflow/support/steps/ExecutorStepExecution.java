@@ -537,7 +537,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         /**
-         * @deprecated use {@link #getOwnerExecutable} (which does not require a dependency on this plugin).
+         * @deprecated use {@link #getOwnerExecutable} (which does not require a dependency on this plugin) if your core dep is 2.389+
          */
         @Deprecated
         public @CheckForNull Run<?,?> run() {
@@ -554,7 +554,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         /**
-         * @deprecated use {@link #getOwnerExecutable} (which does not require a dependency on this plugin).
+         * @deprecated use {@link #getOwnerExecutable} (which does not require a dependency on this plugin) if your core dep is 2.389+
          */
         @Deprecated
         public @CheckForNull Run<?,?> runForDisplay() {
