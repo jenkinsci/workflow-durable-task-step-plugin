@@ -70,7 +70,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     final @NonNull ExecutorStepExecution.PlaceholderTask task;
     final @NonNull String node;
-    private final @NonNull String path;
+    final @NonNull String path;
     /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable Executor executor;
     /** Non-null after {@link #resume} if all goes well. */

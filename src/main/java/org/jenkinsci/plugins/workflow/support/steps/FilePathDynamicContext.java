@@ -64,6 +64,8 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         if (esdc != null && !esdc.node.equals(r.slave)) {
             LOGGER.fine(() -> "skipping " + r.path + "@" + r.slave + " since it is on a different node than " + esdc.node);
             return null;
+        } else if (esdc != null && !esdc.path.equals(r.path)) {
+            LOGGER.fine(() -> "not skipping " + r.path + "@" + r.slave + " even though it is in a different workspace than " + esdc.node + "@" + esdc.path);
         }
         FilePath f = FilePathUtils.find(r.slave, r.path);
         if (f != null) {
