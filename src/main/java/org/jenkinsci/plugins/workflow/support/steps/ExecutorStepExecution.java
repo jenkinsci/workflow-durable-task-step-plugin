@@ -914,9 +914,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             env.put("WORKSPACE_TMP", tempDir.getRemote()); // JENKINS-60634
                         }
                         FlowNode flowNode = context.get(FlowNode.class);
-                        if (flowNode != null) {
-                            flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
-                        }
+                        flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
                         ExecutorStepDynamicContext state = new ExecutorStepDynamicContext(PlaceholderTask.this, lease, exec, FilePathDynamicContext.depthOf(flowNode));
                         withExecution(execution -> {
