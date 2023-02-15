@@ -918,7 +918,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             flowNode.addAction(new WorkspaceActionImpl(workspace, flowNode));
                         }
                         listener.getLogger().println("Running on " + ModelHyperlinkNote.encodeTo(node) + " in " + workspace);
-                        ExecutorStepDynamicContext state = new ExecutorStepDynamicContext(PlaceholderTask.this, lease, exec);
+                        ExecutorStepDynamicContext state = new ExecutorStepDynamicContext(PlaceholderTask.this, lease, exec, FilePathDynamicContext.depthOf(flowNode));
                         withExecution(execution -> {
                             execution.state = state;
                             execution.body = context.newBodyInvoker()

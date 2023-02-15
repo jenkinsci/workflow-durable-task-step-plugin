@@ -71,17 +71,19 @@ public final class ExecutorStepDynamicContext implements Serializable {
     final @NonNull ExecutorStepExecution.PlaceholderTask task;
     final @NonNull String node;
     final @NonNull String path;
+    final int depth;
     /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable Executor executor;
     /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable WorkspaceList.Lease lease;
 
-    ExecutorStepDynamicContext(ExecutorStepExecution.PlaceholderTask task, WorkspaceList.Lease lease, Executor executor) {
+    ExecutorStepDynamicContext(ExecutorStepExecution.PlaceholderTask task, WorkspaceList.Lease lease, Executor executor, int depth) {
         this.task = task;
         this.node = FilePathUtils.getNodeName(lease.path);
         this.path = lease.path.getRemote();
         this.executor = executor;
         this.lease = lease;
+        this.depth = depth;
     }
 
     void resume(StepContext context) throws Exception {

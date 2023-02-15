@@ -36,6 +36,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
 import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
@@ -61,11 +62,13 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         }
         ExecutorStepDynamicContext esdc = context.get(ExecutorStepDynamicContext.class);
         LOGGER.fine(() -> "ESDC=" + esdc + " FPR=" + r);
-        if (esdc != null && !esdc.node.equals(r.slave)) {
-            LOGGER.fine(() -> "skipping " + r.path + "@" + r.slave + " since it is on a different node than " + esdc.node);
-            return null;
-        } else if (esdc != null && !esdc.path.equals(r.path)) {
-            LOGGER.fine(() -> "not skipping " + r.path + "@" + r.slave + " even though it is in a different workspace than " + esdc.node + "@" + esdc.path);
+        if (esdc != null) {
+            if (esdc.depth > r.depth) {
+                LOGGER.fine(() -> "skipping " + r.path + "@" + r.slave + " since at depth " + r.depth + " it is shallower than " + esdc.node + "@" + esdc.path + " at depth " + esdc.depth);
+                return null;
+            } else {
+                LOGGER.fine(() -> "not skipping " + r.path + "@" + r.slave + " since at depth " + r.depth + " it is deeper than " + esdc.node + "@" + esdc.path + " at depth " + esdc.depth);
+            }
         }
         FilePath f = FilePathUtils.find(r.slave, r.path);
         if (f != null) {
@@ -91,10 +94,22 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
     }
 
     /**
+     * @deprecated use {@link #createContextualObject(FilePath, FlowNode)}
+     */
+    @Deprecated
+    public static Object createContextualObject(FilePath f) {
+        return new FilePathRepresentation(FilePathUtils.getNodeName(f), f.getRemote(), 0);
+    }
+
+    /**
      * @see BodyInvoker#withContext
      */
-    public static Object createContextualObject(FilePath f) {
-        return new FilePathRepresentation(FilePathUtils.getNodeName(f), f.getRemote());
+    public static Object createContextualObject(@NonNull FilePath f, @NonNull FlowNode n) {
+        return new FilePathRepresentation(FilePathUtils.getNodeName(f), f.getRemote(), depthOf(n));
+    }
+
+    static int depthOf(@NonNull FlowNode n) {
+        return n.getEnclosingBlocks().size();
     }
 
     static final class FilePathRepresentation implements Serializable {
@@ -103,10 +118,12 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
 
         private final String slave;
         private final String path;
+        private final int depth;
 
-        FilePathRepresentation(String slave, String path) {
+        FilePathRepresentation(String slave, String path, int depth) {
             this.slave = slave;
             this.path = path;
+            this.depth = depth;
         }
 
         @Override public String toString() {

@@ -197,17 +197,11 @@ public class ExecutorStepDynamicContextTest {
             p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {echo(/here ${pwd()}!/)}}", true));
             j.assertLogContains("here " + big.getWorkspaceFor(p).getRemote() + "@2!", j.buildAndAssertSuccess(p));
             p.setDefinition(new CpsFlowDefinition("node('alpha') {ws('alphadir') {node('beta') {echo(/here ${pwd()}!/)}}}", true));
-            /* TODO does not yet work; FilePathDynamicContext from ws('alphadir') takes precedence:
             j.assertLogContains("here " + big.getWorkspaceFor(p).getRemote() + "@2!", j.buildAndAssertSuccess(p));
-            */
-            j.assertLogContains("here " + big.getRootPath().child("alphadir").getRemote() + "!", j.buildAndAssertSuccess(p));
             p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {ws('betadir') {echo(/here ${pwd()}!/)}}}", true));
             j.assertLogContains("here " + big.getRootPath().child("betadir").getRemote() + "!", j.buildAndAssertSuccess(p));
             p.setDefinition(new CpsFlowDefinition("node('alpha') {dir('alphadir') {node('beta') {echo(/here ${pwd()}!/)}}}", true));
-            /* TODO same, with dir('alphadir'):
             j.assertLogContains("here " + big.getWorkspaceFor(p).getRemote() + "@2!", j.buildAndAssertSuccess(p));
-            */
-            j.assertLogContains("here " + big.getWorkspaceFor(p).child("alphadir").getRemote() + "!", j.buildAndAssertSuccess(p));
             p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {dir('betadir') {echo(/here ${pwd()}!/)}}}", true));
             j.assertLogContains("here " + big.getWorkspaceFor(p).sibling(big.getWorkspaceFor(p).getBaseName() + "@2").child("betadir").getRemote() + "!", j.buildAndAssertSuccess(p));
         });
