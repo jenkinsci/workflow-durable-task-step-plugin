@@ -613,7 +613,7 @@ public class ExecutorStepTest {
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 assertEquals(p, items[0].task.getOwnerTask());
-                // // TODO https://github.com/jenkinsci/jenkins/pull/7599 remove cast
+                // // TODO 2.389+ remove cast
                 assertEquals(b, ((ExecutorStepExecution.PlaceholderTask) items[0].task).getOwnerExecutable());
                 assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
 
