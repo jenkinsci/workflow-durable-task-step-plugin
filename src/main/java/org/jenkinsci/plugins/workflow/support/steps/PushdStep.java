@@ -30,6 +30,7 @@ import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.TaskListener;
 import java.util.Set;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -72,7 +73,7 @@ public class PushdStep extends Step {
         }
 
         @Override public Set<? extends Class<?>> getRequiredContext() {
-            return Set.of(TaskListener.class, FilePath.class);
+            return Set.of(TaskListener.class, FilePath.class, FlowNode.class);
         }
         
         @Override public Set<? extends Class<?>> getProvidedContext() {
@@ -95,7 +96,7 @@ public class PushdStep extends Step {
             FilePath dir = getContext().get(FilePath.class).child(path);
             getContext().get(TaskListener.class).getLogger().println("Running in " + dir);
             getContext().newBodyInvoker()
-                .withContext(FilePathDynamicContext.createContextualObject(dir))
+                .withContext(FilePathDynamicContext.createContextualObject(dir, getContext().get(FlowNode.class)))
                 // Could use a dedicated BodyExecutionCallback here if we wished to print a message at the end ("Returning to ${cwd}"):
                 .withCallback(BodyExecutionCallback.wrap(getContext()))
                 .start();
