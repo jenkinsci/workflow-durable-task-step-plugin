@@ -29,6 +29,7 @@ import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.RetentionStrategy;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -180,6 +181,35 @@ public class ExecutorStepDynamicContextTest {
             j.assertLogContains("here " + beta.getWorkspaceFor(p).getRemote(), j.buildAndAssertSuccess(p));
             p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {dir('betadir') {echo(/here ${pwd()}/)}}}", true));
             j.assertLogContains("here " + beta.getWorkspaceFor(p).child("betadir").getRemote(), j.buildAndAssertSuccess(p));
+        });
+    }
+
+    @Issue("JENKINS-70528")
+    @Test public void nestedNodeSameAgent() throws Throwable {
+        sessions.then(j -> {
+            logging.record(ExecutorStepDynamicContext.class, Level.FINE).record(FilePathDynamicContext.class, Level.FINE);
+            DumbSlave big = new DumbSlave("big", new File(j.jenkins.getRootDir(), "agent-work-dirs/big").getAbsolutePath(), j.createComputerLauncher(null));
+            big.setLabelString("alpha beta");
+            big.setNumExecutors(2);
+            j.jenkins.addNode(big);
+            j.waitOnline(big);
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {echo(/here ${pwd()}!/)}}", true));
+            j.assertLogContains("here " + big.getWorkspaceFor(p).getRemote() + "@2!", j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {ws('alphadir') {node('beta') {echo(/here ${pwd()}!/)}}}", true));
+            /* TODO does not yet work; FilePathDynamicContext from ws('alphadir') takes precedence:
+            j.assertLogContains("here " + big.getWorkspaceFor(p).getRemote() + "@2!", j.buildAndAssertSuccess(p));
+            */
+            j.assertLogContains("here " + big.getRootPath().child("alphadir").getRemote() + "!", j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {ws('betadir') {echo(/here ${pwd()}!/)}}}", true));
+            j.assertLogContains("here " + big.getRootPath().child("betadir").getRemote() + "!", j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {dir('alphadir') {node('beta') {echo(/here ${pwd()}!/)}}}", true));
+            /* TODO same, with dir('alphadir'):
+            j.assertLogContains("here " + big.getWorkspaceFor(p).getRemote() + "@2!", j.buildAndAssertSuccess(p));
+            */
+            j.assertLogContains("here " + big.getWorkspaceFor(p).child("alphadir").getRemote() + "!", j.buildAndAssertSuccess(p));
+            p.setDefinition(new CpsFlowDefinition("node('alpha') {node('beta') {dir('betadir') {echo(/here ${pwd()}!/)}}}", true));
+            j.assertLogContains("here " + big.getWorkspaceFor(p).sibling(big.getWorkspaceFor(p).getBaseName() + "@2").child("betadir").getRemote() + "!", j.buildAndAssertSuccess(p));
         });
     }
 
