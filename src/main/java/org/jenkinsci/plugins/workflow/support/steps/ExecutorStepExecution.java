@@ -21,6 +21,7 @@ import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.PeriodicWork;
 import hudson.model.Queue;
 import hudson.model.ResourceList;
 import hudson.model.Result;
@@ -41,12 +42,15 @@ import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.Serializable;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -242,6 +246,49 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     }
                 }
             }
+        }
+
+    }
+
+    /**
+     * Looks for executions whose {@link #getStatus} would be neither running nor scheduled, and cancels them.
+     */
+    @Extension public static final class AnomalousStatus extends PeriodicWork {
+
+        @Override public long getRecurrencePeriod() {
+            return Duration.ofHours(1).toMillis();
+        }
+
+        @Override protected void doRun() throws Exception {
+            Set<StepContext> knownTasks = new HashSet<>();
+            for (Queue.Item item : Queue.getInstance().getItems()) {
+                if (item.task instanceof PlaceholderTask) {
+                    knownTasks.add(((PlaceholderTask) item.task).context);
+                }
+            }
+            Jenkins j = Jenkins.getInstanceOrNull();
+            if (j != null) {
+                for (Computer c : j.getComputers()) {
+                    for (Executor e : c.getExecutors()) {
+                        Queue.Executable exec = e.getCurrentExecutable();
+                        if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                            knownTasks.add(((PlaceholderTask.PlaceholderExecutable) exec).getParent().context);
+                        }
+                    }
+                }
+            }
+            StepExecution.applyAll(ExecutorStepExecution.class, exec -> {
+                StepContext ctx = exec.getContext();
+                if (!knownTasks.contains(ctx)) {
+                    try {
+                        ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; cancelling");
+                    } catch (IOException | InterruptedException x) {
+                        LOGGER.log(Level.WARNING, null, x);
+                    }
+                    ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
+                }
+                return null;
+            });
         }
 
     }
