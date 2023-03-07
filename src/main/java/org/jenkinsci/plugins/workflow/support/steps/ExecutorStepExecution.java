@@ -256,13 +256,25 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Extension public static final class AnomalousStatus extends PeriodicWork {
 
         @Override public long getRecurrencePeriod() {
-            return Duration.ofHours(1).toMillis();
+            return Duration.ofMinutes(30).toMillis();
         }
 
+        @Override public long getInitialDelay() {
+            // Do not run too soon after startup, in case things are still loading, agents are still reattaching, etc.
+            return Duration.ofMinutes(15).toMillis();
+        }
+
+        /**
+         * Tasks considered to be in an anomalous status the last time we ran.
+         */
+        private Set<StepContext> anomalous = Set.of();
+
         @Override protected void doRun() throws Exception {
+            LOGGER.fine("checking");
             Set<StepContext> knownTasks = new HashSet<>();
             for (Queue.Item item : Queue.getInstance().getItems()) {
                 if (item.task instanceof PlaceholderTask) {
+                    LOGGER.fine(() -> "pending " + item);
                     knownTasks.add(((PlaceholderTask) item.task).context);
                 }
             }
@@ -272,23 +284,37 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     for (Executor e : c.getExecutors()) {
                         Queue.Executable exec = e.getCurrentExecutable();
                         if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                            LOGGER.fine(() -> "running " + exec);
                             knownTasks.add(((PlaceholderTask.PlaceholderExecutable) exec).getParent().context);
                         }
                     }
                 }
             }
+            Set<StepContext> newAnomalous = new HashSet<>();
             StepExecution.applyAll(ExecutorStepExecution.class, exec -> {
                 StepContext ctx = exec.getContext();
                 if (!knownTasks.contains(ctx)) {
-                    try {
-                        ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; cancelling");
-                    } catch (IOException | InterruptedException x) {
-                        LOGGER.log(Level.WARNING, null, x);
+                    LOGGER.warning(() -> "do not know about " + ctx);
+                    if (anomalous.contains(ctx)) {
+                        try {
+                            ctx.get(TaskListener.class).error("node block still appears to be neither running nor scheduled; cancelling");
+                        } catch (IOException | InterruptedException x) {
+                            LOGGER.log(Level.WARNING, null, x);
+                        }
+                        ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
+                    } else {
+                        newAnomalous.add(ctx);
                     }
-                    ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
+                } else {
+                    LOGGER.fine(() -> "know about " + ctx);
                 }
                 return null;
-            });
+            }).get();
+            for (StepContext ctx : newAnomalous) {
+                ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; will cancel if this condition persists");
+            }
+            LOGGER.fine(() -> "done checking: " + anomalous + " → " + newAnomalous);
+            anomalous = newAnomalous;
         }
 
     }
