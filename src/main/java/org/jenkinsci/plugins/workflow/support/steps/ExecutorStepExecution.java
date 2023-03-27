@@ -429,6 +429,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return j.getNode(label);
         }
 
+        @Deprecated
         @Override public boolean isBuildBlocked() {
             return false;
         }
@@ -535,6 +536,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return hasPermission(Item.CANCEL);
         }
 
+        /**
+         * @deprecated use {@link #getOwnerExecutable} (which does not require a dependency on this plugin) if your core dep is 2.389+
+         */
+        @Deprecated
         public @CheckForNull Run<?,?> run() {
             try {
                 if (!context.isReady()) {
@@ -548,6 +553,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        /**
+         * @deprecated use {@link #getOwnerExecutable} (which does not require a dependency on this plugin) if your core dep is 2.389+
+         */
+        @Deprecated
         public @CheckForNull Run<?,?> runForDisplay() {
             Run<?,?> r = run();
             if (r == null && /* not stored prior to 1.13 */runId != null) {
@@ -558,6 +567,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
             return r;
+        }
+
+        // TODO 2.389+ @Override
+        public @CheckForNull Queue.Executable getOwnerExecutable() {
+            Run<?, ?> r = runForDisplay();
+            return r instanceof Queue.Executable ? (Queue.Executable) r : null;
         }
 
         @Exported
@@ -721,7 +736,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public long getEstimatedDuration() {
-            Run<?,?> r = run();
+            Run<?,?> r = runForDisplay();
             // Not accurate if there are multiple agents in one build, but better than nothing:
             return r != null ? r.getEstimatedDuration() : -1;
         }
@@ -995,12 +1010,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             @Override public Queue.Executable getParentExecutable() {
-                Run<?, ?> b = runForDisplay();
-                if (b instanceof Queue.Executable) {
-                    return (Queue.Executable) b;
-                } else {
-                    return null;
-                }
+                return getOwnerExecutable();
             }
 
             @Exported
