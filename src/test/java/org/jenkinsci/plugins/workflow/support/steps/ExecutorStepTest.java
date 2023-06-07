@@ -24,7 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.gargoylesoftware.htmlunit.Page;
+import org.htmlunit.Page;
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.FilePath;
@@ -80,6 +80,7 @@ import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.IOUtils;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.*;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
@@ -604,8 +605,7 @@ public class ExecutorStepTest {
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 r.waitForMessage("[Pipeline] node", b);
 
-                FlowNode executorStartNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
-                assertNotNull(executorStartNode);
+                FlowNode executorStartNode = await().until(() -> new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate()), notNullValue());
 
                 assertNotNull(executorStartNode.getAction(QueueItemAction.class));
                 assertEquals(QueueItemAction.QueueState.QUEUED, QueueItemAction.getNodeState(executorStartNode));
