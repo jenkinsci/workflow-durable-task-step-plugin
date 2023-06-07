@@ -24,7 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.gargoylesoftware.htmlunit.Page;
+import org.htmlunit.Page;
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.FilePath;
