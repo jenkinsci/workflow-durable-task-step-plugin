@@ -658,11 +658,11 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                 getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output.produce(), StandardCharsets.UTF_8) : null);
             } else {
                 if (returnStdout) {
-                    listener().getLogger().write(output.produce()); // diagnostic
+                    _listener().getLogger().write(output.produce()); // diagnostic
                 }
                 if (originalCause != null) {
                     // JENKINS-28822: Use the previous cause instead of throwing a new AbortException
-                    listener().getLogger().println("script returned exit code " + exitCode);
+                    _listener().getLogger().println("script returned exit code " + exitCode);
                     getContext().onFailure(originalCause);
                 } else {
                     getContext().onFailure(new AbortException("script returned exit code " + exitCode));
