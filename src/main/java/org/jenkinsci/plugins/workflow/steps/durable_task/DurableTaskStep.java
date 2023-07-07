@@ -64,6 +64,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import jenkins.tasks.filters.EnvVarsFilterableBuilder;
+import jenkins.util.SystemProperties;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -203,7 +204,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
     /** If set to false, disables {@link Execution#watching} mode. */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable only for tests")
     @Restricted(NoExternalUse.class)
-    public static boolean USE_WATCHING = Boolean.getBoolean(DurableTaskStep.class.getName() + ".USE_WATCHING"); // JENKINS-52165: turn back on by default
+    public static boolean USE_WATCHING = SystemProperties.getBoolean(DurableTaskStep.class.getName() + ".USE_WATCHING", true);
 
     /** How many seconds to wait before interrupting remote calls and before forcing cleanup when the step is stopped */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "public & mutable for script console access")
