@@ -781,8 +781,8 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             String name = c.getName();
             StepExecution.applyAll(Execution.class, exec -> {
                 if (exec.watching && exec.node.equals(name)) {
-                    LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " immediately");
-                    threadPool().schedule(exec, 1, TimeUnit.SECONDS);
+                    LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " shortly");
+                    threadPool().schedule(exec::check, 1, TimeUnit.SECONDS);
                 }
                 return null;
             });
