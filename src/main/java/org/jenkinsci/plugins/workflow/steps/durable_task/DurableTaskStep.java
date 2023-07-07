@@ -30,17 +30,21 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
+import hudson.Extension;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.Util;
 import hudson.init.Terminator;
+import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
+import hudson.slaves.ComputerListener;
+import hudson.slaves.OfflineCause;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
@@ -759,6 +763,29 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         @Override public void exited(int code, byte[] output) throws Exception {
             listener.getLogger().close();
             execution.exited(code, output);
+        }
+
+    }
+
+    @Extension public static final class AgentReconnectionListener extends ComputerListener {
+
+        @Override public void onOffline(Computer c, OfflineCause cause) {
+            check(c);
+        }
+
+        @Override public void onOnline(Computer c, TaskListener listener) throws IOException, InterruptedException {
+            check(c);
+        }
+
+        private void check(Computer c) {
+            String name = c.getName();
+            StepExecution.applyAll(Execution.class, exec -> {
+                if (exec.watching && exec.node.equals(name)) {
+                    LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " immediately");
+                    threadPool().schedule(exec, 1, TimeUnit.SECONDS);
+                }
+                return null;
+            });
         }
 
     }
