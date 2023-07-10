@@ -77,6 +77,7 @@ import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.Handler;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
@@ -594,9 +595,12 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                     Integer exitCode = controller.exitStatus(workspace, launcher(), listener);
                     if (exitCode == null) {
                         LOGGER.log(Level.FINE, "still running in {0} on {1}", new Object[] {remote, node});
+                    } else if (recurrencePeriod == 0) {
+                        LOGGER.fine(() -> "late check in " + remote + " on " + node + " ignored");
                     } else if (awaitingAsynchExit) {
                         recurrencePeriod = 0;
-                        getContext().onFailure(new AbortException("script apparently exited with code " + exitCode + " but asynchronous notification was lost"));
+                        listener.getLogger().println("script apparently exited with code " + exitCode + " but asynchronous notification was lost");
+                        handleExit(exitCode, () -> controller.getOutput(workspace, launcher()));
                     } else {
                         LOGGER.log(Level.FINE, "exited with {0} in {1} on {2}; expect asynchronous exit soon", new Object[] {exitCode, remote, node});
                         awaitingAsynchExit = true;
@@ -632,6 +636,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
 
         // called remotely from HandlerImpl
         @Override public void exited(int exitCode, byte[] output) throws Exception {
+            recurrencePeriod = 0;
             try {
                 getContext().get(TaskListener.class);
             } catch (IOException | InterruptedException x) {
@@ -648,7 +653,6 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                 getContext().onFailure(new IllegalStateException("did not expect output but got some"));
                 return;
             }
-            recurrencePeriod = 0;
             handleExit(exitCode, () -> output);
         }
 
@@ -770,10 +774,18 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
     @Extension public static final class AgentReconnectionListener extends ComputerListener {
 
         @Override public void onOffline(Computer c, OfflineCause cause) {
+            if (Jenkins.get().isTerminating()) {
+                LOGGER.fine(() -> "Skipping check on " + c.getName() + " during shutdown");
+                return;
+            }
             check(c);
         }
 
         @Override public void onOnline(Computer c, TaskListener listener) throws IOException, InterruptedException {
+            if (!FlowExecutionList.get().isResumptionComplete()) {
+                LOGGER.fine(() -> "Skipping check on " + c.getName() + " before builds are ready");
+                return;
+            }
             check(c);
         }
 
@@ -781,8 +793,8 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             String name = c.getName();
             StepExecution.applyAll(Execution.class, exec -> {
                 if (exec.watching && exec.node.equals(name)) {
-                    LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " shortly");
-                    threadPool().schedule(exec::check, 1, TimeUnit.SECONDS);
+                    LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " soon");
+                    threadPool().schedule(exec::check, 15, TimeUnit.SECONDS);
                 }
                 return null;
             });
