@@ -76,9 +76,20 @@
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
                 <artifactId>bom-2.361.x</artifactId>
-                <version>1654.vcb_69d035fa_20</version>
+                <version>2081.v85885a_d2e5c5</version>
                 <scope>import</scope>
                 <type>pom</type>
+            </dependency>
+            <!-- TODO until in BOM -->
+            <dependency>
+                <groupId>org.jenkins-ci.plugins</groupId>
+                <artifactId>durable-task</artifactId>
+                <version>510.v324450f8dca_4</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jenkins-ci.plugins.workflow</groupId>
+                <artifactId>workflow-api</artifactId>
+                <version>1232.v1679fa_2f0f76</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
