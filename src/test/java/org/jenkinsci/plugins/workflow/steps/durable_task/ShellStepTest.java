@@ -42,7 +42,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
@@ -443,14 +442,13 @@ public class ShellStepTest {
             };
         }
     }
-    private static class RemotableBuildListener implements BuildListener, OutputStreamTaskListener {
+    private static class RemotableBuildListener extends OutputStreamTaskListener.Default implements BuildListener {
         private static final long serialVersionUID = 1;
         /** actual implementation */
         private final TaskListener delegate;
         /** records allocation & deserialization history; e.g., {@code master → agent} */
         private final String id;
         private transient OutputStream out;
-        private transient PrintStream logger;
         RemotableBuildListener(TaskListener delegate) {
             this(delegate, "master");
         }
@@ -480,13 +478,6 @@ public class ShellStepTest {
                 };
             }
             return out;
-        }
-        @NonNull
-        @Override public PrintStream getLogger() {
-            if (logger == null) {
-                logger = new PrintStream(getOutputStream(), true, StandardCharsets.UTF_8);
-            }
-            return logger;
         }
         private Object writeReplace() {
             /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:

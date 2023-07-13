@@ -444,13 +444,12 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         /**
          * Interprets {@link OutputStream#close} as a signal to end a final newline if necessary.
          */
-        private static final class NewlineSafeTaskListener implements OutputStreamTaskListener {
+        private static final class NewlineSafeTaskListener extends OutputStreamTaskListener.Default {
 
             private static final long serialVersionUID = 1;
 
             private final TaskListener delegate;
             private transient OutputStream out;
-            private transient PrintStream logger;
 
             NewlineSafeTaskListener(TaskListener delegate) {
                 this.delegate = delegate;
@@ -484,14 +483,6 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                     };
                 }
                 return out;
-            }
-
-            @NonNull
-            @Override public synchronized PrintStream getLogger() {
-                if (logger == null) {
-                    logger = new PrintStream(getOutputStream(), false, StandardCharsets.UTF_8);
-                }
-                return logger;
             }
 
         }
