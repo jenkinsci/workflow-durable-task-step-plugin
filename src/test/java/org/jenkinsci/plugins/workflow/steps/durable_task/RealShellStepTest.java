@@ -24,18 +24,23 @@
 
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import hudson.ExtensionList;
 import hudson.Functions;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.StringParameterDefinition;
 import hudson.model.StringParameterValue;
+import hudson.slaves.AbstractCloudSlave;
+import hudson.slaves.ComputerListener;
 import java.io.File;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import jenkins.slaves.restarter.JnlpSlaveRestarterInstaller;
 import static org.awaitility.Awaitility.await;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
@@ -59,7 +64,14 @@ public final class RealShellStepTest {
     @Test public void shellScriptExitingAcrossRestart() throws Throwable {
         Assume.assumeFalse("TODO translate to batch script", Functions.isWindows());
         rr.startJenkins();
-        inboundAgents.createAgent(rr, InboundAgentRule.Options.newBuilder().color(PrefixedOutputStream.Color.MAGENTA).label("remote").build());
+        rr.runRemotely(RealShellStepTest::disableJnlpSlaveRestarterInstaller);
+        inboundAgents.createAgent(rr, InboundAgentRule.Options.newBuilder().
+            color(PrefixedOutputStream.Color.MAGENTA).
+            label("remote").
+            withLogger(FileMonitoringTask.class, Level.FINER).
+            withLogger(DurableTaskStep.class, Level.FINEST).
+            withPackageLogger(FileLogStorage.class, Level.FINE).
+            build());
         try (var tailLog = new TailLog(rr, "p", 1).withColor(PrefixedOutputStream.Color.YELLOW)) {
             rr.runRemotely(RealShellStepTest::shellScriptExitingAcrossRestart1);
             rr.stopJenkins();
@@ -72,6 +84,16 @@ public final class RealShellStepTest {
             tailLog.waitForCompletion();
         }
     }
+
+    /**
+     * Simulate {@link AbstractCloudSlave} as in https://github.com/jenkinsci/jenkins/pull/7693.
+     * Most users should be using cloud agents,
+     * and this lets us preserve {@link InboundAgentRule.Options.Builder#withLogger(Class, Level)}.
+     */
+    private static void disableJnlpSlaveRestarterInstaller(JenkinsRule r) throws Throwable {
+        ComputerListener.all().remove(ExtensionList.lookupSingleton(JnlpSlaveRestarterInstaller.class));
+    }
+
     private static void shellScriptExitingAcrossRestart1(JenkinsRule r) throws Throwable {
         var p = r.createProject(WorkflowJob.class, "p");
         var f = new File(r.jenkins.getRootDir(), "f");
@@ -81,13 +103,12 @@ public final class RealShellStepTest {
         r.waitForMessage("+ sleep 5", b);
         r.jenkins.doQuietDown(true, 0, null);
     }
+
     private static void shellScriptExitingAcrossRestart2(JenkinsRule r) throws Throwable {
         var p = (WorkflowJob) r.jenkins.getItem("p");
         var b = p.getLastBuild();
         r.assertBuildStatusSuccess(r.waitForCompletion(b));
-        /* TODO this late output is sometimes lost:
         r.assertLogContains("+ touch " + new File(r.jenkins.getRootDir(), "f"), b);
-        */
     }
 
 }

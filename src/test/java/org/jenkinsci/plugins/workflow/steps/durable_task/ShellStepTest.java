@@ -97,6 +97,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.hamcrest.MatcherAssert.assertThat;
+import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
 import static org.junit.Assert.assertTrue;
 import org.junit.Assume;
 import static org.junit.Assume.assumeFalse;
@@ -442,12 +443,13 @@ public class ShellStepTest {
             };
         }
     }
-    private static class RemotableBuildListener implements BuildListener {
+    private static class RemotableBuildListener implements BuildListener, OutputStreamTaskListener {
         private static final long serialVersionUID = 1;
         /** actual implementation */
         private final TaskListener delegate;
         /** records allocation & deserialization history; e.g., {@code master → agent} */
         private final String id;
+        private transient OutputStream out;
         private transient PrintStream logger;
         RemotableBuildListener(TaskListener delegate) {
             this(delegate, "master");
@@ -457,10 +459,10 @@ public class ShellStepTest {
             this.id = id;
         }
         @NonNull
-        @Override public PrintStream getLogger() {
-            if (logger == null) {
-                final OutputStream os = delegate.getLogger();
-                logger = new PrintStream(new LineTransformationOutputStream() {
+        @Override public OutputStream getOutputStream() {
+            if (out == null) {
+                final OutputStream os = OutputStreamTaskListener.getOutputStream(delegate);
+                out = new LineTransformationOutputStream() {
                     @Override protected void eol(byte[] b, int len) throws IOException {
                         for (int i = 0; i < len - 1; i++) { // all but NL
                             os.write(id.equals("master") ? b[i] : Character.toUpperCase(b[i]));
@@ -475,7 +477,14 @@ public class ShellStepTest {
                         super.close();
                         os.close();
                     }
-                }, true);
+                };
+            }
+            return out;
+        }
+        @NonNull
+        @Override public PrintStream getLogger() {
+            if (logger == null) {
+                logger = new PrintStream(getOutputStream(), true, StandardCharsets.UTF_8);
             }
             return logger;
         }
