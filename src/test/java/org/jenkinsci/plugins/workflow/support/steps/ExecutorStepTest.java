@@ -772,9 +772,10 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() throws Throwable {
         sessions.then(r -> {
-            // Note: for Jenkins versions > 2.65, the number of agents must be increased to 5.
+            // Note: for Jenkins versions > 2.265, the number of agents must be 5.
+            // Older Jenkins versions used 3 agents.
             // This is due to changes in the Load Balancer (See JENKINS-60563).
-            int totalAgents = Jenkins.getVersion().isNewerThan(new VersionNumber("2.265")) ? 5 : 3;
+            int totalAgents = 5;
             createNOnlineAgentWithLabels(r, totalAgents, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
