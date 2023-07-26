@@ -93,6 +93,11 @@
                 <artifactId>workflow-api</artifactId>
                 <version>1246.v59f1a_f2e70ca_</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/294 -->
             </dependency>
+            <dependency>
+                <groupId>org.jenkins-ci.plugins</groupId>
+                <artifactId>credentials-binding</artifactId>
+                <version>621.v58c0fb_d285a_c</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
     <dependencies>
