@@ -86,12 +86,12 @@
             <dependency>
                 <groupId>org.jenkins-ci.plugins</groupId>
                 <artifactId>durable-task</artifactId>
-                <version>510.v324450f8dca_4</version>
+                <version>512.vb_fa_f04b_09178</version> <!-- TODO https://github.com/jenkinsci/durable-task-plugin/pull/186 -->
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-api</artifactId>
-                <version>1246.v59f1a_f2e70ca_</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/294 -->
+                <version>1247.v12f6b_094cea_d</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/294 -->
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins</groupId>
