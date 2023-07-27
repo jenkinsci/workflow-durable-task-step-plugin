@@ -61,7 +61,7 @@ public final class AgentErrorCondition extends ErrorCondition {
                 c -> c instanceof ExecutorStepExecution.RemovedNodeCause || c instanceof ExecutorStepExecution.QueueTaskCancelled)) {
             return true;
         }
-        if (isClosedChannel(t)) {
+        if (isClosedChannelException(t)) {
             return true;
         }
         if (t instanceof MissingContextVariableException) {
@@ -75,7 +75,8 @@ public final class AgentErrorCondition extends ErrorCondition {
         return false;
     }
 
-    private static boolean isClosedChannel(Throwable t) {
+    // TODO https://github.com/jenkinsci/remoting/pull/657
+    private static boolean isClosedChannelException(Throwable t) {
         if (t instanceof ClosedChannelException) {
             return true;
         } else if (t instanceof ChannelClosedException) {
@@ -85,7 +86,7 @@ public final class AgentErrorCondition extends ErrorCondition {
         } else if (t == null) {
             return false;
         } else {
-            return isClosedChannel(t.getCause()) || Stream.of(t.getSuppressed()).anyMatch(AgentErrorCondition::isClosedChannel);
+            return isClosedChannelException(t.getCause()) || Stream.of(t.getSuppressed()).anyMatch(AgentErrorCondition::isClosedChannelException);
         }
     }
 
