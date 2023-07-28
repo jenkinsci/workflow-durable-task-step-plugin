@@ -430,11 +430,11 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                     LOGGER.log(Level.FINEST, "JENKINS-34021: DurableTaskStep.Execution.listener present in {0}", context);
                 } else {
                     LOGGER.log(Level.WARNING, "JENKINS-34021: TaskListener not available upon request in {0}", context);
-                    l = new LogTaskListener(LOGGER, Level.FINE);
+                    l = TaskListener.NULL;
                 }
             } catch (Exception x) {
                 LOGGER.log(Level.FINE, "JENKINS-34021: could not get TaskListener in " + context, x);
-                l = new LogTaskListener(LOGGER, Level.FINE);
+                l = TaskListener.NULL;
                 recurrencePeriod = 0;
             }
             return l;
