@@ -1,13 +1,23 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
+
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
-import hudson.FilePath;
 import hudson.EnvVars;
+import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
@@ -18,19 +28,15 @@ import hudson.console.ConsoleLogFilter;
 import hudson.console.ConsoleNote;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
-import hudson.model.BooleanParameterDefinition;
-import hudson.model.BooleanParameterValue;
 import hudson.model.BuildListener;
 import hudson.model.Descriptor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
-import hudson.model.ParametersAction;
-import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.Run;
-import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
+import hudson.remoting.Channel;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.tasks.BatchFile;
@@ -61,12 +67,8 @@ import java.util.logging.LogRecord;
 import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
-
-import static org.hamcrest.Matchers.*;
-
 import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
-
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
@@ -81,6 +83,7 @@ import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
+import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -91,22 +94,15 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.hamcrest.MatcherAssert.assertThat;
-import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
-import static org.junit.Assert.assertTrue;
 import org.junit.Assume;
-import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ErrorCollector;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
-import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
@@ -115,7 +111,18 @@ import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
+@RunWith(Parameterized.class)
 public class ShellStepTest {
+
+    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
+        return List.of(false, true);
+    }
+
+    @Parameterized.BeforeParam public static void useWatching(boolean x) {
+        DurableTaskStep.USE_WATCHING = x;
+    }
+
+    @Parameterized.Parameter public boolean useWatching;
 
     @ClassRule
     public static BuildWatcher buildWatcher = new BuildWatcher();
@@ -124,7 +131,6 @@ public class ShellStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
-    @Rule public FlagRule<Boolean> useWatching = new FlagRule<>(() -> DurableTaskStep.USE_WATCHING, x -> DurableTaskStep.USE_WATCHING = x);
 
     /**
      * Failure in the shell script should mark the step as red
@@ -275,7 +281,7 @@ public class ShellStepTest {
                 return launcher.decorateByPrefix("nice");
             }
         }
-        @TestExtension("launcherDecorator") public static class DescriptorImpl extends StepDescriptor {
+        @TestExtension({"launcherDecorator[watching=false]", "launcherDecorator[watching=true]"}) public static class DescriptorImpl extends StepDescriptor {
             @Override public Set<? extends Class<?>> getRequiredContext() {
                 return Collections.emptySet();
             }
@@ -382,8 +388,8 @@ public class ShellStepTest {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        assumeTrue(useWatching);
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-        DurableTaskStep.USE_WATCHING = true;
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
@@ -414,7 +420,7 @@ public class ShellStepTest {
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
     }
-    @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
+    @TestExtension("remoteLogger[watching=true]") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
             final LogStorage base;
             try {
@@ -490,7 +496,7 @@ public class ShellStepTest {
 
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
-        DurableTaskStep.USE_WATCHING = true;
+        assumeTrue(useWatching);
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
@@ -628,29 +634,25 @@ public class ShellStepTest {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         j.showAgentLogs(s, logging);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.addProperty(new ParametersDefinitionProperty(new BooleanParameterDefinition("WATCHING", false, null)));
         String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
             "['" + builtInNodeLabel + "', 'remote'].each {label ->\n" +
             "  node(label) {\n" +
             "    withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
-            "      sh 'set +x; echo \"with final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
-            "      sh 'set +x; printf \"missing final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
+            "      sh 'set +x; echo \"node=$NODE_NAME with final newline\"'\n" +
+            "      sh 'set +x; printf \"node=$NODE_NAME missing final newline\"'\n" +
             "    }\n" +
             "  }\n" +
             "}", true));
-            for (boolean watching : new boolean[] {false, true}) {
-                DurableTaskStep.USE_WATCHING = watching;
-                String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
-                for (String node : new String[] {builtInNodeLabel, "remote"}) {
-                    for (String mode : new String[] {"with", "missing"}) {
-                        errors.checkThat(log, containsString(mode + " final newline node=" + node + " watching=" + watching));
-                    }
-                }
-                errors.checkThat("no blank lines with watching=" + watching, log, not(containsString("\n\n")));
-                errors.checkThat(log, not(containsString("watching=false[Pipeline]")));
-                errors.checkThat(log, not(containsString("watching=true[Pipeline]")));
+        String log = JenkinsRule.getLog(j.buildAndAssertSuccess(p));
+        for (String node : new String[] {builtInNodeLabel, "remote"}) {
+            for (String mode : new String[] {"with", "missing"}) {
+                errors.checkThat(log, containsString("node=" + node + " " + mode + " final newline"));
             }
+        }
+        errors.checkThat("no blank lines", log, not(containsString("\n\n")));
+        // TODO more robust to assert against /missing final newline./ in line mode
+        errors.checkThat(log, not(containsString("missing final newline[Pipeline]")));
     }
 
     @Issue("JENKINS-34021")
@@ -769,7 +771,7 @@ public class ShellStepTest {
         }
     }
     
-    @TestExtension(value = "shouldInvokeLauncherDecoratorForShellStep")
+    @TestExtension({"shouldInvokeLauncherDecoratorForShellStep[watching=false]", "shouldInvokeLauncherDecoratorForShellStep[watching=true]"})
     public static final class MyNodeLauncherDecorator extends LauncherDecorator {
 
         @NonNull

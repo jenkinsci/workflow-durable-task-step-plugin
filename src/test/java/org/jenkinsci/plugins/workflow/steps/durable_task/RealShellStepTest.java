@@ -33,6 +33,7 @@ import hudson.model.StringParameterValue;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.ComputerListener;
 import java.io.File;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.slaves.restarter.JnlpSlaveRestarterInstaller;
@@ -44,13 +45,22 @@ import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.PrefixedOutputStream;
 import org.jvnet.hudson.test.RealJenkinsRule;
 import org.jvnet.hudson.test.TailLog;
 
+@RunWith(Parameterized.class)
 public final class RealShellStepTest {
+
+    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
+        return List.of(false, true);
+    }
+
+    @Parameterized.Parameter public boolean useWatching;
 
     private static final Logger LOGGER = Logger.getLogger(RealShellStepTest.class.getName());
 
@@ -62,6 +72,7 @@ public final class RealShellStepTest {
     @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
 
     @Test public void shellScriptExitingAcrossRestart() throws Throwable {
+        rr.javaOptions("-D" + DurableTaskStep.class.getName() + ".USE_WATCHING=" + useWatching);
         Assume.assumeFalse("TODO translate to batch script", Functions.isWindows());
         rr.startJenkins();
         rr.runRemotely(RealShellStepTest::disableJnlpSlaveRestarterInstaller);
