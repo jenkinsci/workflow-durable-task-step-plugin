@@ -47,7 +47,6 @@ import hudson.slaves.ComputerListener;
 import hudson.slaves.OfflineCause;
 import hudson.util.DaemonThreadFactory;
 import hudson.util.FormValidation;
-import hudson.util.LogTaskListener;
 import hudson.util.NamingThreadFactory;
 import hudson.util.StreamTaskListener;
 import java.io.FilterOutputStream;
