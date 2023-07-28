@@ -33,6 +33,7 @@ import hudson.model.StringParameterValue;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.ComputerListener;
 import java.io.File;
+import java.time.Duration;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -42,7 +43,6 @@ import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
-import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -54,7 +54,7 @@ import org.jvnet.hudson.test.RealJenkinsRule;
 import org.jvnet.hudson.test.TailLog;
 
 @RunWith(Parameterized.class)
-public final class RealShellStepTest {
+public final class DurableTaskStepTest {
 
     @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
         return List.of(false, true);
@@ -62,20 +62,20 @@ public final class RealShellStepTest {
 
     @Parameterized.Parameter public boolean useWatching;
 
-    private static final Logger LOGGER = Logger.getLogger(RealShellStepTest.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(DurableTaskStepTest.class.getName());
 
     @Rule public RealJenkinsRule rr = new RealJenkinsRule().
+        javaOptions("-Dorg.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis=" + Duration.ofMinutes(5).toMillis()). // reconnection could be >15s esp. on Windows
         withColor(PrefixedOutputStream.Color.BLUE).
         withLogger(DurableTaskStep.class, Level.FINE).
         withLogger(FileMonitoringTask.class, Level.FINE);
 
     @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
 
-    @Test public void shellScriptExitingAcrossRestart() throws Throwable {
+    @Test public void scriptExitingAcrossRestart() throws Throwable {
         rr.javaOptions("-D" + DurableTaskStep.class.getName() + ".USE_WATCHING=" + useWatching);
-        Assume.assumeFalse("TODO translate to batch script", Functions.isWindows());
         rr.startJenkins();
-        rr.runRemotely(RealShellStepTest::disableJnlpSlaveRestarterInstaller);
+        rr.runRemotely(DurableTaskStepTest::disableJnlpSlaveRestarterInstaller);
         inboundAgents.createAgent(rr, InboundAgentRule.Options.newBuilder().
             color(PrefixedOutputStream.Color.MAGENTA).
             label("remote").
@@ -84,14 +84,14 @@ public final class RealShellStepTest {
             withPackageLogger(FileLogStorage.class, Level.FINE).
             build());
         try (var tailLog = new TailLog(rr, "p", 1).withColor(PrefixedOutputStream.Color.YELLOW)) {
-            rr.runRemotely(RealShellStepTest::shellScriptExitingAcrossRestart1);
+            rr.runRemotely(DurableTaskStepTest::scriptExitingAcrossRestart1);
             rr.stopJenkins();
             var f = new File(rr.getHome(), "f");
             LOGGER.info(() -> "Waiting for " + f + " to be written…");
             await().until(f::isFile);
             LOGGER.info("…done.");
             rr.startJenkins();
-            rr.runRemotely(RealShellStepTest::shellScriptExitingAcrossRestart2);
+            rr.runRemotely(DurableTaskStepTest::scriptExitingAcrossRestart2);
             tailLog.waitForCompletion();
         }
     }
@@ -105,21 +105,23 @@ public final class RealShellStepTest {
         ComputerListener.all().remove(ExtensionList.lookupSingleton(JnlpSlaveRestarterInstaller.class));
     }
 
-    private static void shellScriptExitingAcrossRestart1(JenkinsRule r) throws Throwable {
+    private static void scriptExitingAcrossRestart1(JenkinsRule r) throws Throwable {
         var p = r.createProject(WorkflowJob.class, "p");
         var f = new File(r.jenkins.getRootDir(), "f");
         p.addProperty(new ParametersDefinitionProperty(new StringParameterDefinition("F")));
-        p.setDefinition(new CpsFlowDefinition("node('remote') {sh 'sleep 5 && touch \"$F\"'}", true));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh 'sleep 5 && touch \"$F\"'} else {bat 'ping -n 5 localhost && copy nul \"%F%\" && dir \"%F%\"'}}", true));
         var b = p.scheduleBuild2(0, new ParametersAction(new StringParameterValue("F", f.getAbsolutePath()))).waitForStart();
-        r.waitForMessage("+ sleep 5", b);
+        r.waitForMessage(Functions.isWindows() ? ">ping -n 5 localhost" : "+ sleep 5", b);
         r.jenkins.doQuietDown(true, 0, null);
     }
 
-    private static void shellScriptExitingAcrossRestart2(JenkinsRule r) throws Throwable {
+    private static void scriptExitingAcrossRestart2(JenkinsRule r) throws Throwable {
         var p = (WorkflowJob) r.jenkins.getItem("p");
         var b = p.getLastBuild();
         r.assertBuildStatusSuccess(r.waitForCompletion(b));
-        r.assertLogContains("+ touch " + new File(r.jenkins.getRootDir(), "f"), b);
+        // In the case of Bourne shell, `+ touch …` is printed when the command actually runs.
+        // In the case of batch shell, the whole command is printed immediately, so we need to assert that the _output_ of `dir` is there.
+        r.assertLogContains(Functions.isWindows() ? "Directory of " + r.jenkins.getRootDir() : "+ touch " + new File(r.jenkins.getRootDir(), "f"), b);
     }
 
 }
