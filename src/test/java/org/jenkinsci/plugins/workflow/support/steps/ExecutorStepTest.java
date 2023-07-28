@@ -24,7 +24,16 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import org.htmlunit.Page;
+import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.FilePath;
@@ -70,8 +79,6 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import hudson.util.VersionNumber;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -80,8 +87,7 @@ import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
 import org.acegisecurity.Authentication;
 import org.apache.commons.io.IOUtils;
-import static org.awaitility.Awaitility.await;
-import static org.hamcrest.Matchers.*;
+import org.htmlunit.Page;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
@@ -100,30 +106,36 @@ import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.MockFolder;
-import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.TestExtension;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
+@RunWith(Parameterized.class)
 public class ExecutorStepTest {
+
+    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
+        return List.of(false, true);
+    }
+
+    @Parameterized.BeforeParam public static void useWatching(boolean x) {
+        DurableTaskStep.USE_WATCHING = x;
+    }
+
+    @Parameterized.Parameter public boolean useWatching;
 
     private static final Logger LOGGER = Logger.getLogger(ExecutorStepTest.class.getName());
 

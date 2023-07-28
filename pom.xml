@@ -67,6 +67,8 @@
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
         <jenkins.version>2.361.4</jenkins.version>
+        <!-- TODO until in plugin-pom -->
+        <jenkins-test-harness.version>2042.v787a_641a_9b_26</jenkins-test-harness.version>
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
@@ -76,9 +78,25 @@
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
                 <artifactId>bom-2.361.x</artifactId>
-                <version>1654.vcb_69d035fa_20</version>
+                <version>2081.v85885a_d2e5c5</version>
                 <scope>import</scope>
                 <type>pom</type>
+            </dependency>
+            <!-- TODO until in BOM -->
+            <dependency>
+                <groupId>org.jenkins-ci.plugins</groupId>
+                <artifactId>durable-task</artifactId>
+                <version>513.vc48a_a_075a_d93</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jenkins-ci.plugins.workflow</groupId>
+                <artifactId>workflow-api</artifactId>
+                <version>1248.v4b_91043341d2</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jenkins-ci.plugins</groupId>
+                <artifactId>credentials-binding</artifactId>
+                <version>621.v58c0fb_d285a_c</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
