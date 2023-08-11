@@ -32,7 +32,7 @@
             <j:choose>
                 <j:when test="${rAuth != null}">
                     <a href="${rootURL}/${r.parent.url}"><l:breakable value="${r.parent.fullDisplayName}"/></a>
-                    <t:buildProgressBar build="${it.parent}" executor="${executor}"/>
+                    <t:buildProgressBar build="${it}" executor="${executor}"/>
                 </j:when>
                 <j:otherwise>
                     <span>${%Unknown Pipeline node step}</span>
