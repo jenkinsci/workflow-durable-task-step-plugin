@@ -942,7 +942,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Occupies {@link Executor} while workflow uses this build agent.
          */
         @ExportedBean
-        private final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
+        @Restricted(NoExternalUse.class) // Class must be public for Jelly.
+        public final class PlaceholderExecutable implements ContinuableExecutable, AccessControlled {
 
             @Override public void run() {
                 TaskListener listener = null;
