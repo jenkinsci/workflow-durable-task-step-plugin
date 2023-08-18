@@ -349,8 +349,10 @@ public class ExecutorStepTest {
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).
                         record(ExecutorStepDynamicContext.class, Level.FINE).
+                        record(FileMonitoringTask.class, Level.FINEST).
                         record(WorkspaceList.class, Level.FINE);
                 Slave s = inboundAgents.createAgent(r, "dumbo");
+                r.showAgentLogs(s, logging);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -398,6 +400,7 @@ public class ExecutorStepTest {
                     Thread.sleep(100);
                 }
                 LOGGER.info("agent back online");
+                r.showAgentLogs(s, logging);
                 assertWorkspaceLocked(computer, workspacePath);
                 assertTrue(f2.isFile());
                 assertTrue(f1.delete());
