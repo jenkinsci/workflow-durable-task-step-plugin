@@ -41,7 +41,7 @@
         <div>
             <j:set var="label" value="${it.parent.enclosingLabel}"/>
             <j:choose>
-                <j:when test="${label != null}">
+                <j:when test="${rAuth != null and label != null}">
                     <l:breakable value="(${label})"/>
                 </j:when>
                 <j:otherwise>
