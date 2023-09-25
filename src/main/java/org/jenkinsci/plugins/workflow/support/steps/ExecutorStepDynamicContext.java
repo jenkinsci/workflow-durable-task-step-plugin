@@ -43,6 +43,7 @@ import java.io.Serializable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -90,12 +91,32 @@ public final class ExecutorStepDynamicContext implements Serializable {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
         }
-        Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
-        if (item == null) {
-            // TODO should also report when !ScheduleResult.created, since that is arguably an error
-            throw new IllegalStateException("queue refused " + task);
+        // If Jenkins restarts or crashes while we are waiting below, on the next startup the task may already be in
+        // the queue, in which case we should reuse it instead of scheduling a second task.
+        AtomicReference<Queue.Item> itemRef = new AtomicReference<>();
+        Queue.withLock(() -> {
+            for (Queue.Item item : Queue.getInstance().getItems()) {
+                if (item.task instanceof ExecutorStepExecution.PlaceholderTask) {
+                    ExecutorStepExecution.PlaceholderTask itemTask = (ExecutorStepExecution.PlaceholderTask) item.task;
+                    if (task.getCookie().equals(itemTask.getCookie())) {
+                        itemRef.set(item);
+                    }
+                }
+            }
+        });
+        // TODO: Do we need to check executor slots too in case there was a task in the queue but it has already started?
+        if (itemRef.get() == null) {
+            Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
+            if (item == null) {
+                // TODO should also report when !ScheduleResult.created, since that is arguably an error
+                throw new IllegalStateException("queue refused " + task);
+            }
+            LOGGER.fine(() -> "scheduled " + item + " for " + path + " on " + node);
+            itemRef.set(item);
+        } else {
+            LOGGER.fine(() -> "reusing " + itemRef.get() + ", which was already in the queue for " + path + " on " + node);
         }
-        LOGGER.fine(() -> "scheduled " + item + " for " + path + " on " + node);
+        Queue.Item item = itemRef.get();
         TaskListener listener = context.get(TaskListener.class);
         if (!node.isEmpty()) { // unlikely to be any delay for built-in node anyway
             listener.getLogger().println("Waiting for reconnection of " + node + " before proceeding with build");
@@ -158,8 +179,8 @@ public final class ExecutorStepDynamicContext implements Serializable {
         }
 
         @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
+            if (LOGGER.isLoggable(Level.FINER)) {
+                LOGGER.finer("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
             }
             return super.get(context);
         }

@@ -428,10 +428,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private Object readResolve() {
             if (cookie != null) {
                 synchronized (runningTasks) {
-                    runningTasks.put(cookie, new RunningTask());
+                    // If Jenkins stops while this step is resuming, there may be a PlaceholderTask in the queue as
+                    // well as in program.dat for the same step. We want to make sure not to create a second task to
+                    // avoid race conditions, so we use putIfAbsent.
+                    // TODO: This helps for runningTasks, but other fields like `stopping` may still be problematic.
+                    // Should we refactor things to guarantee that the relevant state is a singleton? For example,
+                    // introduce a PlaceholderTasksAction that holds a map of a new PlaceholderTaskState class, which
+                    // would hold most of what is currently in PlaceholderTask, and then PlaceholderTask would only
+                    // hold a `String cookie` field and would look up PlaceholderTaskState via the action so it wouldn't
+                    // matter where the task was serialized.
+                    runningTasks.putIfAbsent(cookie, new RunningTask());
                 }
             }
-            LOGGER.log(FINE, "deserializing previously scheduled {0}", this);
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.log(FINE, null, new Exception("deserializing previously scheduled " + this));
+            }
             return this;
         }
 
