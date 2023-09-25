@@ -50,6 +50,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -212,7 +213,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             state.resume(getContext());
         } catch (Exception x) { // JENKINS-40161
-            getContext().onFailure(x);
+            try {
+                // Use stop to make sure we clean up the queue and executors.
+                stop(x);
+            } catch (Exception x2) {
+                // I think this should be unreachable.
+                x.addSuppressed(x2);
+                getContext().onFailure(x);
+            }
         }
     }
 
@@ -865,6 +873,24 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public String toString() {
             return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie + ",auth=" + auth + '}';
+        }
+
+        @Override
+        public int hashCode() {
+            int hash = 7;
+            hash = 89 * hash + Objects.hashCode(this.context);
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            } else if (obj == null || getClass() != obj.getClass()) {
+                return false;
+            }
+            final PlaceholderTask other = (PlaceholderTask) obj;
+            return this.context.equals(other.context);
         }
 
         private static void finish(@CheckForNull final String cookie) {
