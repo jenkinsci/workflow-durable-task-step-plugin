@@ -54,7 +54,8 @@ public class ExecutorStepRjrTest {
     @Rule
     public RealJenkinsRule rjr = new RealJenkinsRule()
             .withLogger(ExecutorStepExecution.class, Level.FINE)
-            .withLogger(ExecutorStepDynamicContext.class, Level.FINE);
+            .withLogger(ExecutorStepDynamicContext.class, Level.FINE)
+            .javaOptions("-Dorg.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis=" + TimeUnit.SECONDS.toMillis(30));
 
     @Rule
     public InboundAgentRule iar = new InboundAgentRule();
