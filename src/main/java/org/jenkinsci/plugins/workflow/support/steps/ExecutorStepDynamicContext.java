@@ -94,16 +94,26 @@ public final class ExecutorStepDynamicContext implements Serializable {
         // If Jenkins restarts or crashes while we are waiting below, on the next startup the task may already be in
         // the queue, in which case we should reuse it instead of scheduling a second task.
         AtomicReference<Queue.Item> itemRef = new AtomicReference<>();
-        Queue.withLock(() -> {
-            for (Queue.Item item : Queue.getInstance().getItems()) {
-                if (item.task instanceof ExecutorStepExecution.PlaceholderTask) {
-                    ExecutorStepExecution.PlaceholderTask itemTask = (ExecutorStepExecution.PlaceholderTask) item.task;
-                    if (task.getCookie().equals(itemTask.getCookie())) {
-                        itemRef.set(item);
+        String cookie = task.getCookie();
+        if (cookie != null) {
+            Queue.withLock(() -> {
+                for (Queue.Item item : Queue.getInstance().getItems()) {
+                    if (item.task instanceof ExecutorStepExecution.PlaceholderTask) {
+                        ExecutorStepExecution.PlaceholderTask itemTask = (ExecutorStepExecution.PlaceholderTask) item.task;
+                        if (cookie.equals(itemTask.getCookie())) {
+                            itemRef.set(item);
+                            break;
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            // TODO: I think it is possible for cookie to be null if Jenkins restarts while the original task is in
+            // the queue (we could add a test for this). We still want to avoid scheduling a duplicate task in this
+            // case, but to do so we need some way to identify the original task. Perhaps we can initialize cookie in
+            // PlaceholderTask and add a new field for PlaceholderExecutable to use to determine whether the task is
+            // running for the first time or resuming.
+        }
         // TODO: Do we need to check executor slots too in case there was a task in the queue but it has already started?
         if (itemRef.get() == null) {
             Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
