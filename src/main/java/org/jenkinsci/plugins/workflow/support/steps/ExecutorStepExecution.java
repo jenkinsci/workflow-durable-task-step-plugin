@@ -53,6 +53,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
@@ -1065,17 +1066,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.fine(() -> "interrupted " + cookie + " in " + runId);
                             Timer.get().submit(() -> { // JENKINS-46738
                                 Executor thisExecutor = /* AsynchronousExecution. */ getExecutor();
+                                AtomicReference<Boolean> cancelledBodyExecution = new AtomicReference(false);
                                 withExecution(execution -> {
                                     BodyExecution body = execution.body;
                                     if (body != null) {
                                         body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
-                                    } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                        if (thisExecutor != null) {
-                                            thisExecutor.recordCauseOfInterruption(r, _listener);
-                                        }
-                                        completed(null);
+                                        cancelledBodyExecution.set(true);
                                     }
                                 });
+                                if (!cancelledBodyExecution.get()) { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                    if (thisExecutor != null) {
+                                        thisExecutor.recordCauseOfInterruption(r, _listener);
+                                    }
+                                    completed(null);
+                                }
                             });
                         }
                         @Override public boolean blocksRestart() {
