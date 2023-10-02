@@ -91,7 +91,7 @@
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-api</artifactId>
-                <version>1248.v4b_91043341d2</version>
+                <version>1283.v99c10937efcb_</version>
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins</groupId>
