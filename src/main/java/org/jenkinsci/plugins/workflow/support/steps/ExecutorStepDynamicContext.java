@@ -35,6 +35,7 @@ import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.TaskListener;
+import hudson.model.queue.ScheduleResult;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
@@ -43,7 +44,6 @@ import java.io.Serializable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -91,33 +91,13 @@ public final class ExecutorStepDynamicContext implements Serializable {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
         }
-        // If Jenkins restarts or crashes while we are waiting below, on the next startup the task may already be in
-        // the queue, in which case we should reuse it instead of scheduling a second task.
-        AtomicReference<Queue.Item> itemRef = new AtomicReference<>();
-        Queue.withLock(() -> {
-            for (Queue.Item item : Queue.getInstance().getItems()) {
-                if (item.task instanceof ExecutorStepExecution.PlaceholderTask) {
-                    ExecutorStepExecution.PlaceholderTask itemTask = (ExecutorStepExecution.PlaceholderTask) item.task;
-                    if (task.equals(itemTask)) {
-                        itemRef.set(item);
-                        break;
-                    }
-                }
-            }
-        });
-        // TODO: Do we need to check executor slots too in case there was a task in the queue but it has already started?
-        if (itemRef.get() == null) {
-            Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
-            if (item == null) {
-                // TODO should also report when !ScheduleResult.created, since that is arguably an error
-                throw new IllegalStateException("queue refused " + task);
-            }
-            LOGGER.fine(() -> "scheduled " + item + " for " + path + " on " + node);
-            itemRef.set(item);
-        } else {
-            LOGGER.fine(() -> "reusing " + itemRef.get() + ", which was already in the queue for " + path + " on " + node);
+        // TODO: Do we need to check executor slots too in case there was a task in the queue that has already started?
+        ScheduleResult result = Queue.getInstance().schedule2(task, 0);
+        Queue.Item item = result.getItem();
+        if (item == null) {
+            throw new IllegalStateException("queue refused " + task);
         }
-        Queue.Item item = itemRef.get();
+        LOGGER.fine(() -> (result.isCreated() ? "scheduled " : " using already-scheduled ") + item + " for " + path + " on " + node);
         TaskListener listener = context.get(TaskListener.class);
         if (!node.isEmpty()) { // unlikely to be any delay for built-in node anyway
             listener.getLogger().println("Waiting for reconnection of " + node + " before proceeding with build");
