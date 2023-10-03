@@ -69,7 +69,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     private static final long serialVersionUID = 1;
 
-    final @NonNull ExecutorStepExecution.PlaceholderTask task;
+    @NonNull ExecutorStepExecution.PlaceholderTask task;
     final @NonNull String node;
     final @NonNull String path;
     final int depth;
@@ -97,6 +97,8 @@ public final class ExecutorStepDynamicContext implements Serializable {
         if (item == null) {
             throw new IllegalStateException("queue refused " + task);
         }
+        // Try to avoid having distinct a instance of PlaceholderTask here compared to any previously-scheduled task.
+        task = (ExecutorStepExecution.PlaceholderTask)item.task;
         LOGGER.fine(() -> (result.isCreated() ? "scheduled " : " using already-scheduled ") + item + " for " + path + " on " + node);
         TaskListener listener = context.get(TaskListener.class);
         if (!node.isEmpty()) { // unlikely to be any delay for built-in node anyway
