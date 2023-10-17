@@ -79,6 +79,7 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -114,6 +115,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -145,6 +147,7 @@ public class ExecutorStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
     @Rule public LoggerRule logging = new LoggerRule();
+    @Rule public FlagRule<String> nodeTimeout = FlagRule.systemProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis");
 
     /**
      * Executes a shell script build on a build agent.
@@ -1213,6 +1216,43 @@ public class ExecutorStepTest {
                 Thread.sleep(100L);
             }
             assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
+        });
+    }
+
+    @Test public void restartWhilePlaceholderTaskIsInQueue() throws Throwable {
+        // Node reconnection takes a while during the second restart.
+        System.setProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", String.valueOf(TimeUnit.SECONDS.toMillis(30)));
+        logging.record(ExecutorStepExecution.class, Level.FINE)
+                .record(ExecutorStepDynamicContext.class, Level.FINE)
+                .capture(100);
+        sessions.then(r -> {
+            inboundAgents.createAgent(r, "custom-label");
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('custom-label') { semaphore('wait') }", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            Slave node = (Slave) r.jenkins.getNode("custom-label");
+            node.setNumExecutors(0); // Make sure the step won't be able to resume.
+        });
+        sessions.then(r -> {
+            // Just wait for ExecutorStepDynamicContext.resume to schedule PlaceholderTask and then restart.
+            await().atMost(15, TimeUnit.SECONDS).until(
+                    () -> Stream.of(Queue.getInstance().getItems()).map(item -> item.task).collect(Collectors.toList()),
+                    hasItem(instanceOf(ExecutorStepExecution.PlaceholderTask.class)));
+        });
+        sessions.then(r -> {
+            ((Slave) r.jenkins.getNode("custom-label")).setNumExecutors(1); // Allow node step to resume.
+            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            SemaphoreStep.success("wait/1", null);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            assertThat(r.jenkins.getQueue().getItems(), emptyArray());
+            List<Executor> occupiedExecutors = Stream.of(r.jenkins.getComputers())
+                    .flatMap(c -> c.getExecutors().stream())
+                    .filter(e -> e.getCurrentWorkUnit() != null)
+                    .collect(Collectors.toList());
+            assertThat(occupiedExecutors, empty());
+            inboundAgents.stop(r, "custom-label");
         });
     }
 
