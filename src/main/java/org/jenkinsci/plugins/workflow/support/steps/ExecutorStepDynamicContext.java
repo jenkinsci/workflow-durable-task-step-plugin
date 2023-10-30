@@ -35,6 +35,7 @@ import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.TaskListener;
+import hudson.model.queue.ScheduleResult;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
@@ -68,7 +69,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     private static final long serialVersionUID = 1;
 
-    final @NonNull ExecutorStepExecution.PlaceholderTask task;
+    @NonNull ExecutorStepExecution.PlaceholderTask task;
     final @NonNull String node;
     final @NonNull String path;
     final int depth;
@@ -90,12 +91,15 @@ public final class ExecutorStepDynamicContext implements Serializable {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
         }
-        Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
+        // TODO: Do we need to check executor slots too in case there was a task in the queue that has already started?
+        ScheduleResult result = Queue.getInstance().schedule2(task, 0);
+        Queue.Item item = result.getItem();
         if (item == null) {
-            // TODO should also report when !ScheduleResult.created, since that is arguably an error
             throw new IllegalStateException("queue refused " + task);
         }
-        LOGGER.fine(() -> "scheduled " + item + " for " + path + " on " + node);
+        // Try to avoid having distinct a instance of PlaceholderTask here compared to any previously-scheduled task.
+        task = (ExecutorStepExecution.PlaceholderTask)item.task;
+        LOGGER.fine(() -> (result.isCreated() ? "scheduled " : " using already-scheduled ") + item + " for " + path + " on " + node);
         TaskListener listener = context.get(TaskListener.class);
         if (!node.isEmpty()) { // unlikely to be any delay for built-in node anyway
             listener.getLogger().println("Waiting for reconnection of " + node + " before proceeding with build");
@@ -158,8 +162,8 @@ public final class ExecutorStepDynamicContext implements Serializable {
         }
 
         @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
+            if (LOGGER.isLoggable(Level.FINER)) {
+                LOGGER.finer("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
             }
             return super.get(context);
         }

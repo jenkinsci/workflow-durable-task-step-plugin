@@ -50,10 +50,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
@@ -210,7 +213,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             state.resume(getContext());
         } catch (Exception x) { // JENKINS-40161
-            getContext().onFailure(x);
+            try {
+                // Use stop to make sure we clean up the queue and executors.
+                stop(x);
+            } catch (Exception x2) {
+                // I think this should be unreachable.
+                x.addSuppressed(x2);
+                getContext().onFailure(x);
+            }
         }
     }
 
@@ -388,10 +398,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @ExportedBean
     public static final class PlaceholderTask implements ContinuedTask, Serializable, AccessControlled {
-
-        /** keys are {@link #cookie}s */
-        private static final Map<String,RunningTask> runningTasks = new HashMap<>();
-
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
@@ -401,7 +407,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * Unique cookie set once the task starts.
          * Serves multiple purposes:
          * identifies whether we have already invoked the body (since this can be rerun after restart);
-         * serves as a key for {@link #runningTasks} and {@link Callback} (cannot just have a doneness flag in {@link PlaceholderTask} because multiple copies might be deserialized);
+         * serves as a key for {@link RunningTasks#runningTasks} and {@link Callback} (cannot just have a doneness flag in {@link PlaceholderTask} because multiple copies might be deserialized);
          * and allows {@link Launcher#kill} to work.
          */
         private String cookie;
@@ -427,11 +433,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         private Object readResolve() {
             if (cookie != null) {
-                synchronized (runningTasks) {
-                    runningTasks.put(cookie, new RunningTask());
-                }
+                RunningTasks.get().withRunningTasks(runningTasks -> {
+                    // If Jenkins stops while this step is resuming, there may be a PlaceholderTask in the queue as
+                    // well as in program.dat for the same step. We want to make sure not to create a second task to
+                    // avoid race conditions, so we use putIfAbsent.
+                    // TODO: This helps for runningTasks, but other fields like `stopping` may still be problematic.
+                    // Should we refactor things to guarantee that the relevant state is a singleton? For example,
+                    // introduce a PlaceholderTasksAction that holds a map of a new PlaceholderTaskState class, which
+                    // would hold most of what is currently in PlaceholderTask, and then PlaceholderTask would only
+                    // hold a `String cookie` field and would look up PlaceholderTaskState via the action so it wouldn't
+                    // matter where the task was serialized.
+                    runningTasks.putIfAbsent(cookie, new RunningTask());
+                });
             }
-            LOGGER.log(FINE, "deserializing previously scheduled {0}", this);
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.log(FINE, null, new Exception("deserializing previously scheduled " + this));
+            }
             return this;
         }
 
@@ -858,11 +875,29 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie + ",auth=" + auth + '}';
         }
 
+        @Override
+        public int hashCode() {
+            int hash = 7;
+            hash = 89 * hash + Objects.hashCode(this.context);
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            } else if (obj == null || getClass() != obj.getClass()) {
+                return false;
+            }
+            final PlaceholderTask other = (PlaceholderTask) obj;
+            return this.context.equals(other.context);
+        }
+
         private static void finish(@CheckForNull final String cookie) {
             if (cookie == null) {
                 return;
             }
-            synchronized (runningTasks) {
+            RunningTasks.get().withRunningTasks(runningTasks -> {
                 final RunningTask runningTask = runningTasks.remove(cookie);
                 if (runningTask == null) {
                     LOGGER.log(FINE, "no running task corresponds to {0}", cookie);
@@ -886,7 +921,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
                     }
                 });
-            }
+            });
         }
 
         /**
@@ -982,9 +1017,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
                         env.put("NODE_LABELS", node.getAssignedLabels().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
-                        synchronized (runningTasks) {
+                        RunningTasks.get().withRunningTasks(runningTasks -> {
                             runningTasks.put(cookie, new RunningTask());
-                        }
+                        });
                         // For convenience, automatically allocate a workspace, like WorkspaceStep would:
                         Job<?,?> j = r.getParent();
                         if (!(j instanceof TopLevelItem)) {
@@ -1035,7 +1070,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
                 // wait until the invokeBodyLater call above completes and notifies our Callback object
-                synchronized (runningTasks) {
+                final TaskListener _listener = listener;
+                RunningTasks.get().withRunningTasks(runningTasks -> {
                     LOGGER.fine(() -> "waiting on " + cookie + " in " + runId);
                     RunningTask runningTask = runningTasks.get(cookie);
                     if (runningTask == null) {
@@ -1045,7 +1081,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     assert runningTask.execution == null;
                     assert runningTask.launcher == null;
                     runningTask.launcher = launcher;
-                    TaskListener _listener = listener;
                     runningTask.execution = new AsynchronousExecution() {
                         @Override public void interrupt(boolean forShutdown) {
                             if (forShutdown) {
@@ -1054,17 +1089,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.fine(() -> "interrupted " + cookie + " in " + runId);
                             Timer.get().submit(() -> { // JENKINS-46738
                                 Executor thisExecutor = /* AsynchronousExecution. */ getExecutor();
+                                AtomicReference<Boolean> cancelledBodyExecution = new AtomicReference(false);
                                 withExecution(execution -> {
                                     BodyExecution body = execution.body;
                                     if (body != null) {
                                         body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
-                                    } else { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
-                                        if (thisExecutor != null) {
-                                            thisExecutor.recordCauseOfInterruption(r, _listener);
-                                        }
-                                        completed(null);
+                                        cancelledBodyExecution.set(true);
                                     }
                                 });
+                                if (!cancelledBodyExecution.get()) { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
+                                    if (thisExecutor != null) {
+                                        thisExecutor.recordCauseOfInterruption(r, _listener);
+                                    }
+                                    completed(null);
+                                }
                             });
                         }
                         @Override public boolean blocksRestart() {
@@ -1075,7 +1113,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                     };
                     throw runningTask.execution;
-                }
+                });
             }
 
             @NonNull
@@ -1115,9 +1153,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             @Override public boolean willContinue() {
-                synchronized (runningTasks) {
+                return RunningTasks.get().withRunningTasks(runningTasks -> {
                     return runningTasks.containsKey(cookie);
-                }
+                });
             }
 
             @Restricted(DoNotUse.class) // for Jelly
@@ -1184,6 +1222,24 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @CheckForNull
         public Queue.Item itemInQueue() {
             return Queue.getInstance().getItem(id);
+        }
+    }
+
+    @Extension
+    public static class RunningTasks {
+        /** keys are {@link PlaceholderTask#cookie}s */
+        private final Map<String, RunningTask> runningTasks = new HashMap<>();
+
+        synchronized <T> T withRunningTasks(Function<Map<String, RunningTask>, T> fn) {
+            return fn.apply(runningTasks);
+        }
+
+        synchronized void withRunningTasks(Consumer<Map<String, RunningTask>> fn) {
+            fn.accept(runningTasks);
+        }
+
+        static RunningTasks get() {
+            return ExtensionList.lookupSingleton(RunningTasks.class);
         }
     }
 
