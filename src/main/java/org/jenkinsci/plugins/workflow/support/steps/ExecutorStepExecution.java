@@ -252,6 +252,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 if (li.task instanceof PlaceholderTask) {
                     PlaceholderTask task = (PlaceholderTask) li.task;
                     if (!task.stopping) {
+                        if (LOGGER.isLoggable(Level.FINE)) {
+                            LOGGER.log(Level.FINE, null, new Throwable(li.task + " was cancelled"));
+                        }
                         task.context.onFailure(new FlowInterruptedException(Result.ABORTED, true, new QueueTaskCancelled()));
                     }
                 }
