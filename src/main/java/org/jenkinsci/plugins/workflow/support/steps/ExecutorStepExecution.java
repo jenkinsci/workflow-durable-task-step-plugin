@@ -164,7 +164,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             if (item.task instanceof PlaceholderTask) {
                 PlaceholderTask task = (PlaceholderTask) item.task;
                 if (task.context.equals(context)) {
-                    task.stopping = true;
+                    RunningTasks.run(context, t -> t.stopping = true);
                     if (Queue.getInstance().cancel(item)) {
                         LOGGER.fine(() -> "canceled " + item);
                     } else {
@@ -188,7 +188,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
                         StepContext actualContext = ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context;
                         if (actualContext.equals(context)) {
-                            PlaceholderTask.finish(((PlaceholderTask.PlaceholderExecutable) exec).getParent().cookie);
+                            PlaceholderTask.finish(context, ((PlaceholderTask.PlaceholderExecutable) exec).getParent().cookie);
                             LOGGER.log(FINE, "canceling {0}", exec);
                             break COMPUTERS;
                         } else {
@@ -251,7 +251,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             if (li.isCancelled()) {
                 if (li.task instanceof PlaceholderTask) {
                     PlaceholderTask task = (PlaceholderTask) li.task;
-                    if (!task.stopping) {
+                    if (!RunningTasks.get(task.context, t -> t.stopping)) {
                         if (LOGGER.isLoggable(Level.FINE)) {
                             LOGGER.log(Level.FINE, null, new Throwable(li.task + " was cancelled"));
                         }
@@ -395,6 +395,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Nullable AsynchronousExecution execution;
         /** null until placeholder executable runs */
         @Nullable Launcher launcher;
+        /**
+         * Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed.
+         * Also used for {@link PlaceholderTask#getCauseOfBlockage}.
+         */
+        boolean stopping;
     }
 
     private static final String COOKIE_VAR = "JENKINS_NODE_COOKIE";
@@ -408,18 +413,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private final String runId;
         /**
          * Unique cookie set once the task starts.
-         * Serves multiple purposes:
-         * identifies whether we have already invoked the body (since this can be rerun after restart);
-         * serves as a key for {@link RunningTasks#runningTasks} and {@link Callback} (cannot just have a doneness flag in {@link PlaceholderTask} because multiple copies might be deserialized);
-         * and allows {@link Launcher#kill} to work.
+         * Allows {@link Launcher#kill} to work.
          */
         private String cookie;
 
         /** {@link Authentication#getName} of user of build, if known. */
         private final @CheckForNull String auth;
-
-        /** Flag to remember that {@link #stop} is being called, so {@link CancelledItemListener} can be suppressed. */
-        private transient boolean stopping;
 
         PlaceholderTask(StepContext context, String label) throws IOException, InterruptedException {
             this.context = context;
@@ -432,27 +431,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 auth = runningAuth.getName();
             }
             LOGGER.log(FINE, "scheduling {0}", this);
-        }
-
-        private Object readResolve() {
-            if (cookie != null) {
-                RunningTasks.get().withRunningTasks(runningTasks -> {
-                    // If Jenkins stops while this step is resuming, there may be a PlaceholderTask in the queue as
-                    // well as in program.dat for the same step. We want to make sure not to create a second task to
-                    // avoid race conditions, so we use putIfAbsent.
-                    // TODO: This helps for runningTasks, but other fields like `stopping` may still be problematic.
-                    // Should we refactor things to guarantee that the relevant state is a singleton? For example,
-                    // introduce a PlaceholderTasksAction that holds a map of a new PlaceholderTaskState class, which
-                    // would hold most of what is currently in PlaceholderTask, and then PlaceholderTask would only
-                    // hold a `String cookie` field and would look up PlaceholderTaskState via the action so it wouldn't
-                    // matter where the task was serialized.
-                    runningTasks.putIfAbsent(cookie, new RunningTask());
-                });
-            }
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.log(FINE, null, new Exception("deserializing previously scheduled " + this));
-            }
-            return this;
         }
 
         /**
@@ -492,9 +470,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return new PlaceholderExecutable();
         }
 
-        @CheckForNull
-        public String getCookie() {
-            return cookie;
+        /** Body has begun execution: we started using a node. */
+        @Restricted(NoExternalUse.class)
+        public boolean hasStarted() {
+            return cookie != null;
         }
 
         @Override public Label getAssignedLabel() {
@@ -533,6 +512,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public CauseOfBlockage getCauseOfBlockage() {
+            boolean stopping = RunningTasks.get(context, t -> t.stopping);
             if (FlowExecutionList.get().isResumptionComplete()) {
                 // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
                 Run<?, ?> run = runForDisplay();
@@ -540,7 +520,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     if (stopping) {
                         LOGGER.warning(() -> "Refusing to build " + PlaceholderTask.this + " and going to cancel it, even though it was supposedly stopped already, because associated build is complete");
                     } else {
-                        stopping = true;
+                        RunningTasks.run(context, t -> t.stopping = true);
                     }
                     Timer.get().execute(() -> {
                         if (Queue.getInstance().cancel(this)) {
@@ -640,8 +620,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 return context.get(Run.class);
             } catch (Exception x) {
-                LOGGER.log(FINE, "broken " + cookie + " in " + runId, x);
-                finish(cookie); // probably broken, so just shut it down
+                LOGGER.log(FINE, "broken " + context, x);
+                finish(context, cookie); // probably broken, so just shut it down
                 return null;
             }
         }
@@ -875,7 +855,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public String toString() {
-            return "ExecutorStepExecution.PlaceholderTask{runId=" + runId + ",label=" + label + ",context=" + context + ",cookie=" + cookie + ",auth=" + auth + '}';
+            return "ExecutorStepExecution.PlaceholderTask{label=" + label + ",context=" + context + '}';
         }
 
         @Override
@@ -896,34 +876,28 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return this.context.equals(other.context);
         }
 
-        private static void finish(@CheckForNull final String cookie) {
-            if (cookie == null) {
+        private static void finish(StepContext context, @CheckForNull final String cookie) {
+            RunningTask runningTask = RunningTasks.remove(context);
+            final AsynchronousExecution execution = runningTask.execution;
+            if (execution == null) {
+                // JENKINS-30759: finished before asynch execution was even scheduled
                 return;
             }
-            RunningTasks.get().withRunningTasks(runningTasks -> {
-                final RunningTask runningTask = runningTasks.remove(cookie);
-                if (runningTask == null) {
-                    LOGGER.log(FINE, "no running task corresponds to {0}", cookie);
+            assert runningTask.launcher != null;
+            Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
+            Computer.threadPoolForRemoting.submit(() -> { // JENKINS-34542, JENKINS-45553
+                if (cookie == null) {
                     return;
                 }
-                final AsynchronousExecution execution = runningTask.execution;
-                if (execution == null) {
-                    // JENKINS-30759: finished before asynch execution was even scheduled
-                    return;
+                try {
+                    runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
+                } catch (ChannelClosedException x) {
+                    // fine, Jenkins was shutting down
+                } catch (RequestAbortedException x) {
+                    // agent was exiting; too late to kill subprocesses
+                } catch (Exception x) {
+                    LOGGER.log(Level.WARNING, "failed to shut down " + cookie + " from " + context, x);
                 }
-                assert runningTask.launcher != null;
-                Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
-                Computer.threadPoolForRemoting.submit(() -> { // JENKINS-34542, JENKINS-45553
-                    try {
-                        runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
-                    } catch (ChannelClosedException x) {
-                        // fine, Jenkins was shutting down
-                    } catch (RequestAbortedException x) {
-                        // agent was exiting; too late to kill subprocesses
-                    } catch (Exception x) {
-                        LOGGER.log(Level.WARNING, "failed to shut down " + cookie, x);
-                    }
-                });
             });
         }
 
@@ -946,32 +920,32 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             @Override protected void finished(StepContext context) throws Exception {
-                LOGGER.log(FINE, "finished {0}", cookie);
+                if (execution == null) { // compatibility with old serial forms
+                    lease.release();
+                    lease = null;
+                    return;
+                }
+                LOGGER.log(FINE, "finished {0}", execution.getContext());
                 try {
-                    if (execution != null) {
-                        WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(execution.state);
-                        if (_lease != null) {
-                            _lease.release();
-                        }
-                    } else {
-                        lease.release();
-                        lease = null;
+                    WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(execution.state);
+                    if (_lease != null) {
+                        _lease.release();
                     }
                 } finally {
-                    finish(cookie);
+                    finish(execution.getContext(), cookie);
                 }
-                if (execution != null) {
-                    execution.body = null;
-                    boolean _stopping = execution.state.task.stopping;
-                    execution.state.task.stopping = true;
+                execution.body = null;
+                RunningTasks.run(context, t -> {
+                    boolean _stopping = t.stopping;
+                    t.stopping = true;
                     try {
                         Queue.getInstance().cancel(execution.state.task);
                     } finally {
-                        execution.state.task.stopping = _stopping;
+                        t.stopping = _stopping;
                     }
-                    execution.state = null;
-                    context.saveState();
-                }
+                });
+                execution.state = null;
+                context.saveState();
             }
 
         }
@@ -1020,9 +994,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         env.put("EXECUTOR_NUMBER", String.valueOf(exec.getNumber()));
                         env.put("NODE_LABELS", node.getAssignedLabels().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
-                        RunningTasks.get().withRunningTasks(runningTasks -> {
-                            runningTasks.put(cookie, new RunningTask());
-                        });
                         // For convenience, automatically allocate a workspace, like WorkspaceStep would:
                         Job<?,?> j = r.getParent();
                         if (!(j instanceof TopLevelItem)) {
@@ -1050,12 +1021,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 .withContexts(env, state)
                                 .withCallback(new Callback(cookie, execution))
                                 .start();
-                            LOGGER.fine(() -> "started " + cookie + " in " + runId);
+                            LOGGER.fine(() -> "started " + context);
                             context.saveState();
                         });
                     } else {
                         // just rescheduled after a restart; wait for task to complete
-                        LOGGER.fine(() -> "resuming " + cookie + " in " + runId);
+                        LOGGER.fine(() -> "resuming " + context);
                     }
                 } catch (Exception x) {
                     if (computer != null) {
@@ -1074,13 +1045,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 // wait until the invokeBodyLater call above completes and notifies our Callback object
                 final TaskListener _listener = listener;
-                RunningTasks.get().withRunningTasks(runningTasks -> {
-                    LOGGER.fine(() -> "waiting on " + cookie + " in " + runId);
-                    RunningTask runningTask = runningTasks.get(cookie);
-                    if (runningTask == null) {
-                        LOGGER.fine(() -> "running task apparently finished quickly for " + cookie + " in " + runId);
-                        return;
-                    }
+                RunningTasks.run(context, runningTask -> {
+                    LOGGER.fine(() -> "waiting on " + context);
                     assert runningTask.execution == null;
                     assert runningTask.launcher == null;
                     runningTask.launcher = launcher;
@@ -1089,7 +1055,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             if (forShutdown) {
                                 return;
                             }
-                            LOGGER.fine(() -> "interrupted " + cookie + " in " + runId);
+                            LOGGER.fine(() -> "interrupted " + context);
                             Timer.get().submit(() -> { // JENKINS-46738
                                 Executor thisExecutor = /* AsynchronousExecution. */ getExecutor();
                                 AtomicReference<Boolean> cancelledBodyExecution = new AtomicReference(false);
@@ -1156,9 +1122,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             @Override public boolean willContinue() {
-                return RunningTasks.get().withRunningTasks(runningTasks -> {
-                    return runningTasks.containsKey(cookie);
-                });
+                return hasStarted();
             }
 
             @Restricted(DoNotUse.class) // for Jelly
@@ -1188,8 +1152,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             @Override public String toString() {
                 return "PlaceholderExecutable:" + PlaceholderTask.this;
             }
-
-            private static final long serialVersionUID = 1L;
 
             @NonNull
             @Override
@@ -1230,20 +1192,31 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     @Extension
     public static class RunningTasks {
-        /** keys are {@link PlaceholderTask#cookie}s */
-        private final Map<String, RunningTask> runningTasks = new HashMap<>();
+        private final Map<StepContext, RunningTask> runningTasks = new HashMap<>();
 
-        synchronized <T> T withRunningTasks(Function<Map<String, RunningTask>, T> fn) {
-            return fn.apply(runningTasks);
+        private static RunningTask find(StepContext context) {
+            RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
+            synchronized (holder) {
+                return holder.runningTasks.computeIfAbsent(context, k -> new RunningTask());
+            }
         }
 
-        synchronized void withRunningTasks(Consumer<Map<String, RunningTask>> fn) {
-            fn.accept(runningTasks);
+        static <T> T get(StepContext context, Function<RunningTask, T> fn) {
+            return fn.apply(find(context));
         }
 
-        static RunningTasks get() {
-            return ExtensionList.lookupSingleton(RunningTasks.class);
+        static void run(StepContext context, Consumer<RunningTask> fn) {
+            fn.accept(find(context));
         }
+
+        static RunningTask remove(StepContext context) {
+            RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
+            synchronized (holder) {
+                RunningTask t = holder.runningTasks.remove(context);
+                return t != null ? t : new RunningTask();
+            }
+        }
+
     }
 
     private static final long serialVersionUID = 1L;

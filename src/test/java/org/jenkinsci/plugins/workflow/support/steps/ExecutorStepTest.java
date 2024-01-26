@@ -1215,7 +1215,7 @@ public class ExecutorStepTest {
             while (Queue.getInstance().getItems().length > 0) {
                 Thread.sleep(100L);
             }
-            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
+            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask")));
         });
     }
 
