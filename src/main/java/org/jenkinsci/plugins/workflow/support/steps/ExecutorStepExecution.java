@@ -1213,7 +1213,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
             synchronized (holder) {
                 RunningTask t = holder.runningTasks.remove(context);
-                return t != null ? t : new RunningTask();
+                if (t != null) {
+                    return t;
+                } else {
+                    LOGGER.fine(() -> "was no running task information to remove from " + context);
+                    return new RunningTask();
+                }
             }
         }
 
