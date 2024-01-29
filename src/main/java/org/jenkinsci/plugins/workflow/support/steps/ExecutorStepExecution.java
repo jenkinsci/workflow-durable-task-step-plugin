@@ -57,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import static java.util.logging.Level.*;
 import java.util.logging.Logger;
@@ -189,6 +190,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         StepContext actualContext = ((PlaceholderTask.PlaceholderExecutable) exec).getParent().context;
                         if (actualContext.equals(context)) {
                             PlaceholderTask.finish(context, ((PlaceholderTask.PlaceholderExecutable) exec).getParent().cookie);
+                            RunningTasks.remove(context);
                             LOGGER.log(FINE, "canceling {0}", exec);
                             break COMPUTERS;
                         } else {
@@ -251,7 +253,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             if (li.isCancelled()) {
                 if (li.task instanceof PlaceholderTask) {
                     PlaceholderTask task = (PlaceholderTask) li.task;
-                    if (!RunningTasks.get(task.context, t -> t.stopping)) {
+                    if (!RunningTasks.get(task.context, t -> t.stopping, () -> false)) {
                         if (LOGGER.isLoggable(Level.FINE)) {
                             LOGGER.log(Level.FINE, null, new Throwable(li.task + " was cancelled"));
                         }
@@ -430,7 +432,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             } else {
                 auth = runningAuth.getName();
             }
+            RunningTasks.add(context);
             LOGGER.log(FINE, "scheduling {0}", this);
+        }
+
+        private Object readResolve() {
+            RunningTasks.add(context);
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.log(FINE, null, new Exception("deserializing previously scheduled " + this));
+            }
+            return this;
         }
 
         /**
@@ -512,7 +523,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @Override public CauseOfBlockage getCauseOfBlockage() {
-            boolean stopping = RunningTasks.get(context, t -> t.stopping);
+            boolean stopping = RunningTasks.get(context, t -> t.stopping, () -> false);
             if (FlowExecutionList.get().isResumptionComplete()) {
                 // We only do this if resumption is complete so that we do not load the run and resume its execution in this context in normal scenarios.
                 Run<?, ?> run = runForDisplay();
@@ -622,6 +633,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             } catch (Exception x) {
                 LOGGER.log(FINE, "broken " + context, x);
                 finish(context, cookie); // probably broken, so just shut it down
+                RunningTasks.remove(context);
                 return null;
             }
         }
@@ -877,18 +889,23 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         private static void finish(StepContext context, @CheckForNull final String cookie) {
-            RunningTask runningTask = RunningTasks.remove(context);
+            RunningTask runningTask = RunningTasks.get(context, t -> t, () -> null);
+            if (runningTask == null) {
+                LOGGER.fine(() -> "no known running task for " + context);
+                return;
+            }
             final AsynchronousExecution execution = runningTask.execution;
             if (execution == null) {
-                // JENKINS-30759: finished before asynch execution was even scheduled
+                LOGGER.fine(() -> "no AsynchronousExecution associated with " + context + " (JENKINS-30759 maybe finished before asynch execution was even scheduled?)");
                 return;
             }
             assert runningTask.launcher != null;
             Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
+            if (cookie == null) {
+                LOGGER.fine(() -> "no cookie to kill from " + context);
+                return;
+            }
             Computer.threadPoolForRemoting.submit(() -> { // JENKINS-34542, JENKINS-45553
-                if (cookie == null) {
-                    return;
-                }
                 try {
                     runningTask.launcher.kill(Collections.singletonMap(COOKIE_VAR, cookie));
                 } catch (ChannelClosedException x) {
@@ -919,7 +936,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 this.execution = execution;
             }
 
-            @Override protected void finished(StepContext context) throws Exception {
+            @Override protected void finished(StepContext bodyContext) throws Exception {
                 if (execution == null) { // compatibility with old serial forms
                     lease.release();
                     lease = null;
@@ -935,7 +952,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     finish(execution.getContext(), cookie);
                 }
                 execution.body = null;
-                RunningTasks.run(context, t -> {
+                RunningTask t = RunningTasks.remove(execution.getContext());
+                if (t != null) {
+                    LOGGER.fine(() -> "cancelling any leftover task from " + execution.getContext());
                     boolean _stopping = t.stopping;
                     t.stopping = true;
                     try {
@@ -943,9 +962,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     } finally {
                         t.stopping = _stopping;
                     }
-                });
+                } else {
+                    LOGGER.fine(() -> "no entry for " + execution.getContext());
+                }
                 execution.state = null;
-                context.saveState();
+                bodyContext.saveState();
             }
 
         }
@@ -1122,7 +1143,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
 
             @Override public boolean willContinue() {
-                return hasStarted();
+                return RunningTasks.get(context, t -> t.execution != null, () -> false);
             }
 
             @Restricted(DoNotUse.class) // for Jelly
@@ -1194,31 +1215,43 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     public static class RunningTasks {
         private final Map<StepContext, RunningTask> runningTasks = new HashMap<>();
 
-        private static RunningTask find(StepContext context) {
+        static void add(StepContext context) {
             RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
             synchronized (holder) {
-                return holder.runningTasks.computeIfAbsent(context, k -> new RunningTask());
+                holder.runningTasks.putIfAbsent(context, new RunningTask());
             }
         }
 
-        static <T> T get(StepContext context, Function<RunningTask, T> fn) {
-            return fn.apply(find(context));
+        private static @CheckForNull RunningTask find(StepContext context) {
+            RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
+            synchronized (holder) {
+                return holder.runningTasks.get(context);
+            }
+        }
+
+        static <T> T get(StepContext context, Function<RunningTask, T> fn, Supplier<T> fallback) {
+            RunningTask t = find(context);
+            if (t != null) {
+                return fn.apply(t);
+            } else {
+                LOGGER.fine(() -> "no RunningTask associated with " + context);
+                return fallback.get();
+            }
         }
 
         static void run(StepContext context, Consumer<RunningTask> fn) {
-            fn.accept(find(context));
+            RunningTask t = find(context);
+            if (t != null) {
+                fn.accept(t);
+            } else {
+                LOGGER.fine(() -> "no RunningTask associated with " + context);
+            }
         }
 
-        static RunningTask remove(StepContext context) {
+        static @CheckForNull RunningTask remove(StepContext context) {
             RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
             synchronized (holder) {
-                RunningTask t = holder.runningTasks.remove(context);
-                if (t != null) {
-                    return t;
-                } else {
-                    LOGGER.fine(() -> "was no running task information to remove from " + context);
-                    return new RunningTask();
-                }
+                return holder.runningTasks.remove(context);
             }
         }
 
