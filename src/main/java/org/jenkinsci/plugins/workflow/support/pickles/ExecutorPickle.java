@@ -114,11 +114,10 @@ public class ExecutorPickle extends Pickle {
                     if (task instanceof ExecutorStepExecution.PlaceholderTask) {
                         ExecutorStepExecution.PlaceholderTask placeholder = (ExecutorStepExecution.PlaceholderTask)task;
 
-                        // Non-null cookie means body has begun execution, i.e. we started using a node
                         // PlaceholderTask#getAssignedLabel is set to the Node name when execution starts
                         // Thus we're guaranteeing the execution began and the Node is now unknown.
                         // Theoretically it's safe to simply fail earlier when rehydrating any EphemeralNode... but we're being extra safe.
-                        if (placeholder.getCookie() != null && Jenkins.get().getNode(placeholder.getAssignedLabel().getName()) == null ) {
+                        if (placeholder.hasStarted() && Jenkins.get().getNode(placeholder.getAssignedLabel().getName()) == null ) {
                             if (System.nanoTime() > endTimeNanos) {
                                 Queue.getInstance().cancel(item);
                                 owner.getListener().getLogger().printf("Killed %s after waiting for %s because we assume unknown agent %s is never going to appear%n",

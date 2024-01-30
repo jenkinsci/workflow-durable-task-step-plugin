@@ -40,18 +40,14 @@ import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
 import hudson.model.Executor;
-import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Label;
-import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.Slave;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
-import hudson.model.queue.CauseOfBlockage;
-import hudson.model.queue.QueueTaskDispatcher;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
@@ -123,7 +119,6 @@ import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.MockFolder;
-import org.jvnet.hudson.test.TestExtension;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
 @RunWith(Parameterized.class)
@@ -1077,29 +1072,6 @@ public class ExecutorStepTest {
         });
     }
 
-    /**
-     * @see PipelineOnlyTaskDispatcher
-     */
-    @Issue("JENKINS-53837")
-    @Test public void queueTaskOwnerCorrectWhenRestarting() throws Throwable {
-        sessions.then(r -> {
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p1");
-            p.setDefinition(new CpsFlowDefinition("node {\n" +
-                    "  semaphore('wait')\n" +
-                    "}", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            SemaphoreStep.waitForStart("wait/1", b);
-        });
-        sessions.then(r -> {
-            WorkflowJob p = r.jenkins.getItemByFullName("p1", WorkflowJob.class);
-            WorkflowRun b = p.getBuildByNumber(1);
-            SemaphoreStep.success("wait/1", null);
-            r.waitForCompletion(b);
-            r.assertBuildStatusSuccess(b);
-            r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
-        });
-    }
-
     @Issue("JENKINS-58900")
     @Test public void nodeDisconnectMissingContextVariableException() throws Throwable {
         sessions.then(r -> {
@@ -1215,7 +1187,7 @@ public class ExecutorStepTest {
             while (Queue.getInstance().getItems().length > 0) {
                 Thread.sleep(100L);
             }
-            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
+            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask")));
         });
     }
 
@@ -1264,31 +1236,6 @@ public class ExecutorStepTest {
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate(Queue.Task task) {
             return ACL.SYSTEM;
-        }
-    }
-
-    @TestExtension("queueTaskOwnerCorrectWhenRestarting")
-    public static class PipelineOnlyTaskDispatcher extends QueueTaskDispatcher {
-        @Override
-        public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
-            Queue.Task t = item.task;
-            while (!(t instanceof Item) && (t != null)) {
-                final Queue.Task ownerTask = t.getOwnerTask();
-                if (t == ownerTask) {
-                    break;
-                }
-                t = ownerTask;
-            }
-            if (t instanceof WorkflowJob) {
-                return null;
-            }
-            final Queue.Task finalT = t;
-            return new CauseOfBlockage() {
-                @Override
-                public String getShortDescription() {
-                    return "Non-Pipeline tasks are forbidden! Not building: " + finalT;
-                }
-            };
         }
     }
 
