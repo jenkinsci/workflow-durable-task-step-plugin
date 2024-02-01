@@ -889,7 +889,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         private static void finish(StepContext context, @CheckForNull final String cookie) {
-            RunningTask runningTask = RunningTasks.get(context, t -> t, () -> null);
+            RunningTask runningTask = RunningTasks.get(context);
             if (runningTask == null) {
                 LOGGER.fine(() -> "no known running task for " + context);
                 return;
@@ -952,7 +952,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     finish(execution.getContext(), cookie);
                 }
                 execution.body = null;
-                RunningTask t = RunningTasks.remove(execution.getContext());
+                RunningTask t = RunningTasks.get(execution.getContext());
                 if (t != null) {
                     LOGGER.fine(() -> "cancelling any leftover task from " + execution.getContext());
                     boolean _stopping = t.stopping;
@@ -967,6 +967,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 execution.state = null;
                 bodyContext.saveState();
+                RunningTasks.remove(execution.getContext());
             }
 
         }
@@ -1239,6 +1240,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        static @CheckForNull RunningTask get(StepContext context) {
+            return get(context, t -> t, () -> null);
+        }
+
         static void run(StepContext context, Consumer<RunningTask> fn) {
             RunningTask t = find(context);
             if (t != null) {
@@ -1248,10 +1253,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
-        static @CheckForNull RunningTask remove(StepContext context) {
+        static void remove(StepContext context) {
             RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
             synchronized (holder) {
-                return holder.runningTasks.remove(context);
+                if (holder.runningTasks.remove(context) == null) {
+                    LOGGER.fine(() -> "no RunningTask to remove associated with " + context);
+                }
             }
         }
 
