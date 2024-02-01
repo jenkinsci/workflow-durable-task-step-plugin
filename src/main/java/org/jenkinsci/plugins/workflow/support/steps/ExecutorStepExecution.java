@@ -900,6 +900,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return;
             }
             assert runningTask.launcher != null;
+            runningTask.execution = null;
             Timer.get().submit(() -> execution.completed(null)); // JENKINS-31614
             if (cookie == null) {
                 LOGGER.fine(() -> "no cookie to kill from " + context);

@@ -122,7 +122,7 @@ public final class ExecutorStep2Test {
             r.jenkins.clouds.add(new TestCloud());
             var p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('test') {}", true));
-            logging.record(OnceRetentionStrategy.class, Level.FINE);
+            logging.record(OnceRetentionStrategy.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
             r.assertLogContains("Running on test-1", r.buildAndAssertSuccess(p));
             await("waiting for test-1 to be removed").until(r.jenkins::getNodes, empty());
             r.assertLogContains("Running on test-2", r.buildAndAssertSuccess(p));
