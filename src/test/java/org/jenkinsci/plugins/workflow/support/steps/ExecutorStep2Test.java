@@ -42,7 +42,10 @@ import hudson.slaves.NodeProvisioner;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.logging.Level;
 import jenkins.model.Jenkins;
+import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.empty;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -55,6 +58,7 @@ import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsSessionRule;
+import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
 
@@ -65,6 +69,7 @@ public final class ExecutorStep2Test {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule rr = new JenkinsSessionRule();
+    @Rule public LoggerRule logging = new LoggerRule();
 
     @Issue("JENKINS-53837")
     @Test public void queueTaskOwnerCorrectWhenRestarting() throws Throwable {
@@ -117,8 +122,11 @@ public final class ExecutorStep2Test {
             r.jenkins.clouds.add(new TestCloud());
             var p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('test') {}", true));
+            logging.record(OnceRetentionStrategy.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
             r.assertLogContains("Running on test-1", r.buildAndAssertSuccess(p));
+            await("waiting for test-1 to be removed").until(r.jenkins::getNodes, empty());
             r.assertLogContains("Running on test-2", r.buildAndAssertSuccess(p));
+            await("waiting for test-2 to be removed").until(r.jenkins::getNodes, empty());
         });
     }
     // adapted from org.jenkinci.plugins.mock_slave.MockCloud
