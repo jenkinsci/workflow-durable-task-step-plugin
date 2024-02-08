@@ -955,11 +955,14 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 execution.body = null;
                 RunningTask t = RunningTasks.get(execution.getContext());
                 if (t != null) {
-                    LOGGER.fine(() -> "cancelling any leftover task from " + execution.getContext());
                     boolean _stopping = t.stopping;
                     t.stopping = true;
                     try {
-                        Queue.getInstance().cancel(execution.state.task);
+                        if (Queue.getInstance().cancel(execution.state.task)) {
+                            LOGGER.fine(() -> "cancelled leftover task from " + execution.getContext());
+                        } else {
+                            LOGGER.fine(() -> "was unable to cancel any leftover task from " + execution.getContext());
+                        }
                     } finally {
                         t.stopping = _stopping;
                     }
