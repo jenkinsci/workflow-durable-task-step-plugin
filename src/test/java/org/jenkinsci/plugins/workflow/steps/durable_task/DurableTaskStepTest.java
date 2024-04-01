@@ -109,9 +109,9 @@ public final class DurableTaskStepTest {
         var p = r.createProject(WorkflowJob.class, "p");
         var f = new File(r.jenkins.getRootDir(), "f");
         p.addProperty(new ParametersDefinitionProperty(new StringParameterDefinition("F")));
-        p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh 'sleep 5 && touch \"$F\"'} else {bat 'ping -n 5 localhost && copy nul \"%F%\" && dir \"%F%\"'}}", true));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {if (isUnix()) {sh 'sleep 5 && touch \"$F\"'} else {bat 'ping -n 5 " + r.getURL().getHost() + " && copy nul \"%F%\" && dir \"%F%\"'}}", true));
         var b = p.scheduleBuild2(0, new ParametersAction(new StringParameterValue("F", f.getAbsolutePath()))).waitForStart();
-        r.waitForMessage(Functions.isWindows() ? ">ping -n 5 localhost" : "+ sleep 5", b);
+        r.waitForMessage(Functions.isWindows() ? ">ping -n 5 " + r.getURL().getHost() : "+ sleep 5", b);
         r.jenkins.doQuietDown(true, 0, null);
     }
 
