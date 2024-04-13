@@ -171,6 +171,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     } else {
                         LOGGER.warning(() -> "failed to cancel " + item + " in response to " + cause);
                     }
+                    // TODO RunningTasks.remove(context) ?
                     break;
                 } else {
                     LOGGER.log(FINE, "no match on {0} with {1} vs. {2}", new Object[] {item, task.context, context});
@@ -1223,7 +1224,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         static void add(StepContext context) {
             RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
             synchronized (holder) {
-                holder.runningTasks.putIfAbsent(context, new RunningTask());
+                RunningTask existing = holder.runningTasks.putIfAbsent(context, new RunningTask());
+                if (existing == null) {
+                    LOGGER.fine(() -> "registered new RunningTask for " + context);
+                } else {
+                    LOGGER.warning(() -> context + " already had a RunningTask");
+                }
             }
         }
 
@@ -1260,7 +1266,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         static void remove(StepContext context) {
             RunningTasks holder = ExtensionList.lookupSingleton(RunningTasks.class);
             synchronized (holder) {
-                if (holder.runningTasks.remove(context) == null) {
+                if (holder.runningTasks.remove(context) != null) {
+                    LOGGER.fine(() -> "removed RunningTask for " + context);
+                    Thread.dumpStack();//TODO
+                } else {
                     LOGGER.fine(() -> "no RunningTask to remove associated with " + context);
                 }
             }
