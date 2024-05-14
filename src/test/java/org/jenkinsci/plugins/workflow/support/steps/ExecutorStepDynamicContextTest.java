@@ -35,15 +35,20 @@ import java.util.List;
 import java.util.logging.Level;
 import jenkins.model.InterruptedBuildAction;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.isA;
 import static org.hamcrest.Matchers.anyOf;
+
+import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+
+import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -121,7 +126,11 @@ public class ExecutorStepDynamicContextTest {
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
             assertNotNull(iba);
-            assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.RemovedNodeCause.class)));
+            assertThat(iba.getCauses(), contains(
+                    isA(ExecutorStepExecution.RemovedNodeCause.class),
+                    isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class
+                    ))
+            );
         });
     }
 
@@ -207,4 +216,37 @@ public class ExecutorStepDynamicContextTest {
         });
     }
 
+    @Test public void onceRetentionStrategyNodeDisappearance() throws Throwable {
+        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
+        sessions.then(j -> {
+            // Start up a build that needs executor and then reboot and take the node offline
+            // Starting job first ensures we don't immediately fail if Node comes from a Cloud
+            //  and takes a min to provision
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('ghost') {if (isUnix()) {sh 'sleep infinity'} else {bat 'echo + sleep infinity && ping -n 999999 localhost'}}", true));
+
+            DumbSlave s = j.createSlave(Label.get("ghost"));
+            s.setRetentionStrategy(new OnceRetentionStrategy(0));
+            j.waitForMessage("+ sleep infinity", p.scheduleBuild2(0).waitForStart());
+            j.jenkins.removeNode(s);
+        });
+
+        sessions.then(j -> {
+            // Start up a build and then reboot and take the node offline
+            assertEquals(0, j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
+            assertNull(j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
+            WorkflowRun run = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
+            j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
+            j.assertLogNotContains("slave0 has been removed for ", run);
+            assertThat(j.jenkins.getQueue().getItems(), emptyArray());
+            InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
+            assertNotNull(iba);
+            assertThat(iba.getCauses(),
+                    allOf(
+                            contains(isA(ExecutorStepExecution.RemovedNodeCause.class)),
+                            not(contains(isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class)))
+                    )
+            );
+        });
+    }
 }

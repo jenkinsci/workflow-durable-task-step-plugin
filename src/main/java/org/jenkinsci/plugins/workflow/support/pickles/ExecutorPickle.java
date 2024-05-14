@@ -122,7 +122,7 @@ public class ExecutorPickle extends Pickle {
                                 Queue.getInstance().cancel(item);
                                 owner.getListener().getLogger().printf("Killed %s after waiting for %s because we assume unknown agent %s is never going to appear%n",
                                         item.task.getDisplayName(), Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS), placeholder.getAssignedLabel());
-                                throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause());
+                                throw new FlowInterruptedException(Result.ABORTED, new ExecutorStepExecution.RemovedNodeCause(), new ExecutorStepExecution.RemovedNodeTimeoutCause());
                             }
                         }
                     }
