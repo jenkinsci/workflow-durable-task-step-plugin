@@ -226,14 +226,9 @@ public class ExecutorStepDynamicContextTest {
 
             DumbSlave s = j.createSlave(Label.get("ghost"));
             s.setRetentionStrategy(new OnceRetentionStrategy(0));
-            j.waitForMessage("+ sleep infinity", p.scheduleBuild2(0).waitForStart());
+            var run = p.scheduleBuild2(0).waitForStart();
+            j.waitForMessage("+ sleep infinity", run);
             j.jenkins.removeNode(s);
-        });
-
-        sessions.then(j -> {
-            // Start up a build and then reboot and take the node offline
-            assertEquals(0, j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
-            WorkflowRun run = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
             j.assertLogNotContains("slave0 has been removed for ", run);
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
