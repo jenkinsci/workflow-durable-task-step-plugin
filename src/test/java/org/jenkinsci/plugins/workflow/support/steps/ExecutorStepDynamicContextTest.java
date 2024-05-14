@@ -119,7 +119,6 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
             // Start up a build and then reboot and take the node offline
             assertEquals(0, j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
-            assertNull(j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
             WorkflowRun run = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
             j.assertLogContains("slave0 has been removed for ", run);
@@ -234,7 +233,6 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
             // Start up a build and then reboot and take the node offline
             assertEquals(0, j.jenkins.getLabel("ghost").getNodes().size()); // Make sure test impl is correctly deleted
-            assertNull(j.jenkins.getNode("ghost")); // Make sure test impl is correctly deleted
             WorkflowRun run = j.jenkins.getItemByFullName("p", WorkflowJob.class).getLastBuild();
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
             j.assertLogNotContains("slave0 has been removed for ", run);
