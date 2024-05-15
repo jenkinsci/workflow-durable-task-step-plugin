@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.contains;
@@ -53,7 +54,6 @@ import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsSessionRule;
@@ -63,7 +63,6 @@ public class ExecutorStepDynamicContextTest {
 
     @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
-    @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public LoggerRule logging = new LoggerRule();
 
     private void commonSetup() {
@@ -82,9 +81,7 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
             SemaphoreStep.success("wait/1", null);
             WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            while (Queue.getInstance().getItems().length == 0) {
-                Thread.sleep(100);
-            }
+            await().until(() -> j.jenkins.getQueue().getItems(), emptyArray());
             Queue.Item[] items = Queue.getInstance().getItems();
             assertEquals(1, items.length);
             Queue.getInstance().cancel(items[0]);
