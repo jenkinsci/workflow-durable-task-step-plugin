@@ -1,7 +1,11 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItemInArray;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -680,7 +684,7 @@ public class ShellStepTest {
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         j.jenkins.removeNode(s);
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
-        j.waitForMessage(new ExecutorStepExecution.RemovedNodeTimeoutCause().getShortDescription(), b);
+        j.waitForMessage(new ExecutorStepExecution.RemovedNodeCause().getShortDescription(), b);
     }
 
     @Issue("JENKINS-44521")
