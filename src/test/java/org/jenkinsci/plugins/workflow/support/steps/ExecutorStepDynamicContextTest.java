@@ -27,10 +27,12 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.arrayWithSize;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.isA;
+import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -82,9 +84,7 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
             SemaphoreStep.success("wait/1", null);
             WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            await().timeout(Duration.ofMinutes(1)).until(() -> j.jenkins.getQueue().getItems(), emptyArray());
-            Queue.Item[] items = Queue.getInstance().getItems();
-            assertEquals(1, items.length);
+            var items = await().timeout(Duration.ofMinutes(1)).until(() -> j.jenkins.getQueue().getItems(), arrayWithSize(1));
             Queue.getInstance().cancel(items[0]);
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
             InterruptedBuildAction iba = b.getAction(InterruptedBuildAction.class);
