@@ -40,6 +40,7 @@ import hudson.model.Result;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.RetentionStrategy;
 import java.io.File;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -81,7 +82,7 @@ public class ExecutorStepDynamicContextTest {
         sessions.then(j -> {
             SemaphoreStep.success("wait/1", null);
             WorkflowRun b = j.jenkins.getItemByFullName("p", WorkflowJob.class).getBuildByNumber(1);
-            await().until(() -> j.jenkins.getQueue().getItems(), emptyArray());
+            await().timeout(Duration.ofMinutes(1)).until(() -> j.jenkins.getQueue().getItems(), emptyArray());
             Queue.Item[] items = Queue.getInstance().getItems();
             assertEquals(1, items.length);
             Queue.getInstance().cancel(items[0]);
