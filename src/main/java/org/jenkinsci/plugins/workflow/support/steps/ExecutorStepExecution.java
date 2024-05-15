@@ -354,7 +354,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 cancelOwnerExecution(node, new RemovedNodeCause());
             } else {
                 LOGGER.fine(() -> "Will cancel owner run for agent " + node.getNodeName() + " after waiting for " + TIMEOUT_WAITING_FOR_NODE_MILLIS + "ms");
-                Timer.get().schedule(() -> cancelOwnerExecution(node, new RemovedNodeTimeoutCause()), TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+                Timer.get().schedule(() -> cancelOwnerExecution(node, new RemovedNodeCause()), TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
             }
         }
 

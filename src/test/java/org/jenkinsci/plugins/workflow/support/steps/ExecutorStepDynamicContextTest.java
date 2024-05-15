@@ -32,7 +32,6 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.isA;
-import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -91,7 +90,7 @@ public class ExecutorStepDynamicContextTest {
             assertNotNull(iba);
             assertThat(iba.getCauses(), contains(anyOf(
                 isA(ExecutorStepExecution.QueueTaskCancelled.class), // normal
-                isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class)))); // observed on occasion
+                isA(ExecutorStepExecution.RemovedNodeCause.class)))); // observed on occasion
         });
     }
 
