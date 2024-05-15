@@ -24,6 +24,15 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.emptyArray;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.isA;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 import hudson.model.Label;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -34,21 +43,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import jenkins.model.InterruptedBuildAction;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.emptyArray;
-import static org.hamcrest.Matchers.isA;
-import static org.hamcrest.Matchers.anyOf;
-
+import org.jenkinci.plugins.mock_slave.MockCloud;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -64,6 +65,10 @@ public class ExecutorStepDynamicContextTest {
     @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public LoggerRule logging = new LoggerRule();
+
+    private void commonSetup() {
+        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
+    }
 
     @Test public void canceledQueueItem() throws Throwable {
         sessions.then(j -> {
@@ -100,7 +105,7 @@ public class ExecutorStepDynamicContextTest {
      */
     @Issue("JENKINS-36013")
     @Test public void normalNodeDisappearance() throws Throwable {
-        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
+        commonSetup();
         sessions.then(j -> {
             // Start up a build that needs executor and then reboot and take the node offline
             // Starting job first ensures we don't immediately fail if Node comes from a Cloud
@@ -128,7 +133,7 @@ public class ExecutorStepDynamicContextTest {
 
     @Issue("JENKINS-36013")
     @Test public void parallelNodeDisappearance() throws Throwable {
-        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
+        commonSetup();
         sessions.then(j -> {
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("def bs = [:]; for (int _i = 0; _i < 5; _i++) {def i = _i; bs[/b$i/] = {node('remote') {semaphore(/s$i/)}}}; parallel bs", true));
@@ -209,7 +214,7 @@ public class ExecutorStepDynamicContextTest {
     }
 
     @Test public void onceRetentionStrategyNodeDisappearance() throws Throwable {
-        logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
+        commonSetup();
         sessions.then(j -> {
             DumbSlave s = j.createSlave(Label.get("ghost"));
             s.setRetentionStrategy(new OnceRetentionStrategy(0));
@@ -218,6 +223,28 @@ public class ExecutorStepDynamicContextTest {
             var run = p.scheduleBuild2(0).waitForStart();
             j.waitForMessage("+ sleep infinity", run);
             j.jenkins.removeNode(s);
+            j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
+            assertThat(j.jenkins.getQueue().getItems(), emptyArray());
+            InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
+            assertNotNull(iba);
+            assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.RemovedNodeCause.class)));
+        });
+    }
+
+    @Test public void cloudNodeDisappearance() throws Throwable {
+        commonSetup();
+        sessions.then(j -> {
+            var mockCloud = new MockCloud("mock");
+            mockCloud.setLabels("mock");
+            j.jenkins.clouds.add(mockCloud);
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('mock') {if (isUnix()) {sh 'sleep infinity'} else {bat 'echo + sleep infinity && ping -n 999999 localhost'}}", true));
+            WorkflowRun run = p.scheduleBuild2(0).waitForStart();
+            j.waitForMessage("+ sleep infinity", run);
+            var mockNodes = j.jenkins.getLabel("mock").getNodes();
+            assertThat(mockNodes, hasSize(1));
+            var mockNode = mockNodes.iterator().next();
+            j.jenkins.removeNode(mockNode);
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
