@@ -36,6 +36,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
 import java.util.stream.Stream;
+import jenkins.model.CauseOfInterruption;
 import org.jenkinsci.Symbol;
 import org.jenkinsci.plugins.workflow.flow.ErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
@@ -57,7 +58,7 @@ public final class AgentErrorCondition extends ErrorCondition {
         if (t instanceof AgentOfflineException) {
             return true;
         }
-        if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(ExecutorStepExecution.Retryable.class::isInstance)) {
+        if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(Retryable.class::isInstance)) {
             return true;
         }
         if (isClosedChannelException(t)) {
@@ -88,6 +89,11 @@ public final class AgentErrorCondition extends ErrorCondition {
             return isClosedChannelException(t.getCause()) || Stream.of(t.getSuppressed()).anyMatch(AgentErrorCondition::isClosedChannelException);
         }
     }
+
+    /**
+     * A marker interface for {@link CauseOfInterruption} instances that can be retried through {@link AgentErrorCondition}.
+     */
+    public interface Retryable {}
 
     @Symbol("agent")
     @Extension public static final class DescriptorImpl extends ErrorConditionDescriptor {

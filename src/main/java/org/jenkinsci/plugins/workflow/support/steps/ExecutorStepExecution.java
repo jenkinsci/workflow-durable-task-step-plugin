@@ -343,11 +343,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
     }
 
-    /**
-     * A marker interface for {@link CauseOfInterruption} instances that can be retried through {@link AgentErrorCondition}.
-     */
-    public interface Retryable {}
-
     @Extension public static final class RemovedNodeListener extends NodeListener {
         @Override protected void onDeleted(@NonNull Node node) {
             if (!RemovedNodeCause.ENABLED) {
@@ -421,7 +416,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     /**
      * Base class for a cause of interruption that can be retried via {@link AgentErrorCondition}.
       */
-    private abstract static class RetryableCauseOfInterruption extends CauseOfInterruption implements Retryable {}
+    private abstract static class RetryableCauseOfInterruption extends CauseOfInterruption implements AgentErrorCondition.Retryable {}
 
     /** Transient handle of a running executor task. */
     private static final class RunningTask {
