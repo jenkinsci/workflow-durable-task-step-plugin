@@ -211,14 +211,10 @@ public class ExecutorStepDynamicContextTest {
     @Test public void onceRetentionStrategyNodeDisappearance() throws Throwable {
         logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(j -> {
-            // Start up a build that needs executor and then reboot and take the node offline
-            // Starting job first ensures we don't immediately fail if Node comes from a Cloud
-            //  and takes a min to provision
-            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
-            p.setDefinition(new CpsFlowDefinition("node('ghost') {if (isUnix()) {sh 'sleep infinity'} else {bat 'echo + sleep infinity && ping -n 999999 localhost'}}", true));
-
             DumbSlave s = j.createSlave(Label.get("ghost"));
             s.setRetentionStrategy(new OnceRetentionStrategy(0));
+            WorkflowJob p = j.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('ghost') {if (isUnix()) {sh 'sleep infinity'} else {bat 'echo + sleep infinity && ping -n 999999 localhost'}}", true));
             var run = p.scheduleBuild2(0).waitForStart();
             j.waitForMessage("+ sleep infinity", run);
             j.jenkins.removeNode(s);
