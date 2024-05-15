@@ -26,6 +26,7 @@ import hudson.model.Queue;
 import hudson.model.ResourceList;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.model.User;
@@ -38,6 +39,7 @@ import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.security.AccessControlled;
 import hudson.security.Permission;
+import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
@@ -74,6 +76,7 @@ import jenkins.util.Timer;
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
+import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
@@ -334,7 +337,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     }
 
-    public static final class QueueTaskCancelled extends CauseOfInterruption {
+    public static final class QueueTaskCancelled extends RetryableCauseOfInterruption {
         @Override public String getShortDescription() {
             return Messages.ExecutorStepExecution_queue_task_cancelled();
         }
@@ -346,50 +349,74 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return;
             }
             LOGGER.fine(() -> "received node deletion event on " + node.getNodeName());
-            Timer.get().schedule(() -> {
-                Computer c = node.toComputer();
-                if (c == null || c.isOnline()) {
-                    LOGGER.fine(() -> "computer for " + node.getNodeName() + " was missing or online, skipping");
-                    return;
-                }
-                LOGGER.fine(() -> "processing node deletion event on " + node.getNodeName());
-                for (Executor e : c.getExecutors()) {
-                    Queue.Executable exec = e.getCurrentExecutable();
-                    if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
-                        PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
-                        TaskListener listener;
-                        try {
-                            listener = task.context.get(TaskListener.class);
-                        } catch (Exception x) {
-                            LOGGER.log(Level.WARNING, null, x);
-                            continue;
-                        }
-                        task.withExecution(execution -> {
-                            BodyExecution body = execution.body;
-                            if (body == null) {
-                                listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
-                                return;
-                            }
-                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                            if (Util.isOverridden(BodyExecution.class, body.getClass(), "cancel", Throwable.class)) {
-                                body.cancel(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
-                            } else { // TODO remove once https://github.com/jenkinsci/workflow-cps-plugin/pull/570 is widely deployed
-                                body.cancel(new RemovedNodeCause());
-                            }
-                        });
+            if (isOneShotAgent(node)) {
+                LOGGER.fine(() -> "Cancelling owner run for one-shot agent " + node.getNodeName() + " immediately");
+                cancelOwnerExecution(node, new RemovedNodeCause());
+            } else {
+                LOGGER.fine(() -> "Will cancel owner run for agent " + node.getNodeName() + " after waiting for " + TIMEOUT_WAITING_FOR_NODE_MILLIS + "ms");
+                Timer.get().schedule(() -> cancelOwnerExecution(node, new RemovedNodeCause()), TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        private static boolean isOneShotAgent(Node node) {
+            return node instanceof AbstractCloudSlave ||
+                    (node instanceof Slave && ((Slave) node).getRetentionStrategy() instanceof OnceRetentionStrategy);
+        }
+
+        private static void cancelOwnerExecution(Node node, CauseOfInterruption... causes) {
+            Computer c = node.toComputer();
+            if (c == null || c.isOnline()) {
+                LOGGER.fine(() -> "computer for " + node.getNodeName() + " was missing or online, skipping");
+                return;
+            }
+            LOGGER.fine(() -> "processing node deletion event on " + node.getNodeName());
+            for (Executor e : c.getExecutors()) {
+                Queue.Executable exec = e.getCurrentExecutable();
+                if (exec instanceof PlaceholderTask.PlaceholderExecutable) {
+                    PlaceholderTask task = ((PlaceholderTask.PlaceholderExecutable) exec).getParent();
+                    TaskListener listener;
+                    try {
+                        listener = task.context.get(TaskListener.class);
+                    } catch (Exception x) {
+                        LOGGER.log(Level.WARNING, null, x);
+                        continue;
                     }
+                    task.withExecution(execution -> {
+                        BodyExecution body = execution.body;
+                        if (body == null) {
+                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
+                            return;
+                        }
+                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
+                        if (Util.isOverridden(BodyExecution.class, body.getClass(), "cancel", Throwable.class)) {
+                            body.cancel(new FlowInterruptedException(Result.ABORTED, false, causes));
+                        } else { // TODO remove once https://github.com/jenkinsci/workflow-cps-plugin/pull/570 is widely deployed
+                            body.cancel(causes);
+                        }
+                    });
                 }
-            }, TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+            }
         }
     }
 
-    public static final class RemovedNodeCause extends CauseOfInterruption {
+    public static final class RemovedNodeCause extends RetryableCauseOfInterruption {
         @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
         public static boolean ENABLED = Boolean.parseBoolean(System.getProperty(ExecutorStepExecution.class.getName() + ".REMOVED_NODE_DETECTION", "true"));
         @Override public String getShortDescription() {
             return "Agent was removed";
         }
     }
+
+    public static final class RemovedNodeTimeoutCause extends RetryableCauseOfInterruption {
+        @Override public String getShortDescription() {
+            return "Timeout waiting for agent to come back";
+        }
+    }
+
+    /**
+     * Base class for a cause of interruption that can be retried via {@link AgentErrorCondition}.
+      */
+    private abstract static class RetryableCauseOfInterruption extends CauseOfInterruption implements AgentErrorCondition.Retryable {}
 
     /** Transient handle of a running executor task. */
     private static final class RunningTask {

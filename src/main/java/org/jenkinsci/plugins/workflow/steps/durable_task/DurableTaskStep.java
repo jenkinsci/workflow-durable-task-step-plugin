@@ -367,7 +367,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                         } else {
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed and timeout has expired");
                             listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
-                            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeCause());
+                            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeTimeoutCause());
                         }
                     }
                     removedNodeDiscovered = 0; // something else; reset
