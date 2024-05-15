@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.logging.Level;
 import jenkins.model.InterruptedBuildAction;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.isA;
@@ -48,10 +47,8 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 
-import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -91,7 +88,7 @@ public class ExecutorStepDynamicContextTest {
             assertNotNull(iba);
             assertThat(iba.getCauses(), contains(anyOf(
                 isA(ExecutorStepExecution.QueueTaskCancelled.class), // normal
-                isA(ExecutorStepExecution.RemovedNodeCause.class)))); // observed on occasion
+                isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class)))); // observed on occasion
         });
     }
 
@@ -125,11 +122,7 @@ public class ExecutorStepDynamicContextTest {
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
             assertNotNull(iba);
-            assertThat(iba.getCauses(), contains(
-                    isA(ExecutorStepExecution.RemovedNodeCause.class),
-                    isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class
-                    ))
-            );
+            assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class)));
         });
     }
 
@@ -230,16 +223,10 @@ public class ExecutorStepDynamicContextTest {
             j.waitForMessage("+ sleep infinity", run);
             j.jenkins.removeNode(s);
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
-            j.assertLogNotContains("slave0 has been removed for ", run);
             assertThat(j.jenkins.getQueue().getItems(), emptyArray());
             InterruptedBuildAction iba = run.getAction(InterruptedBuildAction.class);
             assertNotNull(iba);
-            assertThat(iba.getCauses(),
-                    allOf(
-                            contains(isA(ExecutorStepExecution.RemovedNodeCause.class)),
-                            not(contains(isA(ExecutorStepExecution.RemovedNodeTimeoutCause.class)))
-                    )
-            );
+            assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.RemovedNodeCause.class)));
         });
     }
 }

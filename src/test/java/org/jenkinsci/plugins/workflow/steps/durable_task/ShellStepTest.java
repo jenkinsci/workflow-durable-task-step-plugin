@@ -680,7 +680,7 @@ public class ShellStepTest {
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         j.jenkins.removeNode(s);
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
-        j.waitForMessage(new ExecutorStepExecution.RemovedNodeCause().getShortDescription(), b);
+        j.waitForMessage(new ExecutorStepExecution.RemovedNodeTimeoutCause().getShortDescription(), b);
     }
 
     @Issue("JENKINS-44521")

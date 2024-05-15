@@ -337,11 +337,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
     }
 
-    public static final class QueueTaskCancelled extends CauseOfInterruption {
+    public static final class QueueTaskCancelled extends RetryableCauseOfInterruption {
         @Override public String getShortDescription() {
             return Messages.ExecutorStepExecution_queue_task_cancelled();
         }
     }
+
+    /**
+     * A marker interface for {@link CauseOfInterruption} instances that can be retried through {@link AgentErrorCondition}.
+     */
+    public interface Retryable {}
 
     @Extension public static final class RemovedNodeListener extends NodeListener {
         @Override protected void onDeleted(@NonNull Node node) {
@@ -354,7 +359,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 cancelOwnerExecution(node, new RemovedNodeCause());
             } else {
                 LOGGER.finest(() -> "Will cancel owner run for agent " + node.getNodeName() + " after waiting for " + TIMEOUT_WAITING_FOR_NODE_MILLIS + "ms");
-                Timer.get().schedule(() -> cancelOwnerExecution(node, new RemovedNodeCause(), new RemovedNodeTimeoutCause()), TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
+                Timer.get().schedule(() -> cancelOwnerExecution(node, new RemovedNodeTimeoutCause()), TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
             }
         }
 
@@ -399,7 +404,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
     }
 
-    public static final class RemovedNodeCause extends CauseOfInterruption {
+    public static final class RemovedNodeCause extends RetryableCauseOfInterruption {
         @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "deliberately mutable")
         public static boolean ENABLED = Boolean.parseBoolean(System.getProperty(ExecutorStepExecution.class.getName() + ".REMOVED_NODE_DETECTION", "true"));
         @Override public String getShortDescription() {
@@ -407,11 +412,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
     }
 
-    public static final class RemovedNodeTimeoutCause extends CauseOfInterruption {
+    public static final class RemovedNodeTimeoutCause extends RetryableCauseOfInterruption {
         @Override public String getShortDescription() {
             return "Timeout waiting for agent to come back";
         }
     }
+
+    /**
+     * Base class for a cause of interruption that can be retried via {@link AgentErrorCondition}.
+      */
+    private abstract static class RetryableCauseOfInterruption extends CauseOfInterruption implements Retryable {}
 
     /** Transient handle of a running executor task. */
     private static final class RunningTask {
