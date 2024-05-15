@@ -355,10 +355,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             LOGGER.fine(() -> "received node deletion event on " + node.getNodeName());
             if (isOneShotAgent(node)) {
-                LOGGER.finest(() -> "Cancelling owner run for one-shot agent " + node.getNodeName() + " immediately");
+                LOGGER.fine(() -> "Cancelling owner run for one-shot agent " + node.getNodeName() + " immediately");
                 cancelOwnerExecution(node, new RemovedNodeCause());
             } else {
-                LOGGER.finest(() -> "Will cancel owner run for agent " + node.getNodeName() + " after waiting for " + TIMEOUT_WAITING_FOR_NODE_MILLIS + "ms");
+                LOGGER.fine(() -> "Will cancel owner run for agent " + node.getNodeName() + " after waiting for " + TIMEOUT_WAITING_FOR_NODE_MILLIS + "ms");
                 Timer.get().schedule(() -> cancelOwnerExecution(node, new RemovedNodeTimeoutCause()), TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
             }
         }
