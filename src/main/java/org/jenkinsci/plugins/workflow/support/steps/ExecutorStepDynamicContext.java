@@ -41,11 +41,14 @@ import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
@@ -106,6 +109,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
         try {
             exec = item.getFuture().getStartCondition().get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException x) {
+            LOGGER.log(Level.FINE, x, () -> "failed to wait for " + item + "; outstanding queue items: " + Arrays.toString(Queue.getInstance().getItems()) + "; running executables: " + Stream.of(Jenkins.get().getComputers()).flatMap(c -> c.getExecutors().stream()).collect(Collectors.toList()));
             listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
             throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeTimeoutCause());
         } catch (CancellationException x) {
@@ -132,7 +136,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
             _lease.release();
             throw new IOException("JENKINS-37121: something already locked " + fp);
         }
-        LOGGER.fine(() -> "fully restored for " + path + " on " + node);
+        LOGGER.fine(() -> "fully restored for " + path + " on " + node + " → " + computer.getName());
     }
 
     @Override public String toString() {

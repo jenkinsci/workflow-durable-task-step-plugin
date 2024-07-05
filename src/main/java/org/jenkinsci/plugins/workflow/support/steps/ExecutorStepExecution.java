@@ -32,6 +32,7 @@ import hudson.model.TopLevelItem;
 import hudson.model.User;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueListener;
+import hudson.model.queue.QueueTaskDispatcher;
 import hudson.model.queue.SubTask;
 import hudson.remoting.ChannelClosedException;
 import hudson.remoting.RequestAbortedException;
@@ -161,7 +162,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         try (ACLContext as = ACL.as(ACL.SYSTEM)) {
             items = Queue.getInstance().getItems();
         }
-        LOGGER.log(FINE, "stopping one of {0}", Arrays.asList(items));
+        LOGGER.log(FINE, cause, () -> "stopping one of " + Arrays.asList(items));
         StepContext context = getContext();
         for (Queue.Item item : items) {
             // if we are still in the queue waiting to be scheduled, just retract that
@@ -438,6 +439,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         private final StepContext context;
         /** Initially set to {@link ExecutorStep#getLabel}, if any; later switched to actual self-label when block runs. */
         private String label;
+        /** Set after {@link #label} is set to a self-label. */
+        private boolean labelIsSelfLabel;
         /** Shortcut for {@link #run}. */
         private final String runId;
         /**
@@ -537,6 +540,27 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 return null;
             }
             return j.getNode(label);
+        }
+
+        @Restricted(NoExternalUse.class)
+        @Extension public static final class EnforceSelfLabel extends QueueTaskDispatcher {
+            @Override public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
+                if (item.task instanceof PlaceholderTask) {
+                    PlaceholderTask t = (PlaceholderTask) item.task;
+                    if (t.labelIsSelfLabel) {
+                        String nodeName = node.getNodeName();
+                        if (!nodeName.equals(t.label)) {
+                            LOGGER.fine(() -> "Refusing to let " + item + " be run on " + node + " despite label match");
+                            return new CauseOfBlockage() {
+                                @Override public String getShortDescription() {
+                                    return "Must run on " + t.label + " not " + nodeName;
+                                }
+                            };
+                        }
+                    }
+                }
+                return null;
+            }
         }
 
         @Deprecated
@@ -681,8 +705,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return r;
         }
 
-        // TODO 2.389+ @Override
-        public @CheckForNull Queue.Executable getOwnerExecutable() {
+        @Override public @CheckForNull Queue.Executable getOwnerExecutable() {
             Run<?, ?> r = runForDisplay();
             return r instanceof Queue.Executable ? (Queue.Executable) r : null;
         }
@@ -1034,6 +1057,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         cookie = UUID.randomUUID().toString();
                         // Switches the label to a self-label, so if the executable is killed and restarted, it will run on the same node:
                         label = computer.getName();
+                        labelIsSelfLabel = true;
 
                         EnvVars env = computer.getEnvironment();
                         env.overrideExpandingAll(computer.buildEnvironment(listener));

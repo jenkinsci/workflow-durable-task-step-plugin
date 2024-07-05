@@ -25,6 +25,7 @@
 package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.ExtensionList;
+import hudson.FilePath;
 import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Item;
@@ -35,11 +36,14 @@ import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.model.queue.CauseOfBlockage;
 import hudson.model.queue.QueueTaskDispatcher;
+import hudson.remoting.Channel;
 import hudson.slaves.AbstractCloudComputer;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.Cloud;
+import hudson.slaves.ComputerListener;
 import hudson.slaves.NodeProvisioner;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.logging.Level;
@@ -181,6 +185,37 @@ public final class ExecutorStep2Test {
                 @Override public boolean isInstantiable() {
                     return false;
                 }
+            }
+        }
+    }
+
+    @Test public void selfNameVsLabel() throws Throwable {
+        logging.recordPackage(ExecutorStepExecution.class, Level.FINE);
+        rr.then(r -> {
+            r.jenkins.setNumExecutors(0);
+            ExtensionList.lookupSingleton(DelayX.class).active = false;
+            r.createSlave("x", null, null);
+            r.createSlave("x2", "x", null);
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("parallel b1: {node('x && !x2') {semaphore 'b1'}}, b2: {node('x2') {semaphore 'b2'}}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("b1/1", b);
+            SemaphoreStep.waitForStart("b2/1", b);
+        });
+        rr.then(r -> {
+            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            SemaphoreStep.success("b1/1", null);
+            SemaphoreStep.success("b2/1", null);
+            r.waitForCompletion(b);
+            r.assertBuildStatusSuccess(b);
+        });
+    }
+    @TestExtension("selfNameVsLabel") public static final class DelayX extends ComputerListener {
+        boolean active = true;
+        @Override public void preOnline(Computer c, Channel channel, FilePath root, TaskListener listener) throws IOException, InterruptedException {
+            if (c.getName().equals("x")) {
+                Thread.sleep(5_000);
             }
         }
     }
