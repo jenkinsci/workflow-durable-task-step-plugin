@@ -56,7 +56,6 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runners.Parameterized;
@@ -190,7 +189,6 @@ public final class ExecutorStep2Test {
         }
     }
 
-    @Ignore("TODO times out waiting for x2 PlaceholderTask because x2 is running PlaceholderExecutable for x while x is idle")
     @Test public void selfNameVsLabel() throws Throwable {
         logging.recordPackage(ExecutorStepExecution.class, Level.FINE);
         rr.then(r -> {
