@@ -161,7 +161,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         try (ACLContext as = ACL.as(ACL.SYSTEM)) {
             items = Queue.getInstance().getItems();
         }
-        LOGGER.log(FINE, "stopping one of {0}", Arrays.asList(items));
+        LOGGER.log(FINE, cause, () -> "stopping one of " + Arrays.asList(items));
         StepContext context = getContext();
         for (Queue.Item item : items) {
             // if we are still in the queue waiting to be scheduled, just retract that
