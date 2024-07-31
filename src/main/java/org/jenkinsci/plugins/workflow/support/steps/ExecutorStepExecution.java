@@ -379,7 +379,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     try {
                         listener = task.context.get(TaskListener.class);
                     } catch (Exception x) {
-                        LOGGER.log(Level.WARNING, null, x);
+                        LOGGER.log(Level.FINE, x, () -> task.getFullDisplayName() + " possibly already finished");
                         continue;
                     }
                     task.withExecution(execution -> {
@@ -389,11 +389,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             return;
                         }
                         listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        if (Util.isOverridden(BodyExecution.class, body.getClass(), "cancel", Throwable.class)) {
-                            body.cancel(new FlowInterruptedException(Result.ABORTED, false, causes));
-                        } else { // TODO remove once https://github.com/jenkinsci/workflow-cps-plugin/pull/570 is widely deployed
-                            body.cancel(causes);
-                        }
+                        body.cancel(new FlowInterruptedException(Result.ABORTED, false, causes));
                     });
                 }
             }
