@@ -94,6 +94,7 @@ import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
 import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.Beta;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.export.Exported;
@@ -807,7 +808,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** hash code of list of heads */
         private transient int lastCheckedHashCode;
         private transient String lastEnclosingLabel;
-        @Restricted(NoExternalUse.class) // for Jelly
+
+        @Restricted(Beta.class)
         public @CheckForNull String getEnclosingLabel() {
             if (!context.isReady()) {
                 return null;
