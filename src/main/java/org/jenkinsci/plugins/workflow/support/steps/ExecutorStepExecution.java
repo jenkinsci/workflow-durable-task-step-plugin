@@ -807,7 +807,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         /** hash code of list of heads */
         private transient int lastCheckedHashCode;
         private transient String lastEnclosingLabel;
-        @Restricted(NoExternalUse.class) // for Jelly
+
         public @CheckForNull String getEnclosingLabel() {
             if (!context.isReady()) {
                 return null;
