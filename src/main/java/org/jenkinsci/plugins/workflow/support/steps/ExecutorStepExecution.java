@@ -90,6 +90,7 @@ import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
@@ -322,6 +323,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.log(Level.WARNING, null, x);
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
+                        // Also abort any shell steps running on the same node:
+                        if (exec.state != null) {
+                            try {
+                                for (var exec2 : ctx.get(FlowExecution.class).getCurrentExecutions(true).get()) {
+                                    if (exec2 instanceof DurableTaskStep.Execution) {
+                                        if (exec.state.node.equals(((DurableTaskStep.Execution) exec2).node)) {
+                                            exec2.getContext().onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
+                                        }
+                                    }
+                                }
+                            } catch (Exception x) {
+                                LOGGER.log(Level.WARNING, null, x);
+                            }
+                        }
                     } else {
                         newAnomalous.add(ctx);
                     }
