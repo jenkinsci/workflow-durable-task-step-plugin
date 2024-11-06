@@ -312,6 +312,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
             Set<StepContext> newAnomalous = new HashSet<>();
+            Set<String> affectedNodes = new HashSet<>();
             StepExecution.applyAll(ExecutorStepExecution.class, exec -> {
                 StepContext ctx = exec.getContext();
                 if (!knownTasks.contains(ctx)) {
@@ -323,19 +324,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.log(Level.WARNING, null, x);
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
-                        // Also abort any shell steps running on the same node:
                         if (exec.state != null) {
-                            try {
-                                for (var exec2 : ctx.get(FlowExecution.class).getCurrentExecutions(true).get()) {
-                                    if (exec2 instanceof DurableTaskStep.Execution) {
-                                        if (exec.state.node.equals(((DurableTaskStep.Execution) exec2).node)) {
-                                            exec2.getContext().onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
-                                        }
-                                    }
-                                }
-                            } catch (Exception x) {
-                                LOGGER.log(Level.WARNING, null, x);
-                            }
+                            affectedNodes.add(exec.state.node);
                         }
                     } else {
                         newAnomalous.add(ctx);
@@ -345,6 +335,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 return null;
             }).get();
+            // Also abort any shell steps running on the same node(s):
+            if (!affectedNodes.isEmpty()) {
+                StepExecution.applyAll(DurableTaskStep.Execution.class, exec -> {
+                    if (affectedNodes.contains(exec.node)) {
+                        StepContext ctx = exec.getContext();
+                        try {
+                            ctx.get(TaskListener.class).error("also cancelling shell steps running on " + exec.node);
+                        } catch (IOException | InterruptedException x) {
+                            LOGGER.log(Level.WARNING, null, x);
+                        }
+                        ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
+                    }
+                    return null;
+                });
+            }
             for (StepContext ctx : newAnomalous) {
                 ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; will cancel if this condition persists");
             }
