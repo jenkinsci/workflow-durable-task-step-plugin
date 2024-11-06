@@ -531,7 +531,7 @@ public class ExecutorStepTest {
                 SemaphoreStep.success("wait/1", null);
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
-                r.assertLogContains("dumbo has been removed for 15 sec, assuming it is not coming back", b);
+                r.assertLogContains("dumbo has been removed for 15 sec; assuming it is not coming back, and terminating node step", b);
         });
     }
 

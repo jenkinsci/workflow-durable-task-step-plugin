@@ -159,7 +159,7 @@ public class ExecutorStepDynamicContextTest {
             j.assertLogNotContains("assuming it is not coming back", b);
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
             for (int i = 0; i < 5; i++) {
-                j.assertLogContains("slave" + i + " has been removed for 15 sec, assuming it is not coming back", b);
+                j.assertLogContains("slave" + i + " has been removed for 15 sec; assuming it is not coming back, and terminating node step", b);
             }
             assertThat(logging.getRecords().stream().filter(r -> r.getLevel().intValue() >= Level.WARNING.intValue()).toArray(), emptyArray());
         });
