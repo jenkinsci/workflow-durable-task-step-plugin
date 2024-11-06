@@ -277,12 +277,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Extension public static final class AnomalousStatus extends PeriodicWork {
 
         @Override public long getRecurrencePeriod() {
-            return Duration.ofMinutes(30).toMillis();
+            return Duration.ofMinutes(5).toMillis();
         }
 
         @Override public long getInitialDelay() {
             // Do not run too soon after startup, in case things are still loading, agents are still reattaching, etc.
-            return Duration.ofMinutes(15).toMillis();
+            return Duration.ofMinutes(7).toMillis();
         }
 
         /**
