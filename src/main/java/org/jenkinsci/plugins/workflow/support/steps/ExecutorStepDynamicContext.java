@@ -110,7 +110,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
             exec = item.getFuture().getStartCondition().get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException x) {
             LOGGER.log(Level.FINE, x, () -> "failed to wait for " + item + "; outstanding queue items: " + Arrays.toString(Queue.getInstance().getItems()) + "; running executables: " + Stream.of(Jenkins.get().getComputers()).flatMap(c -> c.getExecutors().stream()).collect(Collectors.toList()));
-            listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
+            listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + "; assuming it is not coming back, and terminating node step");
             throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeTimeoutCause());
         } catch (CancellationException x) {
             LOGGER.log(Level.FINE, "ceased to wait for " + node, x);

@@ -90,6 +90,7 @@ import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.support.actions.WorkspaceActionImpl;
 import org.jenkinsci.plugins.workflow.support.concurrent.Timeout;
@@ -276,12 +277,12 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Extension public static final class AnomalousStatus extends PeriodicWork {
 
         @Override public long getRecurrencePeriod() {
-            return Duration.ofMinutes(30).toMillis();
+            return Duration.ofMinutes(5).toMillis();
         }
 
         @Override public long getInitialDelay() {
             // Do not run too soon after startup, in case things are still loading, agents are still reattaching, etc.
-            return Duration.ofMinutes(15).toMillis();
+            return Duration.ofMinutes(7).toMillis();
         }
 
         /**
@@ -311,6 +312,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
             Set<StepContext> newAnomalous = new HashSet<>();
+            Set<String> affectedNodes = new HashSet<>();
             StepExecution.applyAll(ExecutorStepExecution.class, exec -> {
                 StepContext ctx = exec.getContext();
                 if (!knownTasks.contains(ctx)) {
@@ -322,6 +324,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.log(Level.WARNING, null, x);
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
+                        if (exec.state != null) {
+                            affectedNodes.add(exec.state.node);
+                        }
                     } else {
                         newAnomalous.add(ctx);
                     }
@@ -330,6 +335,21 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
                 return null;
             }).get();
+            // Also abort any shell steps running on the same node(s):
+            if (!affectedNodes.isEmpty()) {
+                StepExecution.applyAll(DurableTaskStep.Execution.class, exec -> {
+                    if (affectedNodes.contains(exec.node)) {
+                        StepContext ctx = exec.getContext();
+                        try {
+                            ctx.get(TaskListener.class).error("also cancelling shell steps running on " + exec.node);
+                        } catch (IOException | InterruptedException x) {
+                            LOGGER.log(Level.WARNING, null, x);
+                        }
+                        ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
+                    }
+                    return null;
+                });
+            }
             for (StepContext ctx : newAnomalous) {
                 ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; will cancel if this condition persists");
             }

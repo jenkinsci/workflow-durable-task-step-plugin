@@ -257,7 +257,8 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
      * {@link #ws} is nulled out and Jenkins waits until a fresh handle is available.
      */
     @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="recurrencePeriod is set in onResume, not deserialization")
-    static final class Execution extends AbstractStepExecutionImpl implements Runnable, ExecutionRemotable {
+    @Restricted(NoExternalUse.class)
+    public static final class Execution extends AbstractStepExecutionImpl implements Runnable, ExecutionRemotable {
 
         private static final long MIN_RECURRENCE_PERIOD = 250; // ¼s
         private static final long MAX_RECURRENCE_PERIOD = 15000; // 15s
@@ -282,7 +283,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         /** Serialized state of the controller. */
         private Controller controller;
         /** {@link Node#getNodeName} of {@link #ws}. */
-        private String node;
+        public String node;
         /** {@link FilePath#getRemote} of {@link #ws}. */
         private String remote;
         /** Whether the entire stdout of the process is to become the return value of the step. */
@@ -366,7 +367,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                             return null;
                         } else {
                             LOGGER.fine(() -> "rediscovering that " + node + " has been removed and timeout has expired");
-                            listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
+                            listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + "; assuming it is not coming back, and terminating shell step");
                             throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeTimeoutCause());
                         }
                     }
