@@ -22,6 +22,7 @@ import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
 import hudson.MarkupText;
+import hudson.Platform;
 import hudson.console.AnnotatedLargeText;
 import hudson.console.ConsoleAnnotator;
 import hudson.console.ConsoleLogFilter;
@@ -248,6 +249,8 @@ public class ShellStepTest {
 
     @Test public void launcherDecorator() throws Exception {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
+        // https://stackoverflow.com/questions/44811425/nice-command-not-working-on-macos
+        Assume.assumeFalse("MacOS doesn't implement nice", Platform.isDarwin());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}", true));
         Assume.assumeThat("test only works if mvn test is not itself niced", JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));

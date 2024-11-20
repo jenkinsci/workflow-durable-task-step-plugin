@@ -26,6 +26,8 @@ package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import hudson.ExtensionList;
 import hudson.Functions;
+import hudson.Platform;
+import hudson.Util;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.StringParameterDefinition;
@@ -121,7 +123,8 @@ public final class DurableTaskStepTest {
         r.assertBuildStatusSuccess(r.waitForCompletion(b));
         // In the case of Bourne shell, `+ touch …` is printed when the command actually runs.
         // In the case of batch shell, the whole command is printed immediately, so we need to assert that the _output_ of `dir` is there.
-        r.assertLogContains(Functions.isWindows() ? "Directory of " + r.jenkins.getRootDir() : "+ touch " + new File(r.jenkins.getRootDir(), "f"), b);
+        var file = new File(r.jenkins.getRootDir(), "f");
+        r.assertLogContains(Functions.isWindows() ? "Directory of " + r.jenkins.getRootDir() : "+ touch " + (Platform.isDarwin() ? Util.singleQuote(file.toString()) : file), b);
     }
 
 }
