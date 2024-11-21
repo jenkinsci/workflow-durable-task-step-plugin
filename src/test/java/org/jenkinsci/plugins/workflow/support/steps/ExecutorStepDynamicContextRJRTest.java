@@ -43,6 +43,8 @@ import org.hamcrest.Description;
 import org.hamcrest.TypeSafeMatcher;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
+import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
+import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.support.steps.input.InputAction;
 import org.junit.Rule;
@@ -129,5 +131,8 @@ public class ExecutorStepDynamicContextRJRTest {
         r.waitForMessage("Complete branch 1 ?", b);
         assertTrue(b.isBuilding());
         await().until(() -> r.jenkins.getQueue().getItems(), arrayWithSize(1));
+        LOGGER.info("Node steps: " + new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate("node")));
+        // "Branch 1", "Branch 2" and the second node step ? Not fully clear
+        await().until(() -> new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate("node")), hasSize(3));
     }
 }
