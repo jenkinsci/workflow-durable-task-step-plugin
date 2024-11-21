@@ -216,7 +216,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         try {
             if (state == null) {
                 var flowNode = getContext().get(FlowNode.class);
-                LOGGER.fine(() -> "No ExecutorStepDynamicContext found for node block " + getContext() + "; will attempt to recover");
+                LOGGER.fine(() -> "node block " + getContext() + " not yet scheduled, checking for an existing queue item");
                 if (flowNode == null) {
                     LOGGER.fine(() -> "No FlowNode found for node block " + getContext() + "; can't recover" );
                 } else {
