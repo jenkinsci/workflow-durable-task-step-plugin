@@ -29,12 +29,12 @@ import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.arrayWithSize;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.iterableWithSize;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
@@ -75,40 +75,46 @@ public class ExecutorStepDynamicContextRJRTest {
     private static void assertQueueItems(JenkinsRule r) throws Throwable {
         var p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
         var b = p.getBuildByNumber(1);
-        var items = await("Waiting for agent J to reconnect").atMost(Duration.ofSeconds(30)).until(() -> r.jenkins.getQueue().getItems(), arrayWithSize(1));
-        LOGGER.info("Items in queue: " + Arrays.asList(items));
-        var actions = await().until(() -> b.getActions(InputAction.class), hasSize(1));
-        proceed(actions, "Complete branch 1 ?", p.getName() + "#" + b.number);
-        actions = await().until(() -> b.getActions(InputAction.class), allOf(iterableWithSize(1), hasItem(new InputActionIsWaitingForInput())));
+        await("Waiting for agent J to reconnect").atMost(Duration.ofSeconds(30)).until(() -> r.jenkins.getComputer("J").isOnline(), is(true));
+        var actions = await().until(() -> b.getActions(InputAction.class), allOf(iterableWithSize(1), hasItem(new InputActionWithId("Branch1"))));
+        proceed(actions, "Branch1", p.getName() + "#" + b.number);
+        // This is quicker than waitForMessage that can wait for up to 10 minutes
+        actions = await().until(() -> b.getActions(InputAction.class), allOf(iterableWithSize(1), hasItem(new InputActionWithId("Branch2"))));
         r.waitForMessage("Complete branch 2 ?", b);
-        proceed(actions, "Complete branch 2 ?", p.getName() + "#" + b.number);
+        proceed(actions, "Branch2", p.getName() + "#" + b.number);
         r.waitForCompletion(b);
     }
 
-    private static class InputActionIsWaitingForInput extends TypeSafeMatcher<InputAction> {
+    private static class InputActionWithId extends TypeSafeMatcher<InputAction> {
+        private final String inputId;
+
+        private InputActionWithId(String inputId) {
+            this.inputId = inputId;
+        }
+
 
         @Override
         protected boolean matchesSafely(InputAction inputAction) {
             try {
-                return inputAction.isWaitingForInput();
-            } catch (Exception e) {
+                return inputAction.getExecutions().stream().anyMatch(execution -> inputId.equals(execution.getId()));
+            } catch (InterruptedException | TimeoutException e) {
                 return false;
             }
         }
 
         @Override
         public void describeTo(Description description) {
-            description.appendText("is waiting for input");
+            description.appendText("has input with id ").appendValue(inputId);
         }
     }
 
-    private static void proceed(List<InputAction> actions, String inputMessage, String name) throws InterruptedException, TimeoutException, IOException {
+    private static void proceed(List<InputAction> actions, String inputId, String name) throws InterruptedException, TimeoutException, IOException {
         for (var action : actions) {
             if (action.getExecutions().isEmpty()) {
                 continue;
             }
             var inputStepExecution = action.getExecutions().get(0);
-            if (inputMessage.equals(inputStepExecution.getDisplayName())) {
+            if (inputId.equals(inputStepExecution.getId())) {
                 LOGGER.info(() -> "proceeding " + name);
                 inputStepExecution.proceed(null);
                 break;
@@ -118,7 +124,7 @@ public class ExecutorStepDynamicContextRJRTest {
 
     private static void setupJobAndStart(JenkinsRule r) throws Exception {
         var p = r.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("parallel 'Branch 1': { node('mib') { input 'Complete branch 1 ?' } }, 'Branch 2': { sleep 1; node('mib') { input 'Complete branch 2 ?' } }", true));
+        p.setDefinition(new CpsFlowDefinition("parallel 'Branch 1': { node('mib') { input id: 'Branch1', message: 'Complete branch 1 ?' } }, 'Branch 2': { sleep 1; node('mib') { input id:'Branch2', message: 'Complete branch 2 ?' } }", true));
         var b = p.scheduleBuild2(0).waitForStart();
         r.waitForMessage("Complete branch 1 ?", b);
         assertTrue(b.isBuilding());
