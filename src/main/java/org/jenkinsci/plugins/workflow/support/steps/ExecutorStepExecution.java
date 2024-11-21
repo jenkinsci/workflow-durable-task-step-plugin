@@ -225,7 +225,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         LOGGER.fine(() -> "No QueueItemAction found for node block " + getContext() + "; can't recover");
                     } else {
                         LOGGER.fine(() -> "QueueItemAction with id=" + action.id + " found for node block " + getContext());
-                        var queueItem = Queue.getInstance().getItem(action.id);
+                        var queueItem = action.itemInQueue();
                         if (queueItem == null) {
                             LOGGER.fine(() -> "Could not find queue item " + action.id + ", rescheduling it");
                             start();
