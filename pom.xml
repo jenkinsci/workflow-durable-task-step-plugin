@@ -68,7 +68,7 @@
         <changelist>999999-SNAPSHOT</changelist>
         <!-- TODO Until in plugin-pom -->
         <jenkins-test-harness.version>2357.vf2a_982b_b_910f</jenkins-test-harness.version>
-        <jenkins.version>2.440.1</jenkins.version>
+        <jenkins.version>2.479.1</jenkins.version>
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
@@ -77,8 +77,8 @@
         <dependencies>
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
-                <artifactId>bom-2.440.x</artifactId>
-                <version>2907.vcb_35d6f2f7de</version>
+                <artifactId>bom-2.479.x</artifactId>
+                <version>3696.vb_b_4e2d1a_0542</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
