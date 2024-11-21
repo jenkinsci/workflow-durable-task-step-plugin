@@ -126,7 +126,18 @@ public class ExecutorStepExecutionRJRTest {
 
     private static void setupJobAndStart(JenkinsRule r) throws Exception {
         var p = r.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("parallel 'Branch 1': { node('mib') { input id: 'Branch1', message: 'Complete branch 1 ?' } }, 'Branch 2': { sleep 1; node('mib') { input id:'Branch2', message: 'Complete branch 2 ?' } }", true));
+        p.setDefinition(new CpsFlowDefinition("""
+                parallel 'Branch 1': {
+                    node('mib') {
+                        input id: 'Branch1', message: 'Complete branch 1 ?'
+                    }
+                }, 'Branch 2': {
+                    sleep 1
+                    node('mib') {
+                        input id:'Branch2', message: 'Complete branch 2 ?'
+                    }
+                }
+                """, true));
         var b = p.scheduleBuild2(0).waitForStart();
         r.waitForMessage("Complete branch 1 ?", b);
         assertTrue(b.isBuilding());
