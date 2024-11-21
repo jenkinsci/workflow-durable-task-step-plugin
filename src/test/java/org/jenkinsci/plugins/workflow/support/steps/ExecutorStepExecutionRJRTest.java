@@ -55,8 +55,8 @@ import org.jvnet.hudson.test.PrefixedOutputStream;
 import org.jvnet.hudson.test.RealJenkinsRule;
 import org.jvnet.hudson.test.TailLog;
 
-public class ExecutorStepDynamicContextRJRTest {
-    private static final Logger LOGGER = Logger.getLogger(ExecutorStepDynamicContextRJRTest.class.getName());
+public class ExecutorStepExecutionRJRTest {
+    private static final Logger LOGGER = Logger.getLogger(ExecutorStepExecutionRJRTest.class.getName());
 
     @Rule public RealJenkinsRule rjr = new RealJenkinsRule().withColor(PrefixedOutputStream.Color.GREEN).withPackageLogger(ExecutorStepExecution.class, Level.FINE).withPackageLogger(FlowExecutionList.class, Level.FINE);
 
@@ -67,14 +67,14 @@ public class ExecutorStepDynamicContextRJRTest {
         rjr.startJenkins();
         try (var tailLog = new TailLog(rjr, "p", 1)) {
             iar.createAgent(rjr, InboundAgentRule.Options.newBuilder().name("J").label("mib").color(PrefixedOutputStream.Color.YELLOW).webSocket().build());
-            rjr.runRemotely(ExecutorStepDynamicContextRJRTest::setupJobAndStart);
+            rjr.runRemotely(ExecutorStepExecutionRJRTest::setupJobAndStart);
             rjr.stopJenkinsForcibly();
             rjr.startJenkins();
-            rjr.runRemotely(ExecutorStepDynamicContextRJRTest::assertQueueItems);
+            rjr.runRemotely(ExecutorStepExecutionRJRTest::resumeCompleteBranch1ThenBranch2);
         }
     }
 
-    private static void assertQueueItems(JenkinsRule r) throws Throwable {
+    private static void resumeCompleteBranch1ThenBranch2(JenkinsRule r) throws Throwable {
         var p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
         var b = p.getBuildByNumber(1);
         await("Waiting for agent J to reconnect").atMost(Duration.ofSeconds(30)).until(() -> r.jenkins.getComputer("J").isOnline(), is(true));
