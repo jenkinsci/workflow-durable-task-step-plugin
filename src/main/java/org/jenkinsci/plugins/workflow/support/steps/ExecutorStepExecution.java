@@ -215,8 +215,26 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override public void onResume() {
         try {
             if (state == null) {
-                Run<?, ?> run = getContext().get(Run.class);
-                LOGGER.fine(() -> "No ExecutorStepDynamicContext found for node block in " + run + "; perhaps loading from a historical build record, hoping for the best");
+                var flowNode = getContext().get(FlowNode.class);
+                LOGGER.fine(() -> "node block " + getContext() + " not yet scheduled, checking for an existing queue item");
+                if (flowNode == null) {
+                    LOGGER.fine(() -> "No FlowNode found for node block " + getContext() + "; can't recover" );
+                } else {
+                    var action = flowNode.getAction(QueueItemActionImpl.class);
+                    if (action == null) {
+                        LOGGER.fine(() -> "No QueueItemAction found for node block " + getContext() + "; can't recover");
+                    } else {
+                        LOGGER.fine(() -> "QueueItemAction with id=" + action.id + " found for node block " + getContext());
+                        var queueItem = action.itemInQueue();
+                        if (queueItem == null) {
+                            LOGGER.fine(() -> "Could not find queue item " + action.id + ", rescheduling it");
+                            flowNode.removeActions(QueueItemActionImpl.class);
+                            start();
+                        } else {
+                            LOGGER.fine(() -> "Found Queue.Item " + queueItem + " for node block " + getContext() + "; should be fine");
+                        }
+                    }
+                }
                 return;
             }
             state.resume(getContext());
