@@ -143,7 +143,7 @@ public class ExecutorStepExecutionRJRTest {
         assertTrue(b.isBuilding());
         await().until(() -> r.jenkins.getQueue().getItems(), arrayWithSize(1));
         LOGGER.info("Node steps: " + new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate("node")));
-        // "Branch 1", "Branch 2" and the second node step ? Not fully clear
+        // "Branch 1" step start + "Branch 1" body start + "Branch 2" step start
         await().until(() -> new DepthFirstScanner().filteredNodes(b.getExecution(), new NodeStepTypePredicate("node")), hasSize(3));
     }
 }
