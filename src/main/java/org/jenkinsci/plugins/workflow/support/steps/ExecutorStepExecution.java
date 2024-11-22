@@ -228,6 +228,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         var queueItem = action.itemInQueue();
                         if (queueItem == null) {
                             LOGGER.fine(() -> "Could not find queue item " + action.id + ", rescheduling it");
+                            flowNode.removeActions(QueueItemActionImpl.class);
                             start();
                         } else {
                             LOGGER.fine(() -> "Found Queue.Item " + queueItem + " for node block " + getContext() + "; should be fine");
