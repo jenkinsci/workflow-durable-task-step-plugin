@@ -77,7 +77,7 @@ public class ExecutorStepExecutionRJRTest {
     private static void resumeCompleteBranch1ThenBranch2(JenkinsRule r) throws Throwable {
         var p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
         var b = p.getBuildByNumber(1);
-        await("Waiting for agent J to reconnect").atMost(Duration.ofSeconds(30)).until(() -> r.jenkins.getComputer("J").isOnline(), is(true));
+        await("Waiting for agent J to reconnect").atMost(Duration.ofSeconds(30)).until(() -> r.jenkins.getComputer("J").isOnline());
         var actions = await().until(() -> b.getActions(InputAction.class), allOf(iterableWithSize(1), hasItem(new InputActionWithId("Branch1"))));
         proceed(actions, "Branch1", p.getName() + "#" + b.number);
         // This is quicker than waitForMessage that can wait for up to 10 minutes
