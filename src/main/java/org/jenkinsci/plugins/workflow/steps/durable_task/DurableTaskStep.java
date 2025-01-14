@@ -526,6 +526,9 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         }
 
         @Override public String getStatus() {
+            if (controller == null) {
+                return "not yet started";
+            }
             StringBuilder b = new StringBuilder();
             try (Timeout timeout = Timeout.limit(2, TimeUnit.SECONDS)) { // CpsThreadDump applies a 3s timeout anyway
                 FilePath workspace = getWorkspace();
