@@ -331,7 +331,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
             Set<StepContext> newAnomalous = new HashSet<>();
             Set<String> affectedNodes = new HashSet<>();
-            StepExecution.applyAll(ExecutorStepExecution.class, exec -> {
+            StepExecution.acceptAll(ExecutorStepExecution.class, exec -> {
                 StepContext ctx = exec.getContext();
                 if (!knownTasks.contains(ctx)) {
                     LOGGER.warning(() -> "do not know about " + ctx);
@@ -351,11 +351,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 } else {
                     LOGGER.fine(() -> "know about " + ctx);
                 }
-                return null;
             }).get();
             // Also abort any shell steps running on the same node(s):
             if (!affectedNodes.isEmpty()) {
-                StepExecution.applyAll(DurableTaskStep.Execution.class, exec -> {
+                StepExecution.acceptAll(DurableTaskStep.Execution.class, exec -> {
                     if (affectedNodes.contains(exec.node)) {
                         StepContext ctx = exec.getContext();
                         try {
@@ -365,7 +364,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
                     }
-                    return null;
                 });
             }
             for (StepContext ctx : newAnomalous) {
