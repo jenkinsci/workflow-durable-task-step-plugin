@@ -66,8 +66,6 @@
     </pluginRepositories>
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
-        <!-- TODO Until in plugin-pom -->
-        <jenkins-test-harness.version>2357.vf2a_982b_b_910f</jenkins-test-harness.version>
         <jenkins.baseline>2.479</jenkins.baseline>
         <jenkins.version>${jenkins.baseline}.1</jenkins.version>
         <useBeta>true</useBeta>
