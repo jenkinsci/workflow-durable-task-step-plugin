@@ -176,7 +176,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>mock-slave</artifactId>
-            <version>153.v9768799a_2294</version>
+            <version>189.vca_72fb_1d2b_52</version>
             <scope>test</scope>
         </dependency>
         <dependency>
