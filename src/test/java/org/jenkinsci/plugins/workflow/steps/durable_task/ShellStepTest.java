@@ -662,23 +662,16 @@ public class ShellStepTest {
     @Test public void deadStep() throws Exception {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        int sleepTime = Functions.isWindows() ? 13 : 1;
-        p.setDefinition(new CpsFlowDefinition("""
-                                              try {
-                                                node {
-                                                  isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')
-                                                }
-                                              } catch (e) {
-                                                sleep %d;
-                                                throw e
-                                              }
-                                              """.formatted(sleepTime), true));
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows when watching
+        int sleepTime = Functions.isWindows() && useWatching ? 13 : 1;
+        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}} catch (e) {sleep " + sleepTime + "; throw e}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         b.doTerm();
         j.waitForCompletion(b);
         j.assertBuildStatus(Result.ABORTED, b);
-        if (Functions.isWindows()) {
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows when watching
+        if (Functions.isWindows() && useWatching) {
             Thread.sleep(sleepTime * 1000L);
         }
         for (LogRecord record : logging.getRecords()) {
