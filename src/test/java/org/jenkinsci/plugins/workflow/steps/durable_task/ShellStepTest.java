@@ -662,16 +662,16 @@ public class ShellStepTest {
     @Test public void deadStep() throws Exception {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        // Test fails on ci.jenkins.io with timeout == 1 on Windows when watching
-        int sleepTime = Functions.isWindows() && useWatching ? 13 : 1;
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows
+        int sleepTime = Functions.isWindows() ? 13 : 1;
         p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}} catch (e) {sleep " + sleepTime + "; throw e}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         b.doTerm();
         j.waitForCompletion(b);
         j.assertBuildStatus(Result.ABORTED, b);
-        // Test fails on ci.jenkins.io with timeout == 1 on Windows when watching
-        if (Functions.isWindows() && useWatching) {
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows
+        if (Functions.isWindows()) {
             Thread.sleep(sleepTime * 1000L);
         }
         for (LogRecord record : logging.getRecords()) {
@@ -709,7 +709,7 @@ public class ShellStepTest {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         // Test fails unexpectedly on ci.jenkins.io Windows agents when watching
         // Use a longer timeout when watching and running on Windows
-        int sleepTime = Functions.isWindows() && useWatching ? 19 : 6;
+        int sleepTime = Functions.isWindows() ? 19 : 6;
         p.setDefinition(new CpsFlowDefinition("node {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {" +
                 (Functions.isWindows()
