@@ -662,12 +662,18 @@ public class ShellStepTest {
     @Test public void deadStep() throws Exception {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}} catch (e) {sleep 1; throw e}", true));
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows
+        int sleepTime = Functions.isWindows() ? 13 : 1;
+        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}} catch (e) {sleep " + sleepTime + "; throw e}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         b.doTerm();
         j.waitForCompletion(b);
         j.assertBuildStatus(Result.ABORTED, b);
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows
+        if (Functions.isWindows()) {
+            Thread.sleep(sleepTime * 1000L);
+        }
         for (LogRecord record : logging.getRecords()) {
             assertNull(record.getThrown());
         }
@@ -701,10 +707,11 @@ public class ShellStepTest {
     @Issue("JENKINS-28822")
     @Test public void interruptingAbortsBuild() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        // Test fails unexpectedly on ci.jenkins.io Windows agents with fewer pings
         p.setDefinition(new CpsFlowDefinition("node {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {" +
                 (Functions.isWindows()
-                        ? "bat 'ping -n 6 127.0.0.1 >nul'\n"
+                        ? "bat 'ping -n 19 127.0.0.1 >nul'\n"
                         : "sh 'sleep 5'\n") +
                 "  }" +
                 "}", true));
@@ -718,10 +725,11 @@ public class ShellStepTest {
     @Issue("JENKINS-28822")
     @Test public void interruptingAbortsBuildEvenWithReturnStatus() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        // Test fails unexpectedly on ci.jenkins.io Windows agents with fewer pings
         p.setDefinition(new CpsFlowDefinition("node() {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {\n" +
                 (Functions.isWindows()
-                        ? "bat(returnStatus: true, script: 'ping -n 6 127.0.0.1 >nul')\n"
+                        ? "bat(returnStatus: true, script: 'ping -n 19 127.0.0.1 >nul')\n"
                         : "sh(returnStatus: true, script: 'sleep 5')\n") +
                 "  }\n" +
                 "}", true));
