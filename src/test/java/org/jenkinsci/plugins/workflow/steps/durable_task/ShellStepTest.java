@@ -707,10 +707,13 @@ public class ShellStepTest {
     @Issue("JENKINS-28822")
     @Test public void interruptingAbortsBuild() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        // Test fails unexpectedly on ci.jenkins.io Windows agents when watching
+        // Use a longer timeout when watching and running on Windows
+        int sleepTime = Functions.isWindows() && useWatching ? 19 : 6;
         p.setDefinition(new CpsFlowDefinition("node {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {" +
                 (Functions.isWindows()
-                        ? "bat 'ping -n 6 127.0.0.1 >nul'\n"
+                        ? "bat 'ping -n " + sleepTime + " 127.0.0.1 >nul'\n"
                         : "sh 'sleep 5'\n") +
                 "  }" +
                 "}", true));
