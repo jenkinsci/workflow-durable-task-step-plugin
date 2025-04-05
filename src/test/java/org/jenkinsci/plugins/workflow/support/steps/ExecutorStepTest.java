@@ -82,7 +82,7 @@ import jenkins.security.QueueItemAuthenticatorConfiguration;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
-import org.acegisecurity.Authentication;
+import org.springframework.security.core.Authentication;
 import org.apache.commons.io.IOUtils;
 import org.htmlunit.Page;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
@@ -1229,13 +1229,13 @@ public class ExecutorStepTest {
     }
 
     private static class MainAuthenticator extends QueueItemAuthenticator {
-        @Override public Authentication authenticate(Queue.Task task) {
-            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
+        @Override public Authentication authenticate2(Queue.Task task) {
+            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate2() : null;
         }
     }
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
-        @Override public Authentication authenticate(Queue.Task task) {
-            return ACL.SYSTEM;
+        @Override public Authentication authenticate2(Queue.Task task) {
+            return ACL.SYSTEM2;
         }
     }
 
