@@ -74,7 +74,7 @@ import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
 import jenkins.util.SystemProperties;
 import jenkins.util.Timer;
-import org.acegisecurity.Authentication;
+import org.springframework.security.core.Authentication;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
@@ -161,7 +161,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
     @Override
     public void stop(@NonNull Throwable cause) throws Exception {
         Queue.Item[] items;
-        try (ACLContext as = ACL.as(ACL.SYSTEM)) {
+        try (ACLContext as = ACL.as2(ACL.SYSTEM2)) {
             items = Queue.getInstance().getItems();
         }
         LOGGER.log(FINE, cause, () -> "stopping one of " + Arrays.asList(items));
@@ -489,8 +489,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             this.context = context;
             this.label = label;
             runId = context.get(Run.class).getExternalizableId();
-            Authentication runningAuth = Jenkins.getAuthentication();
-            if (runningAuth.equals(ACL.SYSTEM)) {
+            Authentication runningAuth = Jenkins.getAuthentication2();
+            if (runningAuth.equals(ACL.SYSTEM2)) {
                 auth = null;
             } else {
                 auth = runningAuth.getName();
@@ -649,7 +649,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         @Override public Queue.Task getOwnerTask() {
             Jenkins j = Jenkins.getInstanceOrNull();
             if (j != null && runId != null) { // JENKINS-60389 shortcut
-                try (ACLContext context = ACL.as(ACL.SYSTEM)) {
+                try (ACLContext context = ACL.as2(ACL.SYSTEM2)) {
                     Job<?, ?> job = j.getItemByFullName(runId.substring(0, runId.lastIndexOf('#')), Job.class);
                     if (job instanceof Queue.Task) {
                         return (Queue.Task) job;
@@ -915,13 +915,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         }
 
         @NonNull
-        @Override public Authentication getDefaultAuthentication() {
-            return ACL.SYSTEM;
+        @Override public Authentication getDefaultAuthentication2() {
+            return ACL.SYSTEM2;
         }
 
         @NonNull
-        @Override public Authentication getDefaultAuthentication(Queue.Item item) {
-            return getDefaultAuthentication();
+        @Override public Authentication getDefaultAuthentication2(Queue.Item item) {
+            return getDefaultAuthentication2();
         }
 
         @Restricted(NoExternalUse.class)
@@ -929,15 +929,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             @NonNull
             @Override public List<QueueItemAuthenticator> getAuthenticators() {
                 return Collections.singletonList(new QueueItemAuthenticator() {
-                    @Override public Authentication authenticate(Queue.Task task) {
+                    @Override public Authentication authenticate2(Queue.Task task) {
                         if (task instanceof PlaceholderTask) {
                             String auth = ((PlaceholderTask) task).auth;
                             LOGGER.finer(() -> "authenticating " + task);
-                            if (Jenkins.ANONYMOUS.getName().equals(auth)) {
-                                return Jenkins.ANONYMOUS;
+                            if (Jenkins.ANONYMOUS2.getName().equals(auth)) {
+                                return Jenkins.ANONYMOUS2;
                             } else if (auth != null) {
                                 User user = User.getById(auth, false);
-                                return user != null ? user.impersonate() : Jenkins.ANONYMOUS;
+                                return user != null ? user.impersonate2() : Jenkins.ANONYMOUS2;
                             }
                         }
                         return null;
