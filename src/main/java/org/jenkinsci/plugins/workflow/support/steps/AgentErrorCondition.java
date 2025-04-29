@@ -30,12 +30,9 @@ import hudson.Launcher;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Node;
-import hudson.remoting.ChannelClosedException;
+import hudson.remoting.Channel;
 import hudson.slaves.WorkspaceList;
-import java.io.EOFException;
 import java.io.IOException;
-import java.nio.channels.ClosedChannelException;
-import java.util.stream.Stream;
 import jenkins.model.CauseOfInterruption;
 import org.jenkinsci.Symbol;
 import org.jenkinsci.plugins.workflow.flow.ErrorCondition;
@@ -61,7 +58,7 @@ public final class AgentErrorCondition extends ErrorCondition {
         if (t instanceof FlowInterruptedException && ((FlowInterruptedException) t).getCauses().stream().anyMatch(Retryable.class::isInstance)) {
             return true;
         }
-        if (isClosedChannelException(t)) {
+        if (Channel.isClosedChannelException(t)) {
             return true;
         }
         if (t instanceof MissingContextVariableException) {
@@ -73,21 +70,6 @@ public final class AgentErrorCondition extends ErrorCondition {
             }
         }
         return false;
-    }
-
-    // TODO https://github.com/jenkinsci/remoting/pull/657
-    private static boolean isClosedChannelException(Throwable t) {
-        if (t instanceof ClosedChannelException) {
-            return true;
-        } else if (t instanceof ChannelClosedException) {
-            return true;
-        } else if (t instanceof EOFException) {
-            return true;
-        } else if (t == null) {
-            return false;
-        } else {
-            return isClosedChannelException(t.getCause()) || Stream.of(t.getSuppressed()).anyMatch(AgentErrorCondition::isClosedChannelException);
-        }
     }
 
     /**
