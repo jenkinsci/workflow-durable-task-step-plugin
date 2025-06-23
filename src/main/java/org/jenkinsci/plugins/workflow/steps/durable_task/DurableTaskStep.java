@@ -31,6 +31,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
@@ -41,6 +42,7 @@ import hudson.model.Node;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
+import hudson.model.listeners.ItemListener;
 import hudson.remoting.Channel;
 import hudson.remoting.ChannelClosedException;
 import hudson.slaves.ComputerListener;
@@ -630,8 +632,19 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             }
         }
 
+        /** Works around the fact that {@link Terminator} is run before {@link Jenkins#isTerminating} is set. */
+        @Extension public static final class CheckForTerminating extends ItemListener {
+            boolean terminating;
+            @Override public void onBeforeShutdown() {
+                terminating = true;
+            }
+        }
+
         // called remotely from HandlerImpl
         @Override public void exited(int exitCode, byte[] output) throws Exception {
+            if (ExtensionList.lookupSingleton(CheckForTerminating.class).terminating) {
+                throw new IllegalStateException("Will not handle process exits during shutdown; build should recheck when resumed");
+            }
             recurrencePeriod = 0;
             try {
                 getContext().get(TaskListener.class);
