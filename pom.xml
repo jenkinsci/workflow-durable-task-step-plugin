@@ -168,13 +168,13 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>mock-slave</artifactId>
-            <version>189.vca_72fb_1d2b_52</version>
+            <version>193.v88c279d0c584</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
-            <version>4.2.2</version>
+            <version>4.3.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
