@@ -1219,11 +1219,10 @@ public class ExecutorStepTest {
             SemaphoreStep.success("wait/1", null);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
             assertThat(r.jenkins.getQueue().getItems(), emptyArray());
-            List<Executor> occupiedExecutors = Stream.of(r.jenkins.getComputers())
+            await().until(() -> Stream.of(r.jenkins.getComputers())
                     .flatMap(c -> c.getExecutors().stream())
                     .filter(e -> e.getCurrentWorkUnit() != null)
-                    .collect(Collectors.toList());
-            assertThat(occupiedExecutors, empty());
+                    .collect(Collectors.toList()), empty());
             inboundAgents.stop(r, "custom-label");
         });
     }
