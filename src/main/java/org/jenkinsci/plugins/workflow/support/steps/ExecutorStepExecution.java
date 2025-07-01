@@ -330,7 +330,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }
             Set<StepContext> newAnomalous = new HashSet<>();
-            Set<String> affectedNodes = new HashSet<>();
             StepExecution.acceptAll(ExecutorStepExecution.class, exec -> {
                 StepContext ctx = exec.getContext();
                 if (!knownTasks.contains(ctx)) {
@@ -342,8 +341,26 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             LOGGER.log(Level.WARNING, null, x);
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
-                        if (exec.state != null) {
-                            affectedNodes.add(exec.state.node);
+                        try {
+                            Futures.addCallback(ctx.get(FlowExecution.class).getCurrentExecutions(true), new FutureCallback<List<StepExecution>>() {
+                                @Override public void onSuccess(List<StepExecution> result) {
+                                    for (var nested : result) {
+                                        try {
+                                            if (nested instanceof DurableTaskStep.Execution && nested.getContext().get(FlowNode.class).getEnclosingBlocks().contains(ctx.get(FlowNode.class))) {
+                                                nested.getContext().get(TaskListener.class).error("also cancelling shell step running inside node block");
+                                                nested.getContext().onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
+                                            }
+                                        } catch (IOException | InterruptedException x) {
+                                            LOGGER.log(Level.WARNING, null, x);
+                                        }
+                                    }
+                                }
+                                @Override public void onFailure(Throwable x) {
+                                    LOGGER.log(Level.WARNING, null, x);
+                                }
+                            }, MoreExecutors.directExecutor());
+                        } catch (IOException | InterruptedException x) {
+                            LOGGER.log(Level.WARNING, null, x);
                         }
                     } else {
                         newAnomalous.add(ctx);
@@ -352,20 +369,6 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     LOGGER.fine(() -> "know about " + ctx);
                 }
             }).get();
-            // Also abort any shell steps running on the same node(s):
-            if (!affectedNodes.isEmpty()) {
-                StepExecution.acceptAll(DurableTaskStep.Execution.class, exec -> {
-                    if (affectedNodes.contains(exec.node)) {
-                        StepContext ctx = exec.getContext();
-                        try {
-                            ctx.get(TaskListener.class).error("also cancelling shell steps running on " + exec.node);
-                        } catch (IOException | InterruptedException x) {
-                            LOGGER.log(Level.WARNING, null, x);
-                        }
-                        ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
-                    }
-                });
-            }
             for (StepContext ctx : newAnomalous) {
                 ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; will cancel if this condition persists");
             }
