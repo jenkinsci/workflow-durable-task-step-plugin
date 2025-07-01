@@ -342,12 +342,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
                         try {
-                            var fe = ctx.get(FlowExecution.class);
-                            Futures.addCallback(fe.getCurrentExecutions(true), new FutureCallback<List<StepExecution>>() {
+                            Futures.addCallback(ctx.get(FlowExecution.class).getCurrentExecutions(true), new FutureCallback<List<StepExecution>>() {
                                 @Override public void onSuccess(List<StepExecution> result) {
                                     for (var nested : result) {
                                         try {
-                                            if (nested instanceof DurableTaskStep.Execution && fe.findAllEnclosingBlockStarts(nested.getContext().get(FlowNode.class)).contains(ctx.get(FlowNode.class))) {
+                                            if (nested instanceof DurableTaskStep.Execution && nested.getContext().get(FlowNode.class).getEnclosingBlocks().contains(ctx.get(FlowNode.class))) {
                                                 nested.getContext().get(TaskListener.class).error("also cancelling shell step running inside node block");
                                                 nested.getContext().onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
                                             }
