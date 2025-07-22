@@ -280,8 +280,6 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         private transient volatile ScheduledFuture<?> task;
         /** Defined only after {@link #stop} has been called. */
         private transient volatile ScheduledFuture<?> stopTask;
-        /** Set if we have already notified the build log of a connectivity problem, which is done at most once per session. */
-        private transient boolean printedCannotContactMessage;
         /** Serialized state of the controller. */
         private Controller controller;
         /** {@link Node#getNodeName} of {@link #ws}. */
@@ -298,7 +296,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         private transient boolean awaitingAsynchExit;
         /** The first throwable used to stop the task */
         private transient volatile Throwable causeOfStoppage;
-        /** If nonzero, {@link System#nanoTime} when we first discovered that the node had been removed. */
+        /** If nonzero, {@link System#nanoTime} when we first discovered that the node had been removed or is offline. */
         private transient long removedNodeDiscovered;
 
         Execution(StepContext context, DurableTaskStep step) {
@@ -353,24 +351,14 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             if (ws == null) {
                 ws = FilePathUtils.find(node, remote);
                 if (ws == null) {
-                    // Part of JENKINS-49707: check whether an agent has been removed.
-                    // (Note that a Computer may be missing because a Node is offline,
-                    // and conversely after removing a Node its Computer may remain for a while.
-                    // Therefore we only fail here if _both_ are absent.)
+                    // Part of JENKINS-49707: check whether an agent has been removed or is offline.
                     // ExecutorStepExecution.RemovedNodeListener will normally do this first, so this is a fallback.
                     Jenkins j = Jenkins.getInstanceOrNull();
-                    if (ExecutorStepExecution.RemovedNodeCause.ENABLED && !node.isEmpty() && j != null && j.getNode(node) == null) {
-                        if (removedNodeDiscovered == 0) {
-                            LOGGER.fine(() -> "discovered that " + node + " has been removed");
-                            removedNodeDiscovered = System.nanoTime();
+                    if (!node.isEmpty() && j != null) {
+                        var agent = j.getNode(node);
+                        if (agent == null || agent.getChannel() == null) {
+                            offline(null);
                             return null;
-                        } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
-                            LOGGER.fine(() -> "rediscovering that " + node + " has been removed");
-                            return null;
-                        } else {
-                            LOGGER.fine(() -> "rediscovering that " + node + " has been removed and timeout has expired");
-                            listener().getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + "; assuming it is not coming back, and terminating shell step");
-                            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeTimeoutCause());
                         }
                     }
                     removedNodeDiscovered = 0; // something else; reset
@@ -405,15 +393,29 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             return ws;
         }
 
-        private void getWorkspaceProblem(Exception x) {
+        private void offline(@CheckForNull Throwable x) throws FlowInterruptedException {
+            if (!ExecutorStepExecution.RemovedNodeCause.ENABLED) {
+                return;
+            }
+            if (removedNodeDiscovered == 0) {
+                LOGGER.fine(() -> "discovered that " + node + " has been removed/offline");
+                removedNodeDiscovered = System.nanoTime();
+                listener().getLogger().println(node + " seems to be removed or offline " + (x != null ? "(" + x + ")" : "") + "; will wait for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + " for it to come back online");
+            } else if (System.nanoTime() - removedNodeDiscovered < TimeUnit.MILLISECONDS.toNanos(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS)) {
+                LOGGER.fine(() -> "rediscovering that " + node + " has been removed/offline");
+            } else {
+                LOGGER.fine(() -> "rediscovering that " + node + " has been removed/offline and timeout has expired");
+                listener().getLogger().println(node + " has been removed or offline for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + "; assuming it is not coming back, and terminating shell step");
+                throw new FlowInterruptedException(Result.ABORTED, false, new ExecutorStepExecution.RemovedNodeTimeoutCause());
+            }
+        }
+
+        private void getWorkspaceProblem(Exception x) throws FlowInterruptedException {
             // RequestAbortedException, ChannelClosedException, EOFException, wrappers thereof; InterruptedException if it just takes too long.
             LOGGER.log(Level.FINE, node + " is evidently offline now", x);
             ws = null;
             recurrencePeriod = MIN_RECURRENCE_PERIOD;
-            if (!printedCannotContactMessage) {
-                listener().getLogger().println("Cannot contact " + node + ": " + x);
-                printedCannotContactMessage = true;
-            }
+            offline(x);
         }
 
         private synchronized @NonNull TaskListener listener() {
@@ -625,9 +627,12 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             } catch (Exception x) {
                 LOGGER.log(Level.FINE, "could not check " + workspace, x);
                 ws = null;
-                if (!printedCannotContactMessage) {
-                    listener.getLogger().println("Cannot contact " + node + ": " + x);
-                    printedCannotContactMessage = true;
+                try {
+                    offline(x);
+                } catch (FlowInterruptedException x2) {
+                    if (causeOfStoppage == null) {
+                        getContext().onFailure(x2);
+                    }
                 }
             }
         }
