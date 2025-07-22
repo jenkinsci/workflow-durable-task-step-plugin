@@ -545,11 +545,11 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             b.append("; recurrence period: ").append(recurrencePeriod).append("ms");
             ScheduledFuture<?> t = task;
             if (t != null) {
-                b.append("; check task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone());
+                b.append("; check task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone()).append(" delay ").append(t.getDelay(TimeUnit.MILLISECONDS)).append("ms");
             }
             t = stopTask;
             if (t != null) {
-                b.append("; stop task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone());
+                b.append("; stop task scheduled; cancelled? ").append(t.isCancelled()).append(" done? ").append(t.isDone()).append(" delay ").append(t.getDelay(TimeUnit.MILLISECONDS)).append("ms");
             }
             return b.toString();
         }
