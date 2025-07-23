@@ -716,7 +716,7 @@ public class ShellStepTest {
         var s = j.createSlave("remote", null, null);
         s.setRetentionStrategy(RetentionStrategy.NOOP);
         var p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 60') : bat('ping -c 60 -t 127.0.0.1 > nul')}", true));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 60') : bat('ping -n 60 127.0.0.1 > nul')}", true));
         var b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         s.toComputer().disconnect(null);
