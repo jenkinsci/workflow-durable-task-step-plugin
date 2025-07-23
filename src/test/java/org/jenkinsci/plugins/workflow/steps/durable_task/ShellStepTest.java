@@ -72,6 +72,7 @@ import jenkins.util.JenkinsJVM;
 import org.apache.commons.lang.StringUtils;
 import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
+import org.jenkinsci.plugins.durabletask.WindowsBatchScript;
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
@@ -136,6 +137,7 @@ public class ShellStepTest {
     @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
     @Rule public FlagRule<Long> watchingRecurrencePeriod = new FlagRule<>(() -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD, x -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD = x);
+    @Rule public FlagRule<Boolean> useBinaryWrapper = new FlagRule<>(() -> WindowsBatchScript.USE_BINARY_WRAPPER, x -> WindowsBatchScript.USE_BINARY_WRAPPER = x);
 
     /**
      * Failure in the shell script should mark the step as red
@@ -712,11 +714,12 @@ public class ShellStepTest {
 
     @Test public void temporarilyDisconnectingAgentIsNotFatal() throws Exception {
         DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
+        WindowsBatchScript.USE_BINARY_WRAPPER = true;
         logging.record(DurableTaskStep.class, Level.FINE);
         var s = j.createSlave("remote", null, null);
         s.setRetentionStrategy(RetentionStrategy.NOOP);
         var p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 60') : bat('ping -n 60 127.0.0.1 > nul')}", true));
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 60') : bat('ping -n 60 127.0.0.1')}", true));
         var b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         s.toComputer().disconnect(null);
