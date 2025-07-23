@@ -710,6 +710,22 @@ public class ShellStepTest {
         j.waitForMessage(new ExecutorStepExecution.RemovedNodeTimeoutCause().getShortDescription(), b);
     }
 
+    @Test public void temporarilyDisconnectingAgentIsNotFatal() throws Exception {
+        DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
+        logging.record(DurableTaskStep.class, Level.FINE);
+        var s = j.createSlave("remote", null, null);
+        s.setRetentionStrategy(RetentionStrategy.NOOP);
+        var p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 60') : bat('ping -c 60 -t 127.0.0.1 > nul')}", true));
+        var b = p.scheduleBuild2(0).waitForStart();
+        j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
+        s.toComputer().disconnect(null);
+        j.waitForMessage("will wait for", b);
+        s.toComputer().connect(true);
+        j.waitForMessage("is back online", b);
+        j.assertBuildStatusSuccess(j.waitForCompletion(b));
+    }
+
     @Issue("JENKINS-44521")
     @Test public void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);

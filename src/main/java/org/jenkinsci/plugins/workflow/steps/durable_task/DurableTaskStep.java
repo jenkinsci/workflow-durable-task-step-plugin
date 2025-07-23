@@ -365,7 +365,10 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
                     LOGGER.log(Level.FINE, "Jenkins is not running, no such node {0}, or it is offline", node);
                     return null;
                 }
-                removedNodeDiscovered = 0;
+                if (removedNodeDiscovered != 0) {
+                    removedNodeDiscovered = 0;
+                    listener().getLogger().println(node + " is back online");
+                }
                 if (watching) {
                     try {
                         controller.watch(ws, new HandlerImpl(this, ws, listener()), listener());
