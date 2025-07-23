@@ -69,7 +69,9 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
+import static org.awaitility.Awaitility.await;
 import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.durabletask.WindowsBatchScript;
@@ -727,6 +729,9 @@ public class ShellStepTest {
         s.toComputer().connect(true);
         j.waitForMessage("is back online", b);
         j.assertBuildStatusSuccess(j.waitForCompletion(b));
+        if (Functions.isWindows()) {
+            await().atMost(Duration.ofMinutes(1)).ignoreExceptions().untilAsserted(() -> FileUtils.deleteDirectory(new File(j.jenkins.getRootDir(), "agent-work-dirs\\remote\\caches\\durable-task")));
+        }
     }
 
     @Issue("JENKINS-44521")
