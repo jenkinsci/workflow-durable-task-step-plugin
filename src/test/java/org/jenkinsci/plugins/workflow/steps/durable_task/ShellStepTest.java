@@ -40,6 +40,7 @@ import hudson.model.TaskListener;
 import hudson.remoting.Channel;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.slaves.RetentionStrategy;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import io.jenkins.plugins.environment_filter_utils.util.BuilderUtil;
@@ -55,6 +56,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -104,6 +106,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.LoggerRule;
@@ -132,6 +135,7 @@ public class ShellStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
+    @Rule public FlagRule<Long> watchingRecurrencePeriod = new FlagRule<>(() -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD, x -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD = x);
 
     /**
      * Failure in the shell script should mark the step as red
@@ -690,6 +694,20 @@ public class ShellStepTest {
         j.jenkins.removeNode(s);
         j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
         j.waitForMessage(new ExecutorStepExecution.RemovedNodeCause().getShortDescription(), b);
+    }
+
+    @Test public void permanentlyDisconnectingAgentIsFatal() throws Exception {
+        DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
+        logging.record(DurableTaskStep.class, Level.FINE);
+        var s = j.createSlave("remote", null, null);
+        s.setRetentionStrategy(RetentionStrategy.NOOP);
+        var p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}", true));
+        var b = p.scheduleBuild2(0).waitForStart();
+        j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
+        s.toComputer().disconnect(null);
+        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+        j.waitForMessage(new ExecutorStepExecution.RemovedNodeTimeoutCause().getShortDescription(), b);
     }
 
     @Issue("JENKINS-44521")
