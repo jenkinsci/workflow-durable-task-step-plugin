@@ -27,12 +27,8 @@ package org.jenkinsci.plugins.workflow.support.steps;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
@@ -82,6 +78,16 @@ import jenkins.security.QueueItemAuthenticatorConfiguration;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import net.sf.json.groovy.JsonSlurper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.Parameter;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.jvnet.hudson.test.LogRecorder;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.InboundAgentExtension;
+import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 import org.springframework.security.core.Authentication;
 import org.apache.commons.io.IOUtils;
 import org.htmlunit.Page;
@@ -103,46 +109,50 @@ import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.Assume;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.jvnet.hudson.test.BuildWatcher;
-import org.jvnet.hudson.test.FlagRule;
-import org.jvnet.hudson.test.InboundAgentRule;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
-import org.jvnet.hudson.test.JenkinsSessionRule;
-import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.MockFolder;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
-@RunWith(Parameterized.class)
-public class ExecutorStepTest {
-
-    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
-        return List.of(false, true);
-    }
-
-    @Parameterized.BeforeParam public static void useWatching(boolean x) {
-        DurableTaskStep.USE_WATCHING = x;
-    }
-
-    @Parameterized.Parameter public boolean useWatching;
+@ParameterizedClass(name = "watching={0}")
+@ValueSource(booleans = {true, false})
+class ExecutorStepTest {
 
     private static final Logger LOGGER = Logger.getLogger(ExecutorStepTest.class.getName());
 
-    @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
-    @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
-    @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    @Parameter
+    private boolean useWatching;
+
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+
+    @RegisterExtension
+    private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
+    @RegisterExtension
+    private final InboundAgentExtension inboundAgents = new InboundAgentExtension();
+    @TempDir
+    private File tmp;
     // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
-    @Rule public LoggerRule logging = new LoggerRule();
-    @Rule public FlagRule<String> nodeTimeout = FlagRule.systemProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis");
+    private final LogRecorder logging = new LogRecorder();
+    private String nodeTimeout;
+
+    @BeforeEach
+    void setUp() {
+        DurableTaskStep.USE_WATCHING = useWatching;
+        nodeTimeout = System.getProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis");
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (nodeTimeout != null) {
+            System.setProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", nodeTimeout);
+        } else {
+           System.clearProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis");
+        }
+    }
 
     /**
      * Executes a shell script build on a build agent.
@@ -150,7 +160,8 @@ public class ExecutorStepTest {
      * This ensures that the context variable overrides are working as expected, and
      * that they are persisted and resurrected.
      */
-    @Test public void buildShellScriptOnSlave() throws Throwable {
+    @Test
+    void buildShellScriptOnSlave() throws Throwable {
         sessions.then(r -> {
                 DumbSlave s = r.createSlave("remote quick", null);
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
@@ -192,7 +203,8 @@ public class ExecutorStepTest {
      * This ensures that the context variable overrides are working as expected, and
      * that they are persisted and resurrected.
      */
-    @Test public void buildShellScriptWithPersistentProcesses() throws Throwable {
+    @Test
+    void buildShellScriptWithPersistentProcesses() throws Throwable {
         sessions.then(r -> {
                 DumbSlave s = r.createSlave();
                 Path f1 = r.jenkins.getRootDir().toPath().resolve("test.txt");
@@ -222,8 +234,9 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void buildShellScriptAcrossRestart() throws Throwable {
-        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+    @Test
+    void buildShellScriptAcrossRestart() throws Throwable {
+        assumeFalse(Functions.isWindows(), "TODO not sure how to write a corresponding batch script");
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepDynamicContext.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
                 DumbSlave s = r.createSlave("dumbo", null, null);
@@ -261,8 +274,9 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-52165")
-    @Test public void shellOutputAcrossRestart() throws Throwable {
-        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+    @Test
+    void shellOutputAcrossRestart() throws Throwable {
+        assumeFalse(Functions.isWindows(), "TODO not sure how to write a corresponding batch script");
         // TODO does not assert anything in watch mode, just informational.
         // There is no way for FileMonitoringTask.Watcher to know when content has been written through to the sink
         // other than by periodically flushing output and declining to write lastLocation until after this completes.
@@ -299,8 +313,9 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void buildShellScriptAcrossDisconnect() throws Throwable {
-        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+    @Test
+    void buildShellScriptAcrossDisconnect() throws Throwable {
+        assumeFalse(Functions.isWindows(), "TODO not sure how to write a corresponding batch script");
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
                 Slave s = inboundAgents.createAgent(r, "dumbo");
@@ -342,15 +357,16 @@ public class ExecutorStepTest {
 
     @Issue({"JENKINS-41854", "JENKINS-50504"})
     @Test
-    public void contextualizeFreshFilePathAfterAgentReconnection() throws Throwable {
-        Assume.assumeFalse("TODO not sure how to write a corresponding batch script", Functions.isWindows());
+    void contextualizeFreshFilePathAfterAgentReconnection() throws Throwable {
+        assumeFalse(Functions.isWindows(), "TODO not sure how to write a corresponding batch script");
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).
                         record(ExecutorStepDynamicContext.class, Level.FINE).
                         record(FileMonitoringTask.class, Level.FINEST).
                         record(WorkspaceList.class, Level.FINE);
                 Slave s = inboundAgents.createAgent(r, "dumbo");
-                r.showAgentLogs(s, logging);
+                r.showAgentLogs(s, Map.of(DurableTaskStep.class.getName(), Level.FINE, ExecutorStepDynamicContext.class.getName(), Level.FINE,
+                    FileMonitoringTask.class.getName(), Level.FINEST, WorkspaceList.class.getName(), Level.FINE));
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -398,7 +414,8 @@ public class ExecutorStepTest {
                     Thread.sleep(100);
                 }
                 LOGGER.info("agent back online");
-                r.showAgentLogs(s, logging);
+                r.showAgentLogs(s, Map.of(DurableTaskStep.class.getName(), Level.FINE, ExecutorStepDynamicContext.class.getName(), Level.FINE,
+                    FileMonitoringTask.class.getName(), Level.FINEST, WorkspaceList.class.getName(), Level.FINE));
                 assertWorkspaceLocked(computer, workspacePath);
                 assertTrue(f2.isFile());
                 assertTrue(f1.delete());
@@ -420,7 +437,8 @@ public class ExecutorStepTest {
         }
     }
 
-    @Test public void buildShellScriptQuick() throws Throwable {
+    @Test
+    void buildShellScriptQuick() throws Throwable {
         sessions.then(r -> {
                 DumbSlave s = r.createSlave();
                 s.getNodeProperties().add(new EnvironmentVariablesNodeProperty(new EnvironmentVariablesNodeProperty.Entry("ONSLAVE", "true")));
@@ -436,9 +454,10 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void acquireWorkspace() throws Throwable {
+    @Test
+    void acquireWorkspace() throws Throwable {
         sessions.then(r -> {
-                String slaveRoot = tmp.newFolder().getPath();
+                String slaveRoot = newFolder(tmp, "junit").getPath();
                 DumbSlave s = new DumbSlave("agent", slaveRoot, r.createComputerLauncher(null));
                 s.setNumExecutors(2);
                 s.setRetentionStrategy(RetentionStrategy.NOOP);
@@ -496,7 +515,8 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-26513")
-    @Test public void executorStepRestart() throws Throwable {
+    @Test
+    void executorStepRestart() throws Throwable {
         sessions.then(r -> {
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("node('special') {echo 'OK ran'}", true));
@@ -512,14 +532,16 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-26130")
-    @Test public void unrestorableAgent() throws Throwable {
+    @Test
+    void unrestorableAgent() throws Throwable {
         sessions.then(r -> {
                 DumbSlave dumbo = r.createSlave("dumbo", null, null);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
-                    "node('dumbo') {\n" +
-                    "  semaphore 'wait'\n" +
-                    "}", true));
+                    """
+                        node('dumbo') {
+                          semaphore 'wait'
+                        }""", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("wait/1", b);
                 dumbo.getComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(User.getUnknown(), "not about to reconnect"));
@@ -535,7 +557,8 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void detailsExported() throws Throwable {
+    @Test
+    void detailsExported() throws Throwable {
         sessions.then(r -> {
                 DumbSlave s = r.createSlave();
 
@@ -571,7 +594,8 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void tailCall() throws Throwable {
+    @Test
+    void tailCall() throws Throwable {
         sessions.then(r -> {
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("def r = node {'the result'}; echo \"got ${r}\"", true));
@@ -582,7 +606,8 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-31649")
-    @Test public void queueTaskVisibility() throws Throwable {
+    @Test
+    void queueTaskVisibility() throws Throwable {
         sessions.then(r -> {
                 r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
                 r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().grant(Jenkins.ADMINISTER).everywhere().to("admin"));
@@ -611,7 +636,8 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-44981")
-    @Test public void queueItemAction() throws Throwable {
+    @Test
+    void queueItemAction() throws Throwable {
         sessions.then(r -> {
                 final WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("node('special') {}", true));
@@ -627,7 +653,7 @@ public class ExecutorStepTest {
                 assertEquals(1, items.length);
                 assertEquals(p, items[0].task.getOwnerTask());
                 // // TODO 2.389+ remove cast
-                assertEquals(b, ((ExecutorStepExecution.PlaceholderTask) items[0].task).getOwnerExecutable());
+                assertEquals(b, items[0].task.getOwnerExecutable());
                 assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
 
                 assertTrue(Queue.getInstance().cancel(items[0]));
@@ -637,7 +663,7 @@ public class ExecutorStepTest {
                 FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
                 assertNotNull(executorStartNode2);
                 assertEquals(QueueItemAction.QueueState.CANCELLED, QueueItemAction.getNodeState(executorStartNode2));
-                assertTrue(QueueItemAction.getQueueItem(executorStartNode2) instanceof Queue.LeftItem);
+            assertInstanceOf(Queue.LeftItem.class, QueueItemAction.getQueueItem(executorStartNode2));
 
                 // Re-run to make sure we actually get an agent and the action is set properly.
                 r.createSlave("special", "special", null);
@@ -647,7 +673,7 @@ public class ExecutorStepTest {
                 FlowNode executorStartNode3 = new DepthFirstScanner().findFirstMatch(b2.getExecution(), new ExecutorStepWithQueueItemPredicate());
                 assertNotNull(executorStartNode3);
                 assertEquals(QueueItemAction.QueueState.LAUNCHED, QueueItemAction.getNodeState(executorStartNode3));
-                assertTrue(QueueItemAction.getQueueItem(executorStartNode3) instanceof Queue.LeftItem);
+            assertInstanceOf(Queue.LeftItem.class, QueueItemAction.getQueueItem(executorStartNode3));
 
                 FlowNode notExecutorNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NotExecutorStepPredicate());
                 assertNotNull(notExecutorNode);
@@ -673,7 +699,8 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-30759")
-    @Test public void quickNodeBlock() throws Throwable {
+    @Test
+    void quickNodeBlock() throws Throwable {
         sessions.then(r -> {
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 p.setDefinition(new CpsFlowDefinition("for (int i = 0; i < 50; i++) {node {echo \"ran node block #${i}\"}}", true));
@@ -695,24 +722,27 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-36547")
-    @Test public void reuseNodeFromPreviousRun() throws Throwable {
+    @Test
+    void reuseNodeFromPreviousRun() throws Throwable {
         sessions.then(r -> {
             createNOnlineAgentWithLabels(r, 5, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
-            p.setDefinition(new CpsFlowDefinition("node('foo') {\n" +
-                    "}\n", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                node('foo') {
+                }
+                """, true));
 
             WorkflowRun run = r.buildAndAssertSuccess(p);
             List<WorkspaceAction> workspaceActions = getWorkspaceActions(run);
-            assertEquals(workspaceActions.size(), 1);
+            assertEquals(1, workspaceActions.size());
 
             String firstNode = workspaceActions.get(0).getNode();
-            assertNotEquals(firstNode, "");
+            assertNotEquals("", firstNode);
 
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
             workspaceActions = getWorkspaceActions(run2);
-            assertEquals(workspaceActions.size(), 1);
+            assertEquals(1, workspaceActions.size());
             assertEquals(workspaceActions.get(0).getNode(), firstNode);
         });
     }
@@ -726,9 +756,8 @@ public class ExecutorStepTest {
         FlowGraphWalker walker = new FlowGraphWalker(workflowRun.getExecution());
         Map<String, StringWriter> workspaceActionToLogText = new HashMap<>();
         for (FlowNode n : walker) {
-            if (n instanceof StepAtomNode) {
-                StepAtomNode atomNode = (StepAtomNode) n;
-                if (atomNode.getDescriptor() instanceof EchoStep.DescriptorImpl) {
+            if (n instanceof StepAtomNode atomNode) {
+              if (atomNode.getDescriptor() instanceof EchoStep.DescriptorImpl) {
                     // we're searching for the echo only...
                     LogAction l = atomNode.getAction(LogAction.class);
                     if (l != null) {
@@ -755,19 +784,21 @@ public class ExecutorStepTest {
 
 
     @Issue("JENKINS-36547")
-    @Test public void reuseNodesWithDifferentLabelsFromPreviousRuns() throws Throwable {
+    @Test
+    void reuseNodesWithDifferentLabelsFromPreviousRuns() throws Throwable {
         sessions.then(r -> {
             createNOnlineAgentWithLabels(r, 1, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
             p.setDefinition(new CpsFlowDefinition(
-                    "node('foo') {\n" +
-                            "   echo \"ran node block foo\"\n" +
-                            "}\n" +
-                            "node('bar') {\n" +
-                            "	echo \"ran node block bar\"\n" +
-                            "}\n" +
-                            "", true));
+                """
+                    node('foo') {
+                       echo "ran node block foo"
+                    }
+                    node('bar') {
+                    	echo "ran node block bar"
+                    }
+                    """, true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
@@ -783,7 +814,8 @@ public class ExecutorStepTest {
      * of the number of agents in order to get a pass
      */
     @Issue("JENKINS-36547")
-    @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() throws Throwable {
+    @Test
+    void reuseNodesWithSameLabelsInDifferentReorderedStages() throws Throwable {
         sessions.then(r -> {
             // Note: for Jenkins versions > 2.265, the number of agents must be 5.
             // Older Jenkins versions used 3 agents.
@@ -792,36 +824,36 @@ public class ExecutorStepTest {
             createNOnlineAgentWithLabels(r, totalAgents, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
-            p.setDefinition(new CpsFlowDefinition("" +
-                    "stage('1') {\n" +
-                    "   node('foo') {\n" +
-                    "       echo \"ran node block first\"\n" +
-                    "   }\n" +
-                    "}\n" +
-                    "stage('2') {\n" +
-                    "   node('foo') {\n" +
-                    "	    echo \"ran node block second\"\n" +
-                    "   }\n" +
-                    "}\n" +
-                    "", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                stage('1') {
+                   node('foo') {
+                       echo "ran node block first"
+                   }
+                }
+                stage('2') {
+                   node('foo') {
+                	    echo "ran node block second"
+                   }
+                }
+                """, true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
             // possibly the number of agents has to be adjusted in that case
-            assertEquals(nodeMapping1.size(), 2);
+            assertEquals(2, nodeMapping1.size());
 
-            p.setDefinition(new CpsFlowDefinition("" +
-                    "stage('2') {\n" +
-                    "   node('foo') {\n" +
-                    "       echo \"ran node block second\"\n" +
-                    "   }\n" +
-                    "}\n" +
-                    "stage('1') {\n" +
-                    "   node('foo') {\n" +
-                    "	    echo \"ran node block first\"\n" +
-                    "   }\n" +
-                    "}\n" +
-                    "", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                stage('2') {
+                   node('foo') {
+                       echo "ran node block second"
+                   }
+                }
+                stage('1') {
+                   node('foo') {
+                	    echo "ran node block first"
+                   }
+                }
+                """, true));
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
 
@@ -835,7 +867,8 @@ public class ExecutorStepTest {
      * of the number of agents in order to get a pass
      */
     @Issue("JENKINS-36547")
-    @Test public void reuseNodesWithSameLabelsInParallelStages() throws Throwable {
+    @Test
+    void reuseNodesWithSameLabelsInParallelStages() throws Throwable {
         sessions.then(r -> {
             createNOnlineAgentWithLabels(r, 4, "foo bar");
 
@@ -843,48 +876,48 @@ public class ExecutorStepTest {
 
             // 1: the second branch shall request the node first and wait inside the node block for the
             // first branch to acquire the node
-            p.setDefinition(new CpsFlowDefinition("" +
-                    "def secondBranchReady = false\n" +
-                    "def firstBranchDone = false\n" +
-                    "parallel(1: {\n" +
-                    "   waitUntil { secondBranchReady }\n" +
-                    "   node('foo') {\n" +
-                    "       echo \"ran node block first\"\n" +
-                    "   }\n" +
-                    "   firstBranchDone = true\n" +
-                    "}, 2: {\n" +
-                    "   node('foo') {\n" +
-                    "	    echo \"ran node block second\"\n" +
-                    "       secondBranchReady = true\n" +
-                    "       waitUntil { firstBranchDone }\n" +
-                    "   }\n" +
-                    "})\n" +
-                    "", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                def secondBranchReady = false
+                def firstBranchDone = false
+                parallel(1: {
+                   waitUntil { secondBranchReady }
+                   node('foo') {
+                       echo "ran node block first"
+                   }
+                   firstBranchDone = true
+                }, 2: {
+                   node('foo') {
+                	    echo "ran node block second"
+                       secondBranchReady = true
+                       waitUntil { firstBranchDone }
+                   }
+                })
+                """, true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
             // possibly the number of agents has to be adjusted in that case
-            assertEquals(nodeMapping1.size(), 2);
+            assertEquals(2, nodeMapping1.size());
 
             // 2: update script to force reversed order for node blocks; shall still pick the same nodes
-            p.setDefinition(new CpsFlowDefinition("" +
-                    "def firstBranchReady = false\n" +
-                    "def secondBranchDone = false\n" +
-                    "parallel(1: {\n" +
-                    "   node('foo') {\n" +
-                    "       echo \"ran node block first\"\n" +
-                    "       firstBranchReady = true\n" +
-                    "       waitUntil { secondBranchDone }\n" +
-                    "   }\n" +
-                    "}, 2: {\n" +
-                    "   waitUntil { firstBranchReady }\n" +
-                    "   node('foo') {\n" +
-                    "	    echo \"ran node block second\"\n" +
-                    "   }\n" +
-                    "   secondBranchDone = true\n" +
-                    "})\n" +
-                    "", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                def firstBranchReady = false
+                def secondBranchDone = false
+                parallel(1: {
+                   node('foo') {
+                       echo "ran node block first"
+                       firstBranchReady = true
+                       waitUntil { secondBranchDone }
+                   }
+                }, 2: {
+                   waitUntil { firstBranchReady }
+                   node('foo') {
+                	    echo "ran node block second"
+                   }
+                   secondBranchDone = true
+                })
+                """, true));
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
             assertEquals(nodeMapping1, nodeMapping2);
@@ -897,61 +930,62 @@ public class ExecutorStepTest {
      * of the number of agents in order to get a pass
      */
     @Issue("JENKINS-36547")
-    @Test public void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() throws Throwable {
+    @Test
+    void reuseNodesWithSameLabelsInStagesWrappedInsideParallelStages() throws Throwable {
         sessions.then(r -> {
             createNOnlineAgentWithLabels(r, 4, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
-            p.setDefinition(new CpsFlowDefinition("" +
-                    "def secondBranchReady = false\n" +
-                    "def firstBranchDone = false\n" +
-                    "parallel(1: {\n" +
-                    "   waitUntil { secondBranchReady }\n" +
-                    "   stage('stage1') {\n" +
-                    "       node('foo') {\n" +
-                    "           echo \"ran node block first\"\n" +
-                    "        }\n" +
-                    "   }\n" +
-                    "   firstBranchDone = true\n" +
-                    "}, 2: {\n" +
-                    "   stage('stage1') {\n" +
-                    "       node('foo') {\n" +
-                    "	        echo \"ran node block second\"\n" +
-                    "           secondBranchReady = true\n" +
-                    "           waitUntil { firstBranchDone }\n" +
-                    "        }\n" +
-                    "   }\n" +
-                    "})\n" +
-                    "", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                def secondBranchReady = false
+                def firstBranchDone = false
+                parallel(1: {
+                   waitUntil { secondBranchReady }
+                   stage('stage1') {
+                       node('foo') {
+                           echo "ran node block first"
+                        }
+                   }
+                   firstBranchDone = true
+                }, 2: {
+                   stage('stage1') {
+                       node('foo') {
+                	        echo "ran node block second"
+                           secondBranchReady = true
+                           waitUntil { firstBranchDone }
+                        }
+                   }
+                })
+                """, true));
             WorkflowRun run1 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping1 = mapNodeNameToLogText(run1);
 
             // if nodeMapping contains only one entry this test actually will not test anything reasonable
             // possibly the number of agents has to be adjusted in that case
-            assertEquals(nodeMapping1.size(), 2);
+            assertEquals(2, nodeMapping1.size());
 
             // update script to force reversed order for node blocks; shall still pick the same nodes
-            p.setDefinition(new CpsFlowDefinition("" +
-                    "def firstBranchReady = false\n" +
-                    "def secondBranchDone = false\n" +
-                    "parallel(1: {\n" +
-                    "   stage('stage1') {\n" +
-                    "       node('foo') {\n" +
-                    "           echo \"ran node block first\"\n" +
-                    "           firstBranchReady = true\n" +
-                    "           waitUntil { secondBranchDone }\n" +
-                    "       }\n" +
-                    "   }\n" +
-                    "}, 2: {\n" +
-                    "   waitUntil { firstBranchReady }\n" +
-                    "   stage('stage1') {\n" +
-                    "       node('foo') {\n" +
-                    "    	    echo \"ran node block second\"\n" +
-                    "       }\n" +
-                    "   }\n" +
-                    "   secondBranchDone = true\n" +
-                    "})\n" +
-                    "", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                def firstBranchReady = false
+                def secondBranchDone = false
+                parallel(1: {
+                   stage('stage1') {
+                       node('foo') {
+                           echo "ran node block first"
+                           firstBranchReady = true
+                           waitUntil { secondBranchDone }
+                       }
+                   }
+                }, 2: {
+                   waitUntil { firstBranchReady }
+                   stage('stage1') {
+                       node('foo') {
+                    	    echo "ran node block second"
+                       }
+                   }
+                   secondBranchDone = true
+                })
+                """, true));
 
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
@@ -960,7 +994,8 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-36547")
-    @Test public void reuseNodeInSameRun() throws Throwable {
+    @Test
+    void reuseNodeInSameRun() throws Throwable {
         sessions.then(r -> {
             createNOnlineAgentWithLabels(r, 5, "foo");
 
@@ -970,37 +1005,39 @@ public class ExecutorStepTest {
             Map<String, String> nodeMapping = mapNodeNameToLogText(run);
 
             // if the node was reused every time we'll only have one node mapping entry
-            assertEquals(nodeMapping.size(), 1);
+            assertEquals(1, nodeMapping.size());
         });
     }
 
     @Issue("JENKINS-26132")
-    @Test public void taskDisplayName() throws Throwable {
+    @Test
+    void taskDisplayName() throws Throwable {
         sessions.then(r -> {
                 WorkflowJob p = r.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
-                    "stage('one') {\n" +
-                    "  node {\n" +
-                    "    semaphore 'one'\n" +
-                    "    stage('two') {\n" +
-                    "      semaphore 'two'\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}\n" +
-                    "stage('three') {\n" +
-                    "  node {\n" +
-                    "    semaphore 'three'\n" +
-                    "  }\n" +
-                    "  parallel a: {\n" +
-                    "    node {\n" +
-                    "      semaphore 'a'\n" +
-                    "    }\n" +
-                    "  }, b: {\n" +
-                    "    node {\n" +
-                    "      semaphore 'b'\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}", true));
+                    """
+                        stage('one') {
+                          node {
+                            semaphore 'one'
+                            stage('two') {
+                              semaphore 'two'
+                            }
+                          }
+                        }
+                        stage('three') {
+                          node {
+                            semaphore 'three'
+                          }
+                          parallel a: {
+                            node {
+                              semaphore 'a'
+                            }
+                          }, b: {
+                            node {
+                              semaphore 'b'
+                            }
+                          }
+                        }""", true));
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 SemaphoreStep.waitForStart("one/1", b);
                 assertEquals(Collections.singletonList(n(b, "one")), currentLabels(r));
@@ -1039,7 +1076,8 @@ public class ExecutorStepTest {
 
 
     @Issue("SECURITY-675")
-    @Test public void authentication() throws Throwable {
+    @Test
+    void authentication() throws Throwable {
         sessions.then(r -> {
             logging.record(ExecutorStepExecution.class, Level.FINE);
             Slave s = r.createSlave("remote", null, null);
@@ -1073,7 +1111,8 @@ public class ExecutorStepTest {
     }
 
     @Issue("JENKINS-58900")
-    @Test public void nodeDisconnectMissingContextVariableException() throws Throwable {
+    @Test
+    void nodeDisconnectMissingContextVariableException() throws Throwable {
         sessions.then(r -> {
             DumbSlave agent = r.createSlave();
             WorkflowJob p = r.createProject(WorkflowJob.class);
@@ -1101,8 +1140,7 @@ public class ExecutorStepTest {
     }
 
     @Test
-    @Issue("JENKINS-60634")
-    public void tempDirVariable() throws Throwable {
+    @Issue("JENKINS-60634") void tempDirVariable() throws Throwable {
         sessions.then(r -> {
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node {if (isUnix()) {sh 'set -u && touch \"$WORKSPACE_TMP/x\"'} else {bat(/echo ok > \"%WORKSPACE_TMP%\\x\"/)}}", true));
@@ -1112,8 +1150,7 @@ public class ExecutorStepTest {
     }
 
     @Test
-    @Issue("JENKINS-63486")
-    public void getOwnerTaskPermissions() throws Throwable {
+    @Issue("JENKINS-63486") void getOwnerTaskPermissions() throws Throwable {
         sessions.then(r -> {
             MockFolder f = r.createFolder("f");
             WorkflowJob p = f.createProject(WorkflowJob.class, "p");
@@ -1135,7 +1172,8 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void getParentExecutable() throws Throwable {
+    @Test
+    void getParentExecutable() throws Throwable {
         sessions.then(r -> {
             DumbSlave s = r.createSlave();
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
@@ -1151,9 +1189,10 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
+    @Test
+    void placeholderTaskInQueueButAssociatedBuildComplete() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE).capture(50);
-        Path tempQueueFile = tmp.newFile().toPath();
+        Path tempQueueFile = File.createTempFile("junit", null, tmp).toPath();
         sessions.then(r -> {
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node('custom-label') { }", true));
@@ -1191,7 +1230,8 @@ public class ExecutorStepTest {
         });
     }
 
-    @Test public void restartWhilePlaceholderTaskIsInQueue() throws Throwable {
+    @Test
+    void restartWhilePlaceholderTaskIsInQueue() throws Throwable {
         // Node reconnection takes a while during the second restart.
         System.setProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", String.valueOf(TimeUnit.SECONDS.toMillis(30)));
         logging.record(ExecutorStepExecution.class, Level.FINE)
@@ -1206,12 +1246,11 @@ public class ExecutorStepTest {
             Slave node = (Slave) r.jenkins.getNode("custom-label");
             node.setNumExecutors(0); // Make sure the step won't be able to resume.
         });
-        sessions.then(r -> {
+        sessions.then(r ->
             // Just wait for ExecutorStepDynamicContext.resume to schedule PlaceholderTask and then restart.
             await().atMost(15, TimeUnit.SECONDS).until(
                     () -> Stream.of(Queue.getInstance().getItems()).map(item -> item.task).collect(Collectors.toList()),
-                    hasItem(instanceOf(ExecutorStepExecution.PlaceholderTask.class)));
-        });
+                    hasItem(instanceOf(ExecutorStepExecution.PlaceholderTask.class))));
         sessions.then(r -> {
             ((Slave) r.jenkins.getNode("custom-label")).setNumExecutors(1); // Allow node step to resume.
             WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
@@ -1247,5 +1286,14 @@ public class ExecutorStepTest {
         for (DumbSlave agent : agents) {
             r.waitOnline(agent);
         }
+    }
+
+    private static File newFolder(File root, String... subDirs) throws IOException {
+        String subFolder = String.join("/", subDirs);
+        File result = new File(root, subFolder);
+        if (!result.mkdirs()) {
+            throw new IOException("Couldn't create folders " + root);
+        }
+        return result;
     }
 }
