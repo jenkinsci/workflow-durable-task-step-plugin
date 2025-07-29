@@ -89,6 +89,7 @@ import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
+import org.jenkinsci.plugins.workflow.log.LogStorageFactoryDescriptor;
 import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
@@ -431,8 +432,14 @@ public class ShellStepTest {
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
     }
-    @TestExtension("remoteLogger[watching=true]") public static class LogFile implements LogStorageFactory {
-        @Override public LogStorage forBuild(FlowExecutionOwner b) {
+
+    public static class LogFile implements LogStorageFactory {
+
+        @DataBoundConstructor
+        public LogFile() {}
+
+        @Override
+        public LogStorage forBuild(FlowExecutionOwner b) {
             final LogStorage base;
             try {
                 base = FileLogStorage.forFile(new File(b.getRootDir(), "special.log"));
@@ -458,7 +465,22 @@ public class ShellStepTest {
                 }
             };
         }
+
+        @TestExtension("remoteLogger[watching=true]")
+        public static final class DescriptorImpl extends LogStorageFactoryDescriptor<LogFile> {
+            @NonNull
+            @Override
+            public String getDisplayName() {
+                return "LogFile Storage";
+            }
+
+            @Override
+            public LogStorageFactory getDefaultInstance() {
+                return new LogFile();
+            }
+        }
     }
+
     private static class RemotableBuildListener extends OutputStreamTaskListener.Default implements BuildListener {
         private static final long serialVersionUID = 1;
         /** actual implementation */
