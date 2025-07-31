@@ -81,6 +81,12 @@
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
+            <dependency>
+                <groupId>org.jenkins-ci.plugins.workflow</groupId>
+                <artifactId>workflow-api</artifactId>
+                <!-- TODO: Replace incremental version (https://github.com/jenkinsci/workflow-api-plugin/pull/417) with the latest release once upstream is released.-->
+                <version>1397.v02e97a_30f3ce</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
     <dependencies>
@@ -95,8 +101,6 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-api</artifactId>
-            <!-- TODO: Replace incremental version with latest release once upstream is released -->
-            <version>1397.v02e97a_30f3ce</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
