@@ -81,7 +81,6 @@ import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
-import net.sf.json.groovy.JsonSlurper;
 import org.springframework.security.core.Authentication;
 import org.apache.commons.io.IOUtils;
 import org.htmlunit.Page;
@@ -553,7 +552,7 @@ public class ExecutorStepTest {
                         .goTo("computer/" + s.getNodeName()
                                 + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
 
-                JSONObject propertiesJSON = (JSONObject) new JsonSlurper().parseText(page.getWebResponse().getContentAsString());
+                JSONObject propertiesJSON = JSONObject.fromObject(page.getWebResponse().getContentAsString());
                 JSONArray executors = propertiesJSON.getJSONArray("executors");
                 JSONObject executor = executors.getJSONObject(0);
                 JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
