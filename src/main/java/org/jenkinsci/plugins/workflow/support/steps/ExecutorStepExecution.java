@@ -1031,10 +1031,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return;
                 }
                 LOGGER.log(FINE, "finished {0}", execution.getContext());
+                var state = execution.state;
                 try {
-                    WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(execution.state);
-                    if (_lease != null) {
-                        _lease.release();
+                    if (state != null) {
+                        WorkspaceList.Lease _lease = ExtensionList.lookupSingleton(ExecutorStepDynamicContext.WorkspaceListLeaseTranslator.class).get(state);
+                        if (_lease != null) {
+                            _lease.release();
+                        }
                     }
                 } finally {
                     finish(execution.getContext(), cookie);
@@ -1045,7 +1048,9 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     boolean _stopping = t.stopping;
                     t.stopping = true;
                     try {
-                        if (Queue.getInstance().cancel(execution.state.task)) {
+                        if (state == null) {
+                            LOGGER.fine(() -> execution.getContext() + " not yet scheduled");
+                        } else if (Queue.getInstance().cancel(state.task)) {
                             LOGGER.fine(() -> "cancelled leftover task from " + execution.getContext());
                         } else {
                             LOGGER.fine(() -> "was unable to cancel any leftover task from " + execution.getContext());
