@@ -39,6 +39,7 @@ import hudson.model.Executor;
 import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Queue;
+import hudson.model.Queue.LeftItem;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.Slave;
@@ -77,7 +78,6 @@ import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
-import net.sf.json.groovy.JsonSlurper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -576,7 +576,7 @@ class ExecutorStepTest {
                         .goTo("computer/" + s.getNodeName()
                                 + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
 
-                JSONObject propertiesJSON = (JSONObject) new JsonSlurper().parseText(page.getWebResponse().getContentAsString());
+                JSONObject propertiesJSON = JSONObject.fromObject(page.getWebResponse().getContentAsString());
                 JSONArray executors = propertiesJSON.getJSONArray("executors");
                 JSONObject executor = executors.getJSONObject(0);
                 JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
@@ -663,7 +663,7 @@ class ExecutorStepTest {
                 FlowNode executorStartNode2 = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
                 assertNotNull(executorStartNode2);
                 assertEquals(QueueItemAction.QueueState.CANCELLED, QueueItemAction.getNodeState(executorStartNode2));
-            assertInstanceOf(Queue.LeftItem.class, QueueItemAction.getQueueItem(executorStartNode2));
+                assertInstanceOf(Queue.LeftItem.class, QueueItemAction.getQueueItem(executorStartNode2));
 
                 // Re-run to make sure we actually get an agent and the action is set properly.
                 r.createSlave("special", "special", null);
@@ -673,7 +673,7 @@ class ExecutorStepTest {
                 FlowNode executorStartNode3 = new DepthFirstScanner().findFirstMatch(b2.getExecution(), new ExecutorStepWithQueueItemPredicate());
                 assertNotNull(executorStartNode3);
                 assertEquals(QueueItemAction.QueueState.LAUNCHED, QueueItemAction.getNodeState(executorStartNode3));
-            assertInstanceOf(Queue.LeftItem.class, QueueItemAction.getQueueItem(executorStartNode3));
+                assertInstanceOf(Queue.LeftItem.class, QueueItemAction.getQueueItem(executorStartNode3));
 
                 FlowNode notExecutorNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new NotExecutorStepPredicate());
                 assertNotNull(notExecutorNode);
