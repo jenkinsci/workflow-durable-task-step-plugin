@@ -338,7 +338,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         try {
                             ctx.get(TaskListener.class).error("node block still appears to be neither running nor scheduled; cancelling");
                         } catch (IOException | InterruptedException x) {
-                            LOGGER.log(Level.WARNING, null, x);
+                            LOGGER.log(Level.WARNING, "failed to warn about " + ctx, x);
                         }
                         ctx.onFailure(new FlowInterruptedException(Result.ABORTED, false, new QueueTaskCancelled()));
                         try {
@@ -351,7 +351,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                                 nested.getContext().onFailure(new FlowInterruptedException(Result.ABORTED, false, new RemovedNodeCause()));
                                             }
                                         } catch (IOException | InterruptedException x) {
-                                            LOGGER.log(Level.WARNING, null, x);
+                                            LOGGER.log(Level.WARNING, "failed to check " + nested.getContext() + " in " + ctx, x);
                                         }
                                     }
                                 }
@@ -360,7 +360,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                                 }
                             }, MoreExecutors.directExecutor());
                         } catch (IOException | InterruptedException x) {
-                            LOGGER.log(Level.WARNING, null, x);
+                            LOGGER.log(Level.WARNING, "failed to check " + ctx, x);
                         }
                     } else {
                         newAnomalous.add(ctx);
@@ -370,7 +370,11 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 }
             }).get();
             for (StepContext ctx : newAnomalous) {
-                ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; will cancel if this condition persists");
+                try {
+                    ctx.get(TaskListener.class).error("node block appears to be neither running nor scheduled; will cancel if this condition persists");
+                } catch (IOException | InterruptedException x) {
+                    LOGGER.log(Level.WARNING, "failed to warn about " + ctx, x);
+                }
             }
             LOGGER.fine(() -> "done checking: " + anomalous + " → " + newAnomalous);
             anomalous = newAnomalous;
