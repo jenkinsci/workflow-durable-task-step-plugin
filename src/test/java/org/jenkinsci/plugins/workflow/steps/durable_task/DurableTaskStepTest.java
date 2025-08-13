@@ -36,7 +36,6 @@ import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.ComputerListener;
 import java.io.File;
 import java.time.Duration;
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.slaves.restarter.JnlpSlaveRestarterInstaller;
@@ -45,40 +44,43 @@ import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.Parameter;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.PrefixedOutputStream;
-import org.jvnet.hudson.test.RealJenkinsRule;
 import org.jvnet.hudson.test.TailLog;
+import org.jvnet.hudson.test.junit.jupiter.InboundAgentExtension;
+import org.jvnet.hudson.test.junit.jupiter.RealJenkinsExtension;
 
-@RunWith(Parameterized.class)
-public final class DurableTaskStepTest {
-
-    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
-        return List.of(false, true);
-    }
-
-    @Parameterized.Parameter public boolean useWatching;
+@ParameterizedClass(name = "watching={0}")
+@ValueSource(booleans = {true, false})
+class DurableTaskStepTest {
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStepTest.class.getName());
 
-    @Rule public RealJenkinsRule rr = new RealJenkinsRule().
+    @Parameter
+    private boolean useWatching;
+
+    @RegisterExtension
+    private final RealJenkinsExtension rr = new RealJenkinsExtension().
         javaOptions("-Dorg.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis=" + Duration.ofMinutes(5).toMillis()). // reconnection could be >15s esp. on Windows
         withColor(PrefixedOutputStream.Color.BLUE).
         withLogger(DurableTaskStep.class, Level.FINE).
         withLogger(FileMonitoringTask.class, Level.FINE);
 
-    @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
+    @RegisterExtension
+    private final InboundAgentExtension inboundAgents = new InboundAgentExtension();
 
-    @Test public void scriptExitingAcrossRestart() throws Throwable {
+    @Test
+    void scriptExitingAcrossRestart() throws Throwable {
         rr.javaOptions("-D" + DurableTaskStep.class.getName() + ".USE_WATCHING=" + useWatching);
         rr.startJenkins();
         rr.runRemotely(DurableTaskStepTest::disableJnlpSlaveRestarterInstaller);
-        inboundAgents.createAgent(rr, InboundAgentRule.Options.newBuilder().
+        inboundAgents.createAgent(rr, InboundAgentExtension.Options.newBuilder().
             color(PrefixedOutputStream.Color.MAGENTA).
             label("remote").
             withLogger(FileMonitoringTask.class, Level.FINER).
@@ -103,7 +105,7 @@ public final class DurableTaskStepTest {
      * Most users should be using cloud agents,
      * and this lets us preserve {@link InboundAgentRule.Options.Builder#withLogger(Class, Level)}.
      */
-    private static void disableJnlpSlaveRestarterInstaller(JenkinsRule r) throws Throwable {
+    private static void disableJnlpSlaveRestarterInstaller(JenkinsRule r) {
         ComputerListener.all().remove(ExtensionList.lookupSingleton(JnlpSlaveRestarterInstaller.class));
     }
 
