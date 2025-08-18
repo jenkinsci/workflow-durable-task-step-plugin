@@ -154,7 +154,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     cob.print(listener);
                 }
             }
-        }, 15, TimeUnit.SECONDS);
+        }, Main.isUnitTest ? 5 : 15, TimeUnit.SECONDS);
         return false;
     }
 
@@ -508,8 +508,8 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         private Object readResolve() {
             RunningTasks.add(context);
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.log(FINE, null, new Exception("deserializing previously scheduled " + this));
+            if (LOGGER.isLoggable(Level.FINER)) {
+                LOGGER.log(FINER, null, new Exception("deserializing previously scheduled " + this));
             }
             return this;
         }

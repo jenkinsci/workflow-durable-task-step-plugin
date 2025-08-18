@@ -38,20 +38,31 @@ import static org.junit.Assert.assertNotNull;
 import hudson.model.Label;
 import hudson.model.Queue;
 import hudson.model.Result;
+import hudson.model.TaskListener;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.RetentionStrategy;
+
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
+
 import jenkins.model.InterruptedBuildAction;
+
 import org.jenkinci.plugins.mock_slave.MockCloud;
+import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.Step;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.ClassRule;
 import org.junit.Rule;
@@ -60,6 +71,8 @@ import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.LoggerRule;
+import org.jvnet.hudson.test.TestExtension;
+import org.kohsuke.stapler.DataBoundConstructor;
 
 public class ExecutorStepDynamicContextTest {
 
@@ -248,5 +261,65 @@ public class ExecutorStepDynamicContextTest {
             assertNotNull(iba);
             assertThat(iba.getCauses(), contains(isA(ExecutorStepExecution.RemovedNodeCause.class)));
         });
+    }
+
+    @Test public void tardyResume() throws Throwable {
+        commonSetup();
+        logging.record(ContinuedTask.class, Level.FINER);
+        sessions.then(j -> {
+            j.createSlave("remote", "contended", null);
+            var prompt = j.createProject(WorkflowJob.class, "prompt");
+            prompt.setDefinition(new CpsFlowDefinition("node('contended') {semaphore 'prompt'}", true));
+            var tardy = j.createProject(WorkflowJob.class, "tardy");
+            tardy.setDefinition(new CpsFlowDefinition("slowToResume {node('contended') {semaphore 'tardy'}}", true));
+            SemaphoreStep.waitForStart("tardy/1", tardy.scheduleBuild2(0).waitForStart());
+            j.waitForMessage("Still waiting to schedule task", prompt.scheduleBuild2(0).waitForStart());
+        });
+        sessions.then(j -> {
+            var promptB = j.jenkins.getItemByFullName("prompt", WorkflowJob.class).getBuildByNumber(1);
+            j.waitForMessage("Ready to run", promptB);
+            var tardyB = j.jenkins.getItemByFullName("tardy", WorkflowJob.class).getBuildByNumber(1);
+            j.waitForMessage("Ready to run", tardyB);
+            SemaphoreStep.success("tardy/1", null);
+            j.assertBuildStatusSuccess(j.waitForCompletion(tardyB));
+            SemaphoreStep.waitForStart("prompt/1", promptB);
+            SemaphoreStep.success("prompt/1", null);
+            j.assertBuildStatusSuccess(j.waitForCompletion(promptB));
+        });
+    }
+    public static final class SlowToResumeStep extends Step {
+        @DataBoundConstructor public SlowToResumeStep() {}
+        @Override public StepExecution start(StepContext context) throws Exception {
+            return new Execution(context);
+        }
+        private static final class Execution extends StepExecution {
+            Execution(StepContext context) {
+                super(context);
+            }
+            @Override public boolean start() throws Exception {
+                getContext().newBodyInvoker().withCallback(BodyExecutionCallback.wrap(getContext())).start();
+                return false;
+            }
+            @Override public void onResume() {
+                try {
+                    getContext().get(TaskListener.class).getLogger().println("Will resume outer step…");
+                    Thread.sleep(3_000);
+                    getContext().get(TaskListener.class).getLogger().println("…resumed.");
+                } catch (Exception x) {
+                    throw new RuntimeException(x);
+                }
+            }
+        }
+        @TestExtension("tardyResume") public static class DescriptorImpl extends StepDescriptor {
+            @Override public String getFunctionName() {
+                return "slowToResume";
+            }
+            @Override public boolean takesImplicitBlockArgument() {
+                return true;
+            }
+            @Override public Set<? extends Class<?>> getRequiredContext() {
+                return Set.of(TaskListener.class);
+            }
+        }
     }
 }
