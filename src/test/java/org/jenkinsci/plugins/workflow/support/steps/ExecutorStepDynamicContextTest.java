@@ -265,7 +265,7 @@ public class ExecutorStepDynamicContextTest {
 
     @Test public void tardyResume() throws Throwable {
         commonSetup();
-        logging.record(ContinuedTask.class, Level.FINER);
+        logging.record(ContinuedTask.class, Level.FINER).record(UsageTracker.class, Level.FINER);
         sessions.then(j -> {
             j.createSlave("remote", "contended", null);
             var prompt = j.createProject(WorkflowJob.class, "prompt");

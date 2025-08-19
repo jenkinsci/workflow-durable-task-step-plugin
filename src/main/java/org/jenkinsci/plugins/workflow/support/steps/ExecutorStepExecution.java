@@ -747,7 +747,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
 
         @Override public @CheckForNull Queue.Executable getOwnerExecutable() {
             Run<?, ?> r = runForDisplay();
-            return r instanceof Queue.Executable ? (Queue.Executable) r : null;
+            return r instanceof Queue.Executable qe ? qe : null;
         }
 
         @Exported
@@ -1042,6 +1042,10 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         if (_lease != null) {
                             _lease.release();
                         }
+                        var node = state.getNode();
+                        if (node != null) {
+                            UsageTracker.unregister(node, state.task);
+                        }
                     }
                 } finally {
                     finish(execution.getContext(), cookie);
@@ -1104,6 +1108,7 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         // Switches the label to a self-label, so if the executable is killed and restarted, it will run on the same node:
                         label = computer.getName();
                         labelIsSelfLabel = true;
+                        UsageTracker.register(node, PlaceholderTask.this);
 
                         EnvVars env = computer.getEnvironment();
                         env.overrideExpandingAll(computer.buildEnvironment(listener));

@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.Extension;
@@ -143,6 +144,11 @@ public final class ExecutorStepDynamicContext implements Serializable {
         return "ExecutorStepDynamicContext[" + path + "@" + node + "]";
     }
 
+    @CheckForNull Node getNode() {
+        Jenkins j = Jenkins.get();
+        return node.isEmpty() ? j : j.getNode(node);
+    }
+
     private static abstract class Translator<T> extends DynamicContext.Typed<T> {
 
         @Override protected T get(DelegatedContext context) throws IOException, InterruptedException {
@@ -251,8 +257,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
             if (c == null) {
                 return null;
             }
-            Jenkins j = Jenkins.get();
-            return c.node.isEmpty() ? j : j.getNode(c.node);
+            return c.getNode();
         }
 
     }
