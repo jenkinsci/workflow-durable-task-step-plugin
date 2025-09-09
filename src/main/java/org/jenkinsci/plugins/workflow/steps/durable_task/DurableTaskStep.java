@@ -69,7 +69,7 @@ import jenkins.model.Jenkins;
 import jenkins.tasks.filters.EnvVarsFilterableBuilder;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.Handler;
