@@ -69,7 +69,6 @@ import jenkins.model.Jenkins;
 import jenkins.tasks.filters.EnvVarsFilterableBuilder;
 import jenkins.util.Timer;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.Handler;
@@ -149,8 +148,8 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
     }
 
     @Override public StepExecution start(StepContext context) throws Exception {
-        if (this.label != null) {
-            context.get(FlowNode.class).addAction(new LabelAction(StringUtils.left(label, MAX_LABEL_LENGTH)));
+        if (label != null) {
+            context.get(FlowNode.class).addAction(new LabelAction(label.length() > MAX_LABEL_LENGTH ? label.substring(0, MAX_LABEL_LENGTH) : label));
         }
         return new Execution(context, this);
     }
