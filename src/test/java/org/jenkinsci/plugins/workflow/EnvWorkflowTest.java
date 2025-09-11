@@ -31,7 +31,6 @@ import static org.hamcrest.Matchers.is;
 import hudson.slaves.DumbSlave;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -60,23 +59,23 @@ class EnvWorkflowTest {
     @Test
     void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
-        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
-        final String builtInNodeName = r.jenkins.getSelfLabel().getName();
-
-        p.setDefinition(new CpsFlowDefinition(
-            "node('" + builtInNodeLabel + "') {\n" +
-            "  echo \"My name on the built-in node is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n",
-            true));
-        r.assertLogContains("My name on the built-in node is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
             """
-                node('node-test') {
-                  echo "My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
-                }
-                """,
+            node('built-in') {
+              echo "My name on the built-in node is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
+            }
+            """,
+            true));
+        r.assertLogContains("My name on the built-in node is built-in using labels built-in", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+
+        p.setDefinition(new CpsFlowDefinition(
+            """
+            node('node-test') {
+              echo "My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
+            }
+            """,
             true));
         matchLabelsInAnyOrder(
                 r.assertBuildStatusSuccess(p.scheduleBuild2(0)),
@@ -85,14 +84,14 @@ class EnvWorkflowTest {
                 "node-test",
                 "unix");
 
-        p.setDefinition(new CpsFlowDefinition( // JENKINS-41446 ensure variable still available in a ws step
-            """
-                node('node-test') {
-                 ws('workspace/foo') {
-                    echo "My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
-                  }
-                }
-                """,
+        // JENKINS-41446 ensure variable still available in a ws step
+        p.setDefinition(new CpsFlowDefinition(
+        """
+        node('node-test') {
+         ws('workspace/foo') {    echo "My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
+          }
+        }
+        """,
             true));
         matchLabelsInAnyOrder(
                 r.assertBuildStatusSuccess(p.scheduleBuild2(0)),
@@ -109,7 +108,7 @@ class EnvWorkflowTest {
         assertThat("Could not match the expected log pattern", matcher.find(), is(true));
         assertThat(
                 "Did not find the expected labels",
-                StringUtils.split(matcher.group(1)),
+                matcher.group(1).split("\\s+"),
                 arrayContainingInAnyOrder(labels));
     }
 

@@ -67,7 +67,6 @@ import java.util.logging.LogRecord;
 import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang.StringUtils;
 import static org.awaitility.Awaitility.await;
 import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
@@ -402,7 +401,7 @@ class ShellStepTest {
 
     @Test
     void labelShortened() throws Exception {
-        String singleLabel= StringUtils.repeat("0123456789", 10);
+        String singleLabel = "0123456789".repeat(10);
         String label = singleLabel + singleLabel;
 
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
