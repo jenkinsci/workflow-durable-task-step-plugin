@@ -75,6 +75,7 @@ import org.jenkinsci.plugins.durabletask.Handler;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
 import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
@@ -765,6 +766,9 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
     @Extension public static final class AgentReconnectionListener extends ComputerListener {
 
         @Override public void onOffline(Computer c, OfflineCause cause) {
+            if (!USE_WATCHING) {
+                return;
+            }
             if (Jenkins.get().isTerminating()) {
                 LOGGER.fine(() -> "Skipping check on " + c.getName() + " during shutdown");
                 return;
@@ -773,6 +777,9 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         }
 
         @Override public void onOnline(Computer c, TaskListener listener) throws IOException, InterruptedException {
+            if (!USE_WATCHING) {
+                return;
+            }
             if (!FlowExecutionList.get().isResumptionComplete()) {
                 LOGGER.fine(() -> "Skipping check on " + c.getName() + " before builds are ready");
                 return;
@@ -782,12 +789,33 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
 
         private void check(Computer c) {
             String name = c.getName();
-            StepExecution.acceptAll(Execution.class, exec -> {
-                if (exec.watching && exec.node.equals(name)) {
-                    LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " soon");
-                    threadPool().schedule(exec::check, 15, TimeUnit.SECONDS);
+            // More efficient than StepExecution.acceptAll(Execution.class, exec -> …):
+            for (var executor : c.getExecutors()) {
+                var executable = executor.getCurrentExecutable();
+                if (executable != null && executable.getParentExecutable() instanceof FlowExecutionOwner.Executable feoe) {
+                    var feo = feoe.asFlowExecutionOwner();
+                    if (feo != null) {
+                        try {
+                            var fe = feo.get();
+                            var executionsFuture = fe.getCurrentExecutions(true);
+                            executionsFuture.addListener(() -> {
+                                try {
+                                    for (var execution : executionsFuture.get()) {
+                                        if (execution instanceof Execution exec && exec.watching && exec.node.equals(name)) {
+                                            LOGGER.fine(() -> "Online/offline event on " + name + ", checking current status of " + exec.remote + " soon");
+                                            threadPool().schedule(exec::check, 15, TimeUnit.SECONDS);
+                                        }
+                                    }
+                                } catch (Exception x) {
+                                    LOGGER.log(Level.WARNING, "could not inspect " + fe, x);
+                                }
+                            }, Runnable::run);
+                        } catch (IOException x) {
+                            LOGGER.log(Level.WARNING, "could not inspect " + feo, x);
+                        }
+                    }
                 }
-            });
+            }
         }
 
     }
