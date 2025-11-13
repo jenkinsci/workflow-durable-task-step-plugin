@@ -39,25 +39,28 @@ import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.steps.durable_task.exitDuringShutdownTest.FinishProcess;
-import static org.junit.Assume.assumeFalse;
-import org.junit.Rule;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.PrefixedOutputStream;
-import org.jvnet.hudson.test.RealJenkinsRule;
 import org.jvnet.hudson.test.TailLog;
+import org.jvnet.hudson.test.junit.jupiter.RealJenkinsExtension;
 
-public final class ExitDuringShutdownTest {
+class ExitDuringShutdownTest {
 
-    @Rule public RealJenkinsRule rr = new RealJenkinsRule().
-        addSyntheticPlugin(new RealJenkinsRule.SyntheticPlugin(FinishProcess.class).shortName("ExitDuringShutdownTest").header("Plugin-Dependencies", "workflow-cps:0")).
+    @RegisterExtension
+    private final RealJenkinsExtension rr = new RealJenkinsExtension().
+        addSyntheticPlugin(new RealJenkinsExtension.SyntheticPlugin(FinishProcess.class).shortName("ExitDuringShutdownTest").header("Plugin-Dependencies", "workflow-cps:0")).
         javaOptions("-Dorg.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis=" + Duration.ofMinutes(5).toMillis()). // reconnection could be >15s esp. on Windows
         javaOptions("-D" + DurableTaskStep.class.getName() + ".USE_WATCHING=true").
         withColor(PrefixedOutputStream.Color.BLUE).
         withLogger(DurableTaskStep.class, Level.FINE).
         withLogger(FileMonitoringTask.class, Level.FINE);
 
-    @Test public void scriptExitingDuringShutdown() throws Throwable {
-        assumeFalse("TODO Windows version TBD", Functions.isWindows());
+    @Test
+    void scriptExitingDuringShutdown() throws Throwable {
+        assumeFalse(Functions.isWindows(), "TODO Windows version TBD");
         rr.startJenkins();
         try (var tailLog = new TailLog(rr, "p", 1).withColor(PrefixedOutputStream.Color.YELLOW)) {
             rr.run(r -> {

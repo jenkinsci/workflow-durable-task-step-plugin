@@ -24,6 +24,8 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.model.Label;
@@ -54,30 +56,32 @@ import org.jenkinsci.plugins.workflow.steps.StepExecutions;
 import org.jenkinsci.plugins.workflow.steps.SynchronousResumeNotSupportedErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import static org.junit.Assert.assertEquals;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.jvnet.hudson.test.BuildWatcher;
-import org.jvnet.hudson.test.InboundAgentRule;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.Issue;
-import org.jvnet.hudson.test.JenkinsSessionRule;
-import org.jvnet.hudson.test.LoggerRule;
+import org.jvnet.hudson.test.LogRecorder;
 import org.jvnet.hudson.test.TestExtension;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.InboundAgentExtension;
+import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 /**
  * Tests of retrying {@code node} blocks.
  */
 @Issue("JENKINS-49707")
-public class AgentErrorConditionTest {
+class AgentErrorConditionTest {
 
-    @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
-    @Rule public InboundAgentRule inboundAgents = new InboundAgentRule();
-    @Rule public LoggerRule logging = new LoggerRule();
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+    @RegisterExtension
+    private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
+    @RegisterExtension
+    private final InboundAgentExtension inboundAgents = new InboundAgentExtension();
+    private final LogRecorder logging = new LogRecorder();
 
-    @Test public void retryNodeBlock() throws Throwable {
+    @Test
+    void retryNodeBlock() throws Throwable {
         sessions.then(r -> {
             logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
             Slave s = inboundAgents.createAgent(r, "dumbo1");
@@ -85,11 +89,12 @@ public class AgentErrorConditionTest {
             r.jenkins.updateNode(s); // to force setLabelString to be honored
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('dumb') {\n" +
-                "    if (isUnix()) {sh 'sleep 10'} else {bat 'echo + sleep && ping -n 10 localhost'}\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('dumb') {
+                        if (isUnix()) {sh 'sleep 10'} else {bat 'echo + sleep && ping -n 10 localhost'}
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("+ sleep", b);
             inboundAgents.stop("dumbo1");
@@ -103,7 +108,8 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Test public void retryNodeBlockSynch() throws Throwable {
+    @Test
+    void retryNodeBlockSynch() throws Throwable {
         sessions.then(r -> {
             logging.record(ExecutorStepExecution.class, Level.FINE);
             Slave s = inboundAgents.createAgent(r, "dumbo1");
@@ -111,11 +117,12 @@ public class AgentErrorConditionTest {
             r.jenkins.updateNode(s);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('dumb') {\n" +
-                "    hang()\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('dumb') {
+                        hang()
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("$ sleep", b);
             // Immediate kill causes RequestAbortedException from RemoteLauncher.launch, which passes test;
@@ -158,17 +165,19 @@ public class AgentErrorConditionTest {
         }
     }
 
-    @Test public void agentOfflineWhenStartingStep() throws Throwable {
+    @Test
+    void agentOfflineWhenStartingStep() throws Throwable {
         sessions.then(r -> {
             Slave s = r.createSlave(Label.get("remote"));
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('remote') {\n" +
-                "    semaphore 'wait'\n" +
-                "    pwd()\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('remote') {
+                        semaphore 'wait'
+                        pwd()
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             SemaphoreStep.waitForStart("wait/1", b);
             s.toComputer().disconnect(new OfflineCause.UserCause(null, null));
@@ -183,17 +192,19 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Test public void queueTaskCancelled() throws Throwable {
+    @Test
+    void queueTaskCancelled() throws Throwable {
         sessions.then(r -> {
             Slave s = r.createSlave(Label.get("remote"));
             s.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(null, null));
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('remote') {\n" +
-                "    isUnix()\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('remote') {
+                        isUnix()
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("Still waiting to schedule task", b);
             Queue.Item[] items = Queue.getInstance().getItems();
@@ -205,18 +216,20 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Test public void retryUnconditionally() throws Throwable {
+    @Test
+    void retryUnconditionally() throws Throwable {
         sessions.then(r -> {
             Slave s = inboundAgents.createAgent(r, "dumbo1");
             s.setLabelString("dumb");
             r.jenkins.updateNode(s);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(2) {\n" +
-                "  node('dumb') {\n" +
-                "    if (isUnix()) {sh 'sleep 10'} else {bat 'echo + sleep && ping -n 10 localhost'}\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(2) {
+                      node('dumb') {
+                        if (isUnix()) {sh 'sleep 10'} else {bat 'echo + sleep && ping -n 10 localhost'}
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("+ sleep", b);
             inboundAgents.stop("dumbo1");
@@ -230,16 +243,18 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Test public void overallBuildCancelIgnored() throws Throwable {
+    @Test
+    void overallBuildCancelIgnored() throws Throwable {
         sessions.then(r -> {
             r.createSlave(Label.get("remote"));
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('remote') {\n" +
-                "    semaphore 'wait'\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('remote') {
+                        semaphore 'wait'
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             SemaphoreStep.waitForStart("wait/1", b);
             b.getExecutor().interrupt();
@@ -248,7 +263,8 @@ public class AgentErrorConditionTest {
         });
     }
 
-    @Test public void retryNewStepAcrossRestarts() throws Throwable {
+    @Test
+    void retryNewStepAcrossRestarts() throws Throwable {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         sessions.then(r -> {
             Slave s = inboundAgents.createAgent(r, "dumbo1");
@@ -256,12 +272,13 @@ public class AgentErrorConditionTest {
             r.jenkins.updateNode(s);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('dumb') {\n" +
-                "    semaphore 'wait'\n" +
-                "    isUnix()\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('dumb') {
+                        semaphore 'wait'
+                        isUnix()
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             SemaphoreStep.waitForStart("wait/1", b);
         });
@@ -281,7 +298,8 @@ public class AgentErrorConditionTest {
     }
 
     @Issue("JENKINS-30383")
-    @Test public void retryNodeBlockSynchAcrossRestarts() throws Throwable {
+    @Test
+    void retryNodeBlockSynchAcrossRestarts() throws Throwable {
         logging.record(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
         sessions.then(r -> {
             Slave s = inboundAgents.createAgent(r, "dumbo1");
@@ -289,11 +307,12 @@ public class AgentErrorConditionTest {
             r.jenkins.updateNode(s);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition(
-                "retry(count: 2, conditions: [custom()]) {\n" +
-                "  node('dumb') {\n" +
-                "    waitWithoutAgent()\n" +
-                "  }\n" +
-                "}", true));
+                """
+                    retry(count: 2, conditions: [custom()]) {
+                      node('dumb') {
+                        waitWithoutAgent()
+                      }
+                    }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             r.waitForMessage("Sleeping without agent", b);
         });
