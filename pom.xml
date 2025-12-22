@@ -71,7 +71,7 @@
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
-        <jenkins-test-harness.version>2549.va_d3707a_ff237</jenkins-test-harness.version>
+        <jenkins-test-harness.version>2551.vb_14930141097</jenkins-test-harness.version>
     </properties>
     <dependencyManagement>
         <dependencies>
