@@ -73,5 +73,21 @@ public class PowerShellStepTest {
         Assume.assumeTrue("Correct UTF-8 output should be produced",log.contains("Hëllö Wórld"));
     }
 
+    @Test public void testNoProfile() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "baz");
+        p.setDefinition(new CpsFlowDefinition("node { powershell(script: 'if ((Get-CimInstance Win32_Process -Filter \"ProcessId = $PID\").CommandLine.split(\" \").Contains(\"-NoProfile\")) { exit 0; } else { exit 1; } ')}", true));
+        WorkflowRun b = p.scheduleBuild2(0).get();
+        Result r = b.getResult();
+        Assume.assumeTrue("The plugin defaults to run Powershell with the -NoProfile option", r == Result.SUCCESS);
+    }
+
+    @Test public void testWithProfile() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "bazooka");
+        p.setDefinition(new CpsFlowDefinition("node { powershell(loadProfile: true, script: 'if ((Get-CimInstance Win32_Process -Filter \"ProcessId = $PID\").CommandLine.split(\" \").Contains(\"-NoProfile\")) { exit 0; } else { exit 1; } ')}", true));
+        WorkflowRun b = p.scheduleBuild2(0).get();
+        Result r = b.getResult();
+        Assume.assumeTrue("The plugin defaults to run Powershell with the -NoProfile option", r == Result.FAILURE);
+    }
+
 }
 
