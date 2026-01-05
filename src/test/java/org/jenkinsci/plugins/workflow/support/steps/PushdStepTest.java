@@ -24,6 +24,8 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 import hudson.FilePath;
 import hudson.slaves.DumbSlave;
 import java.util.logging.Level;
@@ -31,21 +33,22 @@ import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import static org.junit.Assert.assertNotNull;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.jvnet.hudson.test.BuildWatcher;
-import org.jvnet.hudson.test.JenkinsSessionRule;
-import org.jvnet.hudson.test.LoggerRule;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.jvnet.hudson.test.LogRecorder;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 
-public class PushdStepTest {
+class PushdStepTest {
 
-    @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
-    @Rule public LoggerRule logging = new LoggerRule().record(FilePathDynamicContext.class, Level.FINE);
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+    @RegisterExtension
+    private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
+    private final LogRecorder logging = new LogRecorder().record(FilePathDynamicContext.class, Level.FINE);
 
-    @Test public void basics() throws Throwable {
+    @Test
+    void basics() throws Throwable {
         sessions.then(j -> {
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
             p.setDefinition(new CpsFlowDefinition("node {dir('subdir') {echo(/now the pwd=${pwd()}/)}}", true));
@@ -53,7 +56,8 @@ public class PushdStepTest {
         });
     }
 
-    @Test public void restarting() throws Throwable {
+    @Test
+    void restarting() throws Throwable {
         sessions.then(j -> {
             j.createSlave("remote", null, null);
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");

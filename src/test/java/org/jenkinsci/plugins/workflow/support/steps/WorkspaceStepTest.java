@@ -31,21 +31,33 @@ import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import static org.junit.Assert.*;
-import org.junit.ClassRule;
-import org.junit.Test;
-import org.junit.Rule;
-import org.jvnet.hudson.test.BuildWatcher;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
-public class WorkspaceStepTest {
+@WithJenkins
+class WorkspaceStepTest {
 
-    @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public JenkinsRule r = new JenkinsRule();
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+
+    private JenkinsRule r;
+
+    @BeforeEach
+    void setUp(JenkinsRule rule) {
+        r = rule;
+    }
 
     @Issue("JENKINS-26072")
-    @Test public void customWorkspace() throws Exception {
+    @Test
+    void customWorkspace() throws Exception {
         DumbSlave s = r.createSlave();
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node('" + s.getNodeName() + "') {ws('custom-location') {echo pwd()}}", true));
@@ -53,7 +65,8 @@ public class WorkspaceStepTest {
     }
 
     @Issue("JENKINS-26072")
-    @Test public void customWorkspaceConcurrency() throws Exception {
+    @Test
+    void customWorkspaceConcurrency() throws Exception {
         // Currently limited to WorkspaceList.allocate:
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
         // Use the controller as it has 2 executors by default, whereas createSlave hardcodes 1, and I do not want to bother creating an agent by hand:
@@ -73,8 +86,7 @@ public class WorkspaceStepTest {
     }
 
     @Test
-    @Issue("JENKINS-60634")
-    public void tempDirVariable() throws Exception {
+    @Issue("JENKINS-60634") void tempDirVariable() throws Exception {
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {ws {if (isUnix()) {sh 'set -u && touch \"$WORKSPACE_TMP/x\"'} else {bat(/echo ok > \"%WORKSPACE_TMP%\\x\"/)}}}", true));
         r.buildAndAssertSuccess(p);

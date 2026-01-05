@@ -32,8 +32,8 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.isA;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import hudson.model.Label;
 import hudson.model.Queue;
@@ -53,25 +53,27 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.jvnet.hudson.test.BuildWatcher;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.Issue;
-import org.jvnet.hudson.test.JenkinsSessionRule;
-import org.jvnet.hudson.test.LoggerRule;
+import org.jvnet.hudson.test.LogRecorder;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 
-public class ExecutorStepDynamicContextTest {
+class ExecutorStepDynamicContextTest {
 
-    @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
-    @Rule public LoggerRule logging = new LoggerRule();
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+    @RegisterExtension
+    private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
+    private final LogRecorder logging = new LogRecorder();
 
     private void commonSetup() {
         logging.recordPackage(ExecutorStepExecution.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
     }
 
-    @Test public void canceledQueueItem() throws Throwable {
+    @Test
+    void canceledQueueItem() throws Throwable {
         sessions.then(j -> {
             DumbSlave s = j.createSlave(Label.get("remote"));
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
@@ -101,7 +103,8 @@ public class ExecutorStepDynamicContextTest {
      *  I.E. cases where the {@link RetentionStrategy} is {@link RetentionStrategy#NOOP}.
      */
     @Issue("JENKINS-36013")
-    @Test public void normalNodeDisappearance() throws Throwable {
+    @Test
+    void normalNodeDisappearance() throws Throwable {
         commonSetup();
         sessions.then(j -> {
             // Start up a build that needs executor and then reboot and take the node offline
@@ -129,7 +132,8 @@ public class ExecutorStepDynamicContextTest {
     }
 
     @Issue("JENKINS-36013")
-    @Test public void parallelNodeDisappearance() throws Throwable {
+    @Test
+    void parallelNodeDisappearance() throws Throwable {
         commonSetup();
         sessions.then(j -> {
             WorkflowJob p = j.createProject(WorkflowJob.class, "p");
@@ -166,7 +170,8 @@ public class ExecutorStepDynamicContextTest {
     }
 
     @Issue("JENKINS-69936")
-    @Test public void nestedNode() throws Throwable {
+    @Test
+    void nestedNode() throws Throwable {
         sessions.then(j -> {
             logging.record(ExecutorStepDynamicContext.class, Level.FINE).record(FilePathDynamicContext.class, Level.FINE);
             DumbSlave alpha = j.createSlave("alpha", null, null);
@@ -188,7 +193,8 @@ public class ExecutorStepDynamicContextTest {
     }
 
     @Issue("JENKINS-70528")
-    @Test public void nestedNodeSameAgent() throws Throwable {
+    @Test
+    void nestedNodeSameAgent() throws Throwable {
         sessions.then(j -> {
             logging.record(ExecutorStepDynamicContext.class, Level.FINE).record(FilePathDynamicContext.class, Level.FINE);
             DumbSlave big = new DumbSlave("big", new File(j.jenkins.getRootDir(), "agent-work-dirs/big").getAbsolutePath(), j.createComputerLauncher(null));
@@ -210,7 +216,8 @@ public class ExecutorStepDynamicContextTest {
         });
     }
 
-    @Test public void onceRetentionStrategyNodeDisappearance() throws Throwable {
+    @Test
+    void onceRetentionStrategyNodeDisappearance() throws Throwable {
         commonSetup();
         sessions.then(j -> {
             DumbSlave s = j.createSlave(Label.get("ghost"));
@@ -228,7 +235,8 @@ public class ExecutorStepDynamicContextTest {
         });
     }
 
-    @Test public void cloudNodeDisappearance() throws Throwable {
+    @Test
+    void cloudNodeDisappearance() throws Throwable {
         commonSetup();
         sessions.then(j -> {
             var mockCloud = new MockCloud("mock");
