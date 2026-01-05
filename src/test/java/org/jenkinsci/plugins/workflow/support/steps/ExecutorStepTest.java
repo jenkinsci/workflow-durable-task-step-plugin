@@ -1226,6 +1226,25 @@ public class ExecutorStepTest {
         });
     }
 
+    @Issue("JENKINS-60507")
+    @Test public void recreateJob() throws Throwable {
+        Assume.assumeFalse(useWatching); // irrelevant here
+        sessions.then(r -> {
+            logging.record(ExecutorStepExecution.class, Level.FINE);
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('nonexistent') {}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            assertTrue(Queue.getInstance().cancel(await().until(
+                () -> Stream.of(Queue.getInstance().getItems()).filter(i -> i.task instanceof ExecutorStepExecution.PlaceholderTask && i.task.getOwnerTask() == p).
+                    findFirst().orElse(null), notNullValue())));
+            r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+            p.delete();
+            WorkflowJob p2 = r.createProject(WorkflowJob.class, "p");
+            p2.setDefinition(new CpsFlowDefinition("node {}", true));
+            r.buildAndAssertSuccess(p2);
+        });
+    }
+
     private static class MainAuthenticator extends QueueItemAuthenticator {
         @Override public Authentication authenticate2(Queue.Task task) {
             return task instanceof WorkflowJob ? User.getById("dev", true).impersonate2() : null;
