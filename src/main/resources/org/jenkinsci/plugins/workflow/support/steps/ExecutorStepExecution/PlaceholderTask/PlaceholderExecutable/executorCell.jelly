@@ -32,10 +32,20 @@
             <j:choose>
                 <j:when test="${rAuth != null}">
                     <a href="${rootURL}/${r.parent.url}"><l:breakable value="${r.parent.fullDisplayName}"/></a>
-                    <t:buildProgressBar build="${it}" executor="${executor}"/>
                 </j:when>
                 <j:otherwise>
                     <span>${%Unknown Pipeline node step}</span>
+                </j:otherwise>
+            </j:choose>
+        </div>
+        <div>
+            <j:set var="label" value="${it.parent.enclosingLabel}"/>
+            <j:choose>
+                <j:when test="${rAuth != null and label != null}">
+                    <l:breakable value="(${label})"/>
+                </j:when>
+                <j:otherwise>
+                    ${%part}
                 </j:otherwise>
             </j:choose>
         </div>
@@ -43,16 +53,7 @@
     <td class="pane">
         <j:if test="${rAuth != null}">
             <a href="${rootURL}/${r.url}" class="model-link inside"><l:breakable value="${r.displayName}"/></a>
-            <st:nbsp/>
-            <j:set var="label" value="${it.parent.enclosingLabel}"/>
-            <j:choose>
-                <j:when test="${label != null}">
-                    <l:breakable value="(${label})"/>
-                </j:when>
-                <j:otherwise>
-                    ${%part}
-                </j:otherwise>
-            </j:choose>
+            <t:buildProgressBar build="${it}" executor="${executor}"/>
         </j:if>
     </td>
 </j:jelly>
