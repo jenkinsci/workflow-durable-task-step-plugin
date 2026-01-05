@@ -66,6 +66,22 @@ public class PowerShellStepTest {
         j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
     }
     
+    // Test that a powershell step that fails indeed causes the underlying build to fail with stopOnError: true
+    @Test public void testStopOnFailure() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "stopOnError");
+        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"', stopOnError: true) powershell( script: 'Write-output \"We made it past the error\"') }", true));
+        j.assertLogNotContains("We made it past the error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
+        j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
+    }
+
+    // Test that a powershell step that fails does not cause the underlying build to fail with stopOnError: false
+    @Test public void testStopOnFailureFalse() throws Exception {
+        WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "stopOnErrorFalse");
+        p.setDefinition(new CpsFlowDefinition("node {powershell( script: 'throw \"bogus error\"', stopOnError: false) powershell( script: 'Write-output \"We made it past the error\"') }", true));
+        j.assertLogContains("We made it past the error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
+        j.assertLogContains("bogus error", j.assertBuildStatus(Result.FAILURE, p.scheduleBuild2(0)));
+    }
+    
     @Test public void testUnicode() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "foobar");
         p.setDefinition(new CpsFlowDefinition("node {def x = powershell(returnStdout: true, script: 'write-output \"Hëllö Wórld\"'); println x.replace(\"\ufeff\",\"\")}", true));
