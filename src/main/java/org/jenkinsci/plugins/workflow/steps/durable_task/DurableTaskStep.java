@@ -102,8 +102,6 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
 
     private static final Logger LOGGER = Logger.getLogger(DurableTaskStep.class.getName());
 
-    private static final int MAX_LABEL_LENGTH = 100;
-
     private boolean returnStdout;
     private String encoding;
     private boolean returnStatus;
@@ -145,7 +143,7 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
 
     @Override public StepExecution start(StepContext context) throws Exception {
         if (this.label != null) {
-            context.get(FlowNode.class).addAction(new LabelAction(StringUtils.left(label, MAX_LABEL_LENGTH)));
+            context.get(FlowNode.class).addAction(new LabelAction(label));
         }
         return new Execution(context, this);
     }
@@ -173,9 +171,6 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
         }
         
         public FormValidation doCheckLabel(@QueryParameter String label) {
-            if (label != null && label.length() > MAX_LABEL_LENGTH) {
-                return FormValidation.error("Label size exceeds maximum of " + MAX_LABEL_LENGTH + " characters.");
-            }
             return FormValidation.ok();
         }
 
