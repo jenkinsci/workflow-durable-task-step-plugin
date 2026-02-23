@@ -1,38 +1,46 @@
 package org.jenkinsci.plugins.workflow.steps.durable_task;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
+
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
-import hudson.FilePath;
 import hudson.EnvVars;
+import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
 import hudson.MarkupText;
+import hudson.Platform;
 import hudson.console.AnnotatedLargeText;
 import hudson.console.ConsoleAnnotator;
 import hudson.console.ConsoleLogFilter;
 import hudson.console.ConsoleNote;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BallColor;
-import hudson.model.BooleanParameterDefinition;
-import hudson.model.BooleanParameterValue;
 import hudson.model.BuildListener;
 import hudson.model.Descriptor;
 import hudson.model.FreeStyleProject;
 import hudson.model.Node;
-import hudson.model.ParametersAction;
-import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.Run;
-import hudson.remoting.Channel;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
+import hudson.remoting.Channel;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.slaves.RetentionStrategy;
 import hudson.tasks.BatchFile;
 import hudson.tasks.Shell;
 import io.jenkins.plugins.environment_filter_utils.util.BuilderUtil;
@@ -42,13 +50,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -61,13 +69,11 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import jenkins.tasks.filters.EnvVarsFilterGlobalConfiguration;
 import jenkins.util.JenkinsJVM;
-import org.apache.commons.lang.StringUtils;
-
-import static org.hamcrest.Matchers.*;
-
+import org.apache.commons.io.FileUtils;
+import static org.awaitility.Awaitility.await;
 import org.hamcrest.MatcherAssert;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
-
+import org.jenkinsci.plugins.durabletask.WindowsBatchScript;
 import org.jenkinsci.plugins.workflow.actions.ArgumentsAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsStepContext;
@@ -82,6 +88,7 @@ import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
+import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -92,19 +99,14 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
 import org.junit.Assume;
-import static org.junit.Assume.assumeFalse;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ErrorCollector;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.Issue;
@@ -115,7 +117,18 @@ import org.jvnet.hudson.test.TestExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
+@RunWith(Parameterized.class)
 public class ShellStepTest {
+
+    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
+        return List.of(false, true);
+    }
+
+    @Parameterized.BeforeParam public static void useWatching(boolean x) {
+        DurableTaskStep.USE_WATCHING = x;
+    }
+
+    @Parameterized.Parameter public boolean useWatching;
 
     @ClassRule
     public static BuildWatcher buildWatcher = new BuildWatcher();
@@ -124,7 +137,8 @@ public class ShellStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public ErrorCollector errors = new ErrorCollector();
     @Rule public LoggerRule logging = new LoggerRule();
-    @Rule public FlagRule<Boolean> useWatching = new FlagRule<>(() -> DurableTaskStep.USE_WATCHING, x -> DurableTaskStep.USE_WATCHING = x);
+    @Rule public FlagRule<Long> watchingRecurrencePeriod = new FlagRule<>(() -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD, x -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD = x);
+    @Rule public FlagRule<Boolean> useBinaryWrapper = new FlagRule<>(() -> WindowsBatchScript.USE_BINARY_WRAPPER, x -> WindowsBatchScript.USE_BINARY_WRAPPER = x);
 
     /**
      * Failure in the shell script should mark the step as red
@@ -242,6 +256,8 @@ public class ShellStepTest {
 
     @Test public void launcherDecorator() throws Exception {
         Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
+        // https://stackoverflow.com/questions/44811425/nice-command-not-working-on-macos
+        Assume.assumeFalse("MacOS doesn't implement nice", Platform.isDarwin());
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}", true));
         Assume.assumeThat("test only works if mvn test is not itself niced", JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
@@ -275,7 +291,7 @@ public class ShellStepTest {
                 return launcher.decorateByPrefix("nice");
             }
         }
-        @TestExtension("launcherDecorator") public static class DescriptorImpl extends StepDescriptor {
+        @TestExtension({"launcherDecorator[watching=false]", "launcherDecorator[watching=true]"}) public static class DescriptorImpl extends StepDescriptor {
             @Override public Set<? extends Class<?>> getRequiredContext() {
                 return Collections.emptySet();
             }
@@ -367,7 +383,7 @@ public class ShellStepTest {
     }
     
     @Test public void labelShortened() throws Exception {
-        String singleLabel= StringUtils.repeat("0123456789", 10);
+        String singleLabel = "0123456789".repeat(10);
         String label = singleLabel + singleLabel;
         
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
@@ -382,8 +398,8 @@ public class ShellStepTest {
 
     @Issue("JENKINS-38381")
     @Test public void remoteLogger() throws Exception {
+        assumeTrue(useWatching);
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-        DurableTaskStep.USE_WATCHING = true;
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         final String credentialsId = "creds";
         final String username = "bob";
@@ -414,7 +430,7 @@ public class ShellStepTest {
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
     }
-    @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
+    @TestExtension("remoteLogger[watching=true]") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
             final LogStorage base;
             try {
@@ -442,13 +458,13 @@ public class ShellStepTest {
             };
         }
     }
-    private static class RemotableBuildListener implements BuildListener {
+    private static class RemotableBuildListener extends OutputStreamTaskListener.Default implements BuildListener {
         private static final long serialVersionUID = 1;
         /** actual implementation */
         private final TaskListener delegate;
         /** records allocation & deserialization history; e.g., {@code master → agent} */
         private final String id;
-        private transient PrintStream logger;
+        private transient OutputStream out;
         RemotableBuildListener(TaskListener delegate) {
             this(delegate, "master");
         }
@@ -457,10 +473,10 @@ public class ShellStepTest {
             this.id = id;
         }
         @NonNull
-        @Override public PrintStream getLogger() {
-            if (logger == null) {
-                final OutputStream os = delegate.getLogger();
-                logger = new PrintStream(new LineTransformationOutputStream() {
+        @Override public OutputStream getOutputStream() {
+            if (out == null) {
+                final OutputStream os = OutputStreamTaskListener.getOutputStream(delegate);
+                out = new LineTransformationOutputStream() {
                     @Override protected void eol(byte[] b, int len) throws IOException {
                         for (int i = 0; i < len - 1; i++) { // all but NL
                             os.write(id.equals("master") ? b[i] : Character.toUpperCase(b[i]));
@@ -475,9 +491,9 @@ public class ShellStepTest {
                         super.close();
                         os.close();
                     }
-                }, true);
+                };
             }
-            return logger;
+            return out;
         }
         private Object writeReplace() {
             /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:
@@ -490,7 +506,7 @@ public class ShellStepTest {
 
     @Issue("JENKINS-54133")
     @Test public void remoteConsoleNotes() throws Exception {
-        DurableTaskStep.USE_WATCHING = true;
+        assumeTrue(useWatching);
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
@@ -628,41 +644,43 @@ public class ShellStepTest {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         j.showAgentLogs(s, logging);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.addProperty(new ParametersDefinitionProperty(new BooleanParameterDefinition("WATCHING", false, null)));
         String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
             "['" + builtInNodeLabel + "', 'remote'].each {label ->\n" +
             "  node(label) {\n" +
             "    withCredentials([usernameColonPassword(variable: 'USERPASS', credentialsId: '" + credentialsId + "')]) {\n" +
-            "      sh 'set +x; echo \"with final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
-            "      sh 'set +x; printf \"missing final newline node=$NODE_NAME watching=$WATCHING\"'\n" +
+            "      sh 'set +x; echo \"node=$NODE_NAME with final newline\"'\n" +
+            "      sh 'set +x; printf \"node=$NODE_NAME missing final newline\"'\n" +
             "    }\n" +
             "  }\n" +
             "}", true));
-            for (boolean watching : new boolean[] {false, true}) {
-                DurableTaskStep.USE_WATCHING = watching;
-                String log = JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0, new ParametersAction(new BooleanParameterValue("WATCHING", watching)))));
-                for (String node : new String[] {builtInNodeLabel, "remote"}) {
-                    for (String mode : new String[] {"with", "missing"}) {
-                        errors.checkThat(log, containsString(mode + " final newline node=" + node + " watching=" + watching));
-                    }
-                }
-                errors.checkThat("no blank lines with watching=" + watching, log, not(containsString("\n\n")));
-                errors.checkThat(log, not(containsString("watching=false[Pipeline]")));
-                errors.checkThat(log, not(containsString("watching=true[Pipeline]")));
+        String log = JenkinsRule.getLog(j.buildAndAssertSuccess(p));
+        for (String node : new String[] {builtInNodeLabel, "remote"}) {
+            for (String mode : new String[] {"with", "missing"}) {
+                errors.checkThat(log, containsString("node=" + node + " " + mode + " final newline"));
             }
+        }
+        errors.checkThat("no blank lines", log, not(containsString("\n\n")));
+        // TODO more robust to assert against /missing final newline./ in line mode
+        errors.checkThat(log, not(containsString("missing final newline[Pipeline]")));
     }
 
     @Issue("JENKINS-34021")
     @Test public void deadStep() throws Exception {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
-        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}} catch (e) {sleep 1; throw e}", true));
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows
+        int sleepTime = Functions.isWindows() ? 13 : 1;
+        p.setDefinition(new CpsFlowDefinition("try {node {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}} catch (e) {sleep " + sleepTime + "; throw e}", true));
         WorkflowRun b = p.scheduleBuild2(0).waitForStart();
         j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
         b.doTerm();
         j.waitForCompletion(b);
         j.assertBuildStatus(Result.ABORTED, b);
+        // Test fails on ci.jenkins.io with timeout == 1 on Windows
+        if (Functions.isWindows()) {
+            Thread.sleep(sleepTime * 1000L);
+        }
         for (LogRecord record : logging.getRecords()) {
             assertNull(record.getThrown());
         }
@@ -681,6 +699,40 @@ public class ShellStepTest {
         j.waitForMessage(new ExecutorStepExecution.RemovedNodeCause().getShortDescription(), b);
     }
 
+    @Test public void permanentlyDisconnectingAgentIsFatal() throws Exception {
+        DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
+        logging.record(DurableTaskStep.class, Level.FINE);
+        var s = j.createSlave("remote", null, null);
+        s.setRetentionStrategy(RetentionStrategy.NOOP);
+        var p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 1000000') : bat('ping -t 127.0.0.1 > nul')}", true));
+        var b = p.scheduleBuild2(0).waitForStart();
+        j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
+        s.toComputer().disconnect(null);
+        j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(b));
+        j.waitForMessage(new ExecutorStepExecution.RemovedNodeTimeoutCause().getShortDescription(), b);
+    }
+
+    @Test public void temporarilyDisconnectingAgentIsNotFatal() throws Exception {
+        DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
+        WindowsBatchScript.USE_BINARY_WRAPPER = true;
+        logging.record(DurableTaskStep.class, Level.FINE);
+        var s = j.createSlave("remote", null, null);
+        s.setRetentionStrategy(RetentionStrategy.NOOP);
+        var p = j.jenkins.createProject(WorkflowJob.class, "p");
+        p.setDefinition(new CpsFlowDefinition("node('remote') {isUnix() ? sh('sleep 60') : bat('ping -n 60 127.0.0.1')}", true));
+        var b = p.scheduleBuild2(0).waitForStart();
+        j.waitForMessage(Functions.isWindows() ? ">ping" : "+ sleep", b);
+        s.toComputer().disconnect(null);
+        j.waitForMessage("will wait for", b);
+        s.toComputer().connect(true);
+        j.waitForMessage("is back online", b);
+        j.assertBuildStatusSuccess(j.waitForCompletion(b));
+        if (Functions.isWindows()) {
+            await().atMost(Duration.ofMinutes(1)).ignoreExceptions().untilAsserted(() -> FileUtils.deleteDirectory(new File(j.jenkins.getRootDir(), "agent-work-dirs\\remote\\caches\\durable-task")));
+        }
+    }
+
     @Issue("JENKINS-44521")
     @Test public void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);
@@ -696,10 +748,11 @@ public class ShellStepTest {
     @Issue("JENKINS-28822")
     @Test public void interruptingAbortsBuild() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        // Test fails unexpectedly on ci.jenkins.io Windows agents with fewer pings
         p.setDefinition(new CpsFlowDefinition("node {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {" +
                 (Functions.isWindows()
-                        ? "bat 'ping -n 6 127.0.0.1 >nul'\n"
+                        ? "bat 'ping -n 19 127.0.0.1 >nul'\n"
                         : "sh 'sleep 5'\n") +
                 "  }" +
                 "}", true));
@@ -713,10 +766,11 @@ public class ShellStepTest {
     @Issue("JENKINS-28822")
     @Test public void interruptingAbortsBuildEvenWithReturnStatus() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
+        // Test fails unexpectedly on ci.jenkins.io Windows agents with fewer pings
         p.setDefinition(new CpsFlowDefinition("node() {\n" +
                 "  timeout(time: 1, unit: 'SECONDS') {\n" +
                 (Functions.isWindows()
-                        ? "bat(returnStatus: true, script: 'ping -n 6 127.0.0.1 >nul')\n"
+                        ? "bat(returnStatus: true, script: 'ping -n 19 127.0.0.1 >nul')\n"
                         : "sh(returnStatus: true, script: 'sleep 5')\n") +
                 "  }\n" +
                 "}", true));
@@ -769,7 +823,7 @@ public class ShellStepTest {
         }
     }
     
-    @TestExtension(value = "shouldInvokeLauncherDecoratorForShellStep")
+    @TestExtension({"shouldInvokeLauncherDecoratorForShellStep[watching=false]", "shouldInvokeLauncherDecoratorForShellStep[watching=true]"})
     public static final class MyNodeLauncherDecorator extends LauncherDecorator {
 
         @NonNull

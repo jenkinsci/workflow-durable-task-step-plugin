@@ -73,7 +73,7 @@ public class WorkspaceStepExecution extends AbstractStepExecutionImpl {
         getContext().newBodyInvoker()
                 .withContexts(
                     EnvironmentExpander.merge(getContext().get(EnvironmentExpander.class), EnvironmentExpander.constant(env)),
-                    FilePathDynamicContext.createContextualObject(workspace))
+                    FilePathDynamicContext.createContextualObject(workspace, flowNode))
                 .withCallback(new Callback(lease))
                 .start();
         return false;

@@ -41,7 +41,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.xml.sax.SAXException;
 
-import com.gargoylesoftware.htmlunit.Page;
+import org.htmlunit.Page;
 
 import hudson.model.Result;
 import hudson.model.queue.QueueTaskFuture;

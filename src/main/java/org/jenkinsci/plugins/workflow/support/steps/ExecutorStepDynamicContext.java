@@ -35,16 +35,20 @@ import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.TaskListener;
+import hudson.model.queue.ScheduleResult;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
@@ -70,30 +74,33 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     final @NonNull ExecutorStepExecution.PlaceholderTask task;
     final @NonNull String node;
-    private final @NonNull String path;
+    final @NonNull String path;
+    final int depth;
     /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable Executor executor;
     /** Non-null after {@link #resume} if all goes well. */
     private transient @Nullable WorkspaceList.Lease lease;
 
-    ExecutorStepDynamicContext(ExecutorStepExecution.PlaceholderTask task, WorkspaceList.Lease lease, Executor executor) {
+    ExecutorStepDynamicContext(ExecutorStepExecution.PlaceholderTask task, WorkspaceList.Lease lease, Executor executor, int depth) {
         this.task = task;
         this.node = FilePathUtils.getNodeName(lease.path);
         this.path = lease.path.getRemote();
         this.executor = executor;
         this.lease = lease;
+        this.depth = depth;
     }
 
     void resume(StepContext context) throws Exception {
         if (executor != null) {
             throw new IllegalStateException("Already resumed");
         }
-        Queue.Item item = Queue.getInstance().schedule2(task, 0).getItem();
+        // TODO: Do we need to check executor slots too in case there was a task in the queue that has already started?
+        ScheduleResult result = Queue.getInstance().schedule2(task, 0);
+        Queue.Item item = result.getItem();
         if (item == null) {
-            // TODO should also report when !ScheduleResult.created, since that is arguably an error
             throw new IllegalStateException("queue refused " + task);
         }
-        LOGGER.fine(() -> "scheduled " + item + " for " + path + " on " + node);
+        LOGGER.fine(() -> (result.isCreated() ? "scheduled " : " using already-scheduled ") + item + " for " + path + " on " + node);
         TaskListener listener = context.get(TaskListener.class);
         if (!node.isEmpty()) { // unlikely to be any delay for built-in node anyway
             listener.getLogger().println("Waiting for reconnection of " + node + " before proceeding with build");
@@ -102,8 +109,9 @@ public final class ExecutorStepDynamicContext implements Serializable {
         try {
             exec = item.getFuture().getStartCondition().get(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException x) {
-            listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + ", assuming it is not coming back");
-            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeCause());
+            LOGGER.log(Level.FINE, x, () -> "failed to wait for " + item + "; outstanding queue items: " + Arrays.toString(Queue.getInstance().getItems()) + "; running executables: " + Stream.of(Jenkins.get().getComputers()).flatMap(c -> c.getExecutors().stream()).collect(Collectors.toList()));
+            listener.getLogger().println(node + " has been removed for " + Util.getTimeSpanString(ExecutorStepExecution.TIMEOUT_WAITING_FOR_NODE_MILLIS) + "; assuming it is not coming back, and terminating node step");
+            throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.RemovedNodeTimeoutCause());
         } catch (CancellationException x) {
             LOGGER.log(Level.FINE, "ceased to wait for " + node, x);
             throw new FlowInterruptedException(Result.ABORTED, /* TODO false probably more appropriate */true, new ExecutorStepExecution.QueueTaskCancelled());
@@ -128,7 +136,7 @@ public final class ExecutorStepDynamicContext implements Serializable {
             _lease.release();
             throw new IOException("JENKINS-37121: something already locked " + fp);
         }
-        LOGGER.fine(() -> "fully restored for " + path + " on " + node);
+        LOGGER.fine(() -> "fully restored for " + path + " on " + node + " → " + computer.getName());
     }
 
     @Override public String toString() {
@@ -156,8 +164,8 @@ public final class ExecutorStepDynamicContext implements Serializable {
         }
 
         @Override protected FilePath get(DelegatedContext context) throws IOException, InterruptedException {
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.fine("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
+            if (LOGGER.isLoggable(Level.FINER)) {
+                LOGGER.finer("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
             }
             return super.get(context);
         }

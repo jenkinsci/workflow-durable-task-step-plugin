@@ -24,7 +24,13 @@
 
 package org.jenkinsci.plugins.workflow;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.arrayContainingInAnyOrder;
+import static org.hamcrest.Matchers.is;
+
 import hudson.slaves.DumbSlave;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -46,32 +52,57 @@ public class EnvWorkflowTest {
      */
     @Test public void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
-        String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
-        final String builtInNodeName = r.jenkins.getSelfLabel().getName();
 
         p.setDefinition(new CpsFlowDefinition(
-            "node('" + builtInNodeLabel + "') {\n" +
-            "  echo \"My name on the built-in node is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n",
+            """
+            node('built-in') {
+              echo "My name on the built-in node is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
+            }
+            """,
             true));
-        r.assertLogContains("My name on the built-in node is " + builtInNodeName + " using labels " + builtInNodeLabel, r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        r.assertLogContains("My name on the built-in node is built-in using labels built-in", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
-            "node('node-test') {\n" +
-            "  echo \"My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "}\n",
+            """
+            node('node-test') {
+              echo "My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
+            }
+            """,
             true));
-        // Label.parse returns TreeSet so the result is guaranteed to be sorted:
-        r.assertLogContains("My name on an agent is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        matchLabelsInAnyOrder(
+                r.assertBuildStatusSuccess(p.scheduleBuild2(0)),
+                "My name on an agent is node-test using labels (.*)",
+                "fast",
+                "node-test",
+                "unix");
 
-        p.setDefinition(new CpsFlowDefinition( // JENKINS-41446 ensure variable still available in a ws step
-            "node('node-test') {\n ws('workspace/foo') {" +
-            "    echo \"My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}\"\n" +
-            "  }\n}\n",
+        // JENKINS-41446 ensure variable still available in a ws step
+        p.setDefinition(new CpsFlowDefinition(
+        """
+        node('node-test') {
+         ws('workspace/foo') {    echo "My name on an agent is ${env.NODE_NAME} using labels ${env.NODE_LABELS}"
+          }
+        }
+        """,
             true));
-        // Label.parse returns TreeSet so the result is guaranteed to be sorted:
-        r.assertLogContains("My name on an agent is node-test using labels fast node-test unix", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
+        matchLabelsInAnyOrder(
+                r.assertBuildStatusSuccess(p.scheduleBuild2(0)),
+                "My name on an agent is node-test using labels (.*)",
+                "fast",
+                "node-test",
+                "unix");
+    }
+
+    private void matchLabelsInAnyOrder(WorkflowRun run, String regex, String... labels) throws Exception {
+        String runLog = JenkinsRule.getLog(run);
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(runLog);
+        assertThat("Could not match the expected log pattern", matcher.find(), is(true));
+        assertThat(
+                "Did not find the expected labels",
+                matcher.group(1).split("\\s+"),
+                arrayContainingInAnyOrder(labels));
     }
 
 

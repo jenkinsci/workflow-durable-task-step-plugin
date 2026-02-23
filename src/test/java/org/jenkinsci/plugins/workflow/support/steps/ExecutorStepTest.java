@@ -24,25 +24,30 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
-import com.gargoylesoftware.htmlunit.Page;
+import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import com.google.common.base.Predicate;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
 import hudson.model.Executor;
-import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Label;
-import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.Slave;
 import hudson.model.User;
 import hudson.model.labels.LabelAtom;
-import hudson.model.queue.CauseOfBlockage;
-import hudson.model.queue.QueueTaskDispatcher;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
@@ -70,17 +75,15 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import hudson.util.VersionNumber;
+import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
-import net.sf.json.groovy.JsonSlurper;
-import org.acegisecurity.Authentication;
+import org.springframework.security.core.Authentication;
 import org.apache.commons.io.IOUtils;
-import static org.hamcrest.Matchers.*;
+import org.htmlunit.Page;
 import org.jenkinsci.plugins.durabletask.FileMonitoringTask;
 import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.actions.QueueItemAction;
@@ -99,30 +102,36 @@ import org.jenkinsci.plugins.workflow.steps.EchoStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import org.junit.Assume;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.jvnet.hudson.test.BuildWatcher;
+import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.InboundAgentRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.JenkinsSessionRule;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.MockFolder;
-import org.jvnet.hudson.test.JenkinsSessionRule;
-import org.jvnet.hudson.test.TestExtension;
 
 /** Tests pertaining to {@code node} and {@code sh} steps. */
+@RunWith(Parameterized.class)
 public class ExecutorStepTest {
+
+    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
+        return List.of(false, true);
+    }
+
+    @Parameterized.BeforeParam public static void useWatching(boolean x) {
+        DurableTaskStep.USE_WATCHING = x;
+    }
+
+    @Parameterized.Parameter public boolean useWatching;
 
     private static final Logger LOGGER = Logger.getLogger(ExecutorStepTest.class.getName());
 
@@ -132,6 +141,7 @@ public class ExecutorStepTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     // Currently too noisy due to unrelated warnings; might clear up if test dependencies updated: .record(ExecutorStepExecution.class, Level.FINE)
     @Rule public LoggerRule logging = new LoggerRule();
+    @Rule public FlagRule<String> nodeTimeout = FlagRule.systemProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis");
 
     /**
      * Executes a shell script build on a build agent.
@@ -336,8 +346,10 @@ public class ExecutorStepTest {
         sessions.then(r -> {
                 logging.record(DurableTaskStep.class, Level.FINE).
                         record(ExecutorStepDynamicContext.class, Level.FINE).
+                        record(FileMonitoringTask.class, Level.FINEST).
                         record(WorkspaceList.class, Level.FINE);
                 Slave s = inboundAgents.createAgent(r, "dumbo");
+                r.showAgentLogs(s, logging);
                 WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
                 File f1 = new File(r.jenkins.getRootDir(), "f1");
                 File f2 = new File(r.jenkins.getRootDir(), "f2");
@@ -385,6 +397,7 @@ public class ExecutorStepTest {
                     Thread.sleep(100);
                 }
                 LOGGER.info("agent back online");
+                r.showAgentLogs(s, logging);
                 assertWorkspaceLocked(computer, workspacePath);
                 assertTrue(f2.isFile());
                 assertTrue(f1.delete());
@@ -517,7 +530,7 @@ public class ExecutorStepTest {
                 SemaphoreStep.success("wait/1", null);
                 r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
                 assertEquals(Collections.emptyList(), Arrays.asList(Queue.getInstance().getItems()));
-                r.assertLogContains("dumbo has been removed for 15 sec, assuming it is not coming back", b);
+                r.assertLogContains("dumbo has been removed for 15 sec; assuming it is not coming back, and terminating node step", b);
         });
     }
 
@@ -539,7 +552,7 @@ public class ExecutorStepTest {
                         .goTo("computer/" + s.getNodeName()
                                 + "/api/json?tree=executors[currentExecutable[number,displayName,fullDisplayName,url,timestamp]]", "application/json");
 
-                JSONObject propertiesJSON = (JSONObject) new JsonSlurper().parseText(page.getWebResponse().getContentAsString());
+                JSONObject propertiesJSON = JSONObject.fromObject(page.getWebResponse().getContentAsString());
                 JSONArray executors = propertiesJSON.getJSONArray("executors");
                 JSONObject executor = executors.getJSONObject(0);
                 JSONObject currentExecutable = executor.getJSONObject("currentExecutable");
@@ -604,8 +617,7 @@ public class ExecutorStepTest {
                 WorkflowRun b = p.scheduleBuild2(0).waitForStart();
                 r.waitForMessage("[Pipeline] node", b);
 
-                FlowNode executorStartNode = new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate());
-                assertNotNull(executorStartNode);
+                FlowNode executorStartNode = await().until(() -> new DepthFirstScanner().findFirstMatch(b.getExecution(), new ExecutorStepWithQueueItemPredicate()), notNullValue());
 
                 assertNotNull(executorStartNode.getAction(QueueItemAction.class));
                 assertEquals(QueueItemAction.QueueState.QUEUED, QueueItemAction.getNodeState(executorStartNode));
@@ -613,6 +625,8 @@ public class ExecutorStepTest {
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 assertEquals(p, items[0].task.getOwnerTask());
+                // // TODO 2.389+ remove cast
+                assertEquals(b, ((ExecutorStepExecution.PlaceholderTask) items[0].task).getOwnerExecutable());
                 assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
 
                 assertTrue(Queue.getInstance().cancel(items[0]));
@@ -770,9 +784,10 @@ public class ExecutorStepTest {
     @Issue("JENKINS-36547")
     @Test public void reuseNodesWithSameLabelsInDifferentReorderedStages() throws Throwable {
         sessions.then(r -> {
-            // Note: for Jenkins versions > 2.65, the number of agents must be increased to 5.
+            // Note: for Jenkins versions > 2.265, the number of agents must be 5.
+            // Older Jenkins versions used 3 agents.
             // This is due to changes in the Load Balancer (See JENKINS-60563).
-            int totalAgents = Jenkins.getVersion().isNewerThan(new VersionNumber("2.265")) ? 5 : 3;
+            int totalAgents = 5;
             createNOnlineAgentWithLabels(r, totalAgents, "foo bar");
 
             WorkflowJob p = r.createProject(WorkflowJob.class, "demo");
@@ -1056,29 +1071,6 @@ public class ExecutorStepTest {
         });
     }
 
-    /**
-     * @see PipelineOnlyTaskDispatcher
-     */
-    @Issue("JENKINS-53837")
-    @Test public void queueTaskOwnerCorrectWhenRestarting() throws Throwable {
-        sessions.then(r -> {
-            WorkflowJob p = r.createProject(WorkflowJob.class, "p1");
-            p.setDefinition(new CpsFlowDefinition("node {\n" +
-                    "  semaphore('wait')\n" +
-                    "}", true));
-            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-            SemaphoreStep.waitForStart("wait/1", b);
-        });
-        sessions.then(r -> {
-            WorkflowJob p = r.jenkins.getItemByFullName("p1", WorkflowJob.class);
-            WorkflowRun b = p.getBuildByNumber(1);
-            SemaphoreStep.success("wait/1", null);
-            r.waitForCompletion(b);
-            r.assertBuildStatusSuccess(b);
-            r.assertLogNotContains("Non-Pipeline tasks are forbidden!", b);
-        });
-    }
-
     @Issue("JENKINS-58900")
     @Test public void nodeDisconnectMissingContextVariableException() throws Throwable {
         sessions.then(r -> {
@@ -1194,43 +1186,54 @@ public class ExecutorStepTest {
             while (Queue.getInstance().getItems().length > 0) {
                 Thread.sleep(100L);
             }
-            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask{runId=p#")));
+            assertThat(logging.getMessages(), hasItem(startsWith("Refusing to build ExecutorStepExecution.PlaceholderTask")));
+        });
+    }
+
+    @Test public void restartWhilePlaceholderTaskIsInQueue() throws Throwable {
+        // Node reconnection takes a while during the second restart.
+        System.setProperty("org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis", String.valueOf(TimeUnit.SECONDS.toMillis(30)));
+        logging.record(ExecutorStepExecution.class, Level.FINE)
+                .record(ExecutorStepDynamicContext.class, Level.FINE)
+                .capture(100);
+        sessions.then(r -> {
+            inboundAgents.createAgent(r, "custom-label");
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('custom-label') { semaphore('wait') }", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            Slave node = (Slave) r.jenkins.getNode("custom-label");
+            node.setNumExecutors(0); // Make sure the step won't be able to resume.
+        });
+        sessions.then(r -> {
+            // Just wait for ExecutorStepDynamicContext.resume to schedule PlaceholderTask and then restart.
+            await().atMost(15, TimeUnit.SECONDS).until(
+                    () -> Stream.of(Queue.getInstance().getItems()).map(item -> item.task).collect(Collectors.toList()),
+                    hasItem(instanceOf(ExecutorStepExecution.PlaceholderTask.class)));
+        });
+        sessions.then(r -> {
+            ((Slave) r.jenkins.getNode("custom-label")).setNumExecutors(1); // Allow node step to resume.
+            WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+            WorkflowRun b = p.getBuildByNumber(1);
+            SemaphoreStep.success("wait/1", null);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+            assertThat(r.jenkins.getQueue().getItems(), emptyArray());
+            await().until(() -> Stream.of(r.jenkins.getComputers())
+                    .flatMap(c -> c.getExecutors().stream())
+                    .filter(e -> e.getCurrentWorkUnit() != null)
+                    .collect(Collectors.toList()), empty());
+            inboundAgents.stop(r, "custom-label");
         });
     }
 
     private static class MainAuthenticator extends QueueItemAuthenticator {
-        @Override public Authentication authenticate(Queue.Task task) {
-            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate() : null;
+        @Override public Authentication authenticate2(Queue.Task task) {
+            return task instanceof WorkflowJob ? User.getById("dev", true).impersonate2() : null;
         }
     }
     private static class FallbackAuthenticator extends QueueItemAuthenticator {
-        @Override public Authentication authenticate(Queue.Task task) {
-            return ACL.SYSTEM;
-        }
-    }
-
-    @TestExtension("queueTaskOwnerCorrectWhenRestarting")
-    public static class PipelineOnlyTaskDispatcher extends QueueTaskDispatcher {
-        @Override
-        public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
-            Queue.Task t = item.task;
-            while (!(t instanceof Item) && (t != null)) {
-                final Queue.Task ownerTask = t.getOwnerTask();
-                if (t == ownerTask) {
-                    break;
-                }
-                t = ownerTask;
-            }
-            if (t instanceof WorkflowJob) {
-                return null;
-            }
-            final Queue.Task finalT = t;
-            return new CauseOfBlockage() {
-                @Override
-                public String getShortDescription() {
-                    return "Non-Pipeline tasks are forbidden! Not building: " + finalT;
-                }
-            };
+        @Override public Authentication authenticate2(Queue.Task task) {
+            return ACL.SYSTEM2;
         }
     }
 
