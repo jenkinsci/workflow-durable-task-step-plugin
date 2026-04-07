@@ -29,6 +29,7 @@ import hudson.Extension;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 import org.jenkinsci.plugins.durabletask.PowershellScript;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 
 /**
  * Asynchronous batch script execution.
@@ -36,10 +37,18 @@ import org.kohsuke.stapler.DataBoundConstructor;
 public class PowershellScriptStep extends DurableTaskStep {
 
     private final String script;
+    private boolean stopOnError = false;
+
+    @DataBoundSetter public void setStopOnError(boolean stopOnError) {
+        this.stopOnError = stopOnError;
+    }
 
     @DataBoundConstructor public PowershellScriptStep(String script) {
         if (script == null) {
             throw new IllegalArgumentException();
+        }
+        if(this.stopOnError){
+            script = "$ErrorActionPreference=\"Stop\"" + script;
         }
         this.script = script;
     }
