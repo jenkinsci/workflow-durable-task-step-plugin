@@ -778,7 +778,7 @@ public class ShellStepTest {
         j.waitForCompletion(b);
         // Would have succeeded before https://github.com/jenkinsci/workflow-durable-task-step-plugin/pull/75.
         j.assertBuildStatus(Result.ABORTED, b);
-        j.waitForMessage("Timeout has been exceeded", b); // TODO assertLogContains fails unless a sleep is introduced; possible race condition in waitForCompletion
+        j.assertLogContains("Timeout has been exceeded", b);
     }
 
     @Issue("JENKINS-62014")

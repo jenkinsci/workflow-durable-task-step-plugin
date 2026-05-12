@@ -678,20 +678,19 @@ public abstract class DurableTaskStep extends Step implements EnvVarsFilterableB
             byte[] produce() throws IOException, InterruptedException;
         }
         private void handleExit(int exitCode, OutputSupplier output) throws IOException, InterruptedException {
-            Throwable originalCause = causeOfStoppage;
-            if ((returnStatus && originalCause == null) || exitCode == 0) {
-                getContext().onSuccess(returnStatus ? exitCode : returnStdout ? new String(output.produce(), StandardCharsets.UTF_8) : null);
-            } else {
+            if (causeOfStoppage != null) {
+                getContext().onFailure(causeOfStoppage);
+            } else if (returnStatus) {
+                getContext().onSuccess(exitCode);
+            } else if (exitCode != 0) {
                 if (returnStdout) {
                     _listener().getLogger().write(output.produce()); // diagnostic
                 }
-                if (originalCause != null) {
-                    // JENKINS-28822: Use the previous cause instead of throwing a new AbortException
-                    _listener().getLogger().println("script returned exit code " + exitCode);
-                    getContext().onFailure(originalCause);
-                } else {
-                    getContext().onFailure(new AbortException("script returned exit code " + exitCode));
-                }
+                getContext().onFailure(new AbortException("script returned exit code " + exitCode));
+            } else if (returnStdout) {
+                getContext().onSuccess(new String(output.produce(), StandardCharsets.UTF_8));
+            } else {
+                getContext().onSuccess(null);
             }
             listener().getLogger().close();
         }
