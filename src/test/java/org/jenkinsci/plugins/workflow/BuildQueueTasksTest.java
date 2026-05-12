@@ -24,8 +24,8 @@
 
 package org.jenkinsci.plugins.workflow;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
@@ -34,11 +34,11 @@ import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
-import org.jvnet.hudson.test.JenkinsSessionRule;
+import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 import org.xml.sax.SAXException;
 
 import org.htmlunit.Page;
@@ -48,12 +48,14 @@ import hudson.model.queue.QueueTaskFuture;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 
-public class BuildQueueTasksTest {
+class BuildQueueTasksTest {
 
-    @Rule public JenkinsSessionRule sessions = new JenkinsSessionRule();
+    @RegisterExtension
+    private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
 
     @Issue("JENKINS-28649")
-    @Test public void queueAPI() throws Throwable {
+    @Test
+    void queueAPI() throws Throwable {
         // This is implicitly testing ExecutorStepExecution$PlaceholderTask as exported bean
         sessions.then(j -> {
                 WorkflowJob p = j.createProject(WorkflowJob.class, "p");
@@ -66,7 +68,8 @@ public class BuildQueueTasksTest {
     }
 
     @Issue("JENKINS-28649")
-    @Test public void queueAPIRestartable() throws Throwable {
+    @Test
+    void queueAPIRestartable() throws Throwable {
         // This is implicitly testing AfterRestartTask as exported bean
         sessions.then(j -> {
                 WorkflowJob p = j.createProject(WorkflowJob.class, "p");
@@ -84,15 +87,19 @@ public class BuildQueueTasksTest {
     }
 
     @Issue("JENKINS-28649")
-    @Test public void computerAPI() throws Throwable {
+    @Test
+    void computerAPI() throws Throwable {
         // This is implicitly testing ExecutorStepExecution$PlaceholderTask$PlaceholderExecutable as exported bean
         sessions.then(j -> {
                 WorkflowJob p = j.createProject(WorkflowJob.class, "p");
                 p.setDefinition(new CpsFlowDefinition(
-                        "node {\n" +
-                        "  echo 'test'\n " +
-                        "  semaphore 'watch'\n " +
-                        "}", true));
+                    """
+                        node {
+                          echo 'test'
+                        
+                          semaphore 'watch'
+                        
+                        }""", true));
 
                 WorkflowRun b = p.scheduleBuild2(0).getStartCondition().get();
                 SemaphoreStep.waitForStart("watch/1", b);
@@ -128,7 +135,7 @@ public class BuildQueueTasksTest {
 
         JSONObject o = JSONObject.fromObject(queue.getWebResponse().getContentAsString());
         JSONArray items = o.getJSONArray("items");
-        // Just check that the request returns HTTP 200 and there is some content. 
+        // Just check that the request returns HTTP 200 and there is some content.
         // Not going into de the content in this test
         assertEquals(1, items.size());
 

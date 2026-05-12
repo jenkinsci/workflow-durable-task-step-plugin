@@ -29,9 +29,8 @@ import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.arrayWithSize;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.iterableWithSize;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -47,26 +46,29 @@ import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.support.steps.input.InputAction;
-import org.junit.Rule;
-import org.junit.Test;
-import org.jvnet.hudson.test.InboundAgentRule;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.PrefixedOutputStream;
-import org.jvnet.hudson.test.RealJenkinsRule;
 import org.jvnet.hudson.test.TailLog;
+import org.jvnet.hudson.test.junit.jupiter.InboundAgentExtension;
+import org.jvnet.hudson.test.junit.jupiter.RealJenkinsExtension;
 
-public class ExecutorStepExecutionRJRTest {
+class ExecutorStepExecutionRJRTest {
+
     private static final Logger LOGGER = Logger.getLogger(ExecutorStepExecutionRJRTest.class.getName());
 
-    @Rule public RealJenkinsRule rjr = new RealJenkinsRule().withColor(PrefixedOutputStream.Color.GREEN).withPackageLogger(ExecutorStepExecution.class, Level.FINE).withPackageLogger(FlowExecutionList.class, Level.FINE);
+    @RegisterExtension
+    private final RealJenkinsExtension rjr = new RealJenkinsExtension().withColor(PrefixedOutputStream.Color.GREEN).withPackageLogger(ExecutorStepExecution.class, Level.FINE).withPackageLogger(FlowExecutionList.class, Level.FINE);
 
-    @Rule
-    public InboundAgentRule iar = new InboundAgentRule();
+    @RegisterExtension
+    private final InboundAgentExtension iar = new InboundAgentExtension();
 
-    @Test public void restartWhileWaitingForANode() throws Throwable {
+    @Test
+    void restartWhileWaitingForANode() throws Throwable {
         rjr.startJenkins();
         try (var tailLog = new TailLog(rjr, "p", 1)) {
-            iar.createAgent(rjr, InboundAgentRule.Options.newBuilder().name("J").label("mib").color(PrefixedOutputStream.Color.YELLOW).webSocket().build());
+            iar.createAgent(rjr, InboundAgentExtension.Options.newBuilder().name("J").label("mib").color(PrefixedOutputStream.Color.YELLOW).webSocket().build());
             rjr.runRemotely(ExecutorStepExecutionRJRTest::setupJobAndStart);
             rjr.stopJenkinsForcibly();
             rjr.startJenkins();

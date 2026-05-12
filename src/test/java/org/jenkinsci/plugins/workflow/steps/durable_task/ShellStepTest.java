@@ -2,13 +2,9 @@ package org.jenkinsci.plugins.workflow.steps.durable_task;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeFalse;
-import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
@@ -50,6 +46,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Serial;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
@@ -99,52 +96,63 @@ import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable;
 import org.jenkinsci.plugins.workflow.support.visualization.table.FlowGraphTable.Row;
-import org.junit.Assume;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ErrorCollector;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.jvnet.hudson.test.BuildWatcher;
-import org.jvnet.hudson.test.FlagRule;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.Parameter;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
-import org.jvnet.hudson.test.LoggerRule;
+import org.jvnet.hudson.test.LogRecorder;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
-@RunWith(Parameterized.class)
-public class ShellStepTest {
+@WithJenkins
+@ParameterizedClass(name = "watching={0}")
+@ValueSource(booleans = {true, false})
+class ShellStepTest {
 
-    @Parameterized.Parameters(name = "watching={0}") public static List<Boolean> data() {
-        return List.of(false, true);
+    @Parameter
+    private boolean useWatching;
+
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+    @TempDir
+    private File tmp;
+
+    private final LogRecorder logging = new LogRecorder();
+    private long watchingRecurrencePeriod;
+    private boolean useBinaryWrapper;
+
+    private JenkinsRule j;
+
+    @BeforeEach
+    void setUp(JenkinsRule rule) {
+        j = rule;
+
+        DurableTaskStep.USE_WATCHING = useWatching;
+        watchingRecurrencePeriod = DurableTaskStep.WATCHING_RECURRENCE_PERIOD;
+        useBinaryWrapper = WindowsBatchScript.USE_BINARY_WRAPPER;
     }
 
-    @Parameterized.BeforeParam public static void useWatching(boolean x) {
-        DurableTaskStep.USE_WATCHING = x;
+    @AfterEach
+    void tearDown() {
+        DurableTaskStep.WATCHING_RECURRENCE_PERIOD = watchingRecurrencePeriod;
+        WindowsBatchScript.USE_BINARY_WRAPPER = useBinaryWrapper;
     }
-
-    @Parameterized.Parameter public boolean useWatching;
-
-    @ClassRule
-    public static BuildWatcher buildWatcher = new BuildWatcher();
-
-    @Rule public JenkinsRule j = new JenkinsRule();
-    @Rule public TemporaryFolder tmp = new TemporaryFolder();
-    @Rule public ErrorCollector errors = new ErrorCollector();
-    @Rule public LoggerRule logging = new LoggerRule();
-    @Rule public FlagRule<Long> watchingRecurrencePeriod = new FlagRule<>(() -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD, x -> DurableTaskStep.WATCHING_RECURRENCE_PERIOD = x);
-    @Rule public FlagRule<Boolean> useBinaryWrapper = new FlagRule<>(() -> WindowsBatchScript.USE_BINARY_WRAPPER, x -> WindowsBatchScript.USE_BINARY_WRAPPER = x);
 
     /**
      * Failure in the shell script should mark the step as red
      */
     @Test
-    public void failureShouldMarkNodeRed() throws Exception {
+    void failureShouldMarkNodeRed() throws Exception {
         // job setup
         WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
         foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ? "node {bat 'whatever'}" : "node {sh 'false'}", true));
@@ -156,9 +164,8 @@ public class ShellStepTest {
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
         t.build();
         for (Row r : t.getRows()) {
-            if (r.getNode() instanceof StepAtomNode) {
-                StepAtomNode sa = (StepAtomNode) r.getNode();
-                if (sa.getDescriptor().getFunctionName().matches("sh|bat")) {
+            if (r.getNode() instanceof StepAtomNode sa) {
+              if (sa.getDescriptor().getFunctionName().matches("sh|bat")) {
                     assertSame(BallColor.RED, sa.getIconColor());
                     found = true;
                 }
@@ -170,7 +177,7 @@ public class ShellStepTest {
 
     @Issue("JENKINS-52943")
     @Test
-    public void stepDescription() throws Exception {
+    void stepDescription() throws Exception {
         // job setup
         WorkflowJob foo = j.jenkins.createProject(WorkflowJob.class, "foo");
         foo.setDefinition(new CpsFlowDefinition(Functions.isWindows() ? "node {" +
@@ -198,7 +205,7 @@ public class ShellStepTest {
      * Abort a running workflow to ensure that the process is terminated.
      */
     @Test
-    public void abort() throws Exception {
+    void abort() throws Exception {
         Path tmp = Files.createTempFile("jenkins","test");
         Files.delete(tmp);
 
@@ -237,7 +244,8 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-41339")
-    @Test public void nodePaths() throws Exception {
+    @Test
+    void nodePaths() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);
         FreeStyleProject f = j.createFreeStyleProject("f"); // the control
         f.setAssignedNode(slave);
@@ -254,24 +262,27 @@ public class ShellStepTest {
         j.assertLogContains(Functions.isWindows() ? "Path=C:\\acme\\bin;" : "PATH=/opt/acme/bin:/", j.buildAndAssertSuccess(p));
     }
 
-    @Test public void launcherDecorator() throws Exception {
-        Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/nice").canExecute());
+    @Test
+    void launcherDecorator() throws Exception {
+        assumeTrue(new File("/usr/bin/nice").canExecute(), "TODO Windows equivalent TBD");
         // https://stackoverflow.com/questions/44811425/nice-command-not-working-on-macos
-        Assume.assumeFalse("MacOS doesn't implement nice", Platform.isDarwin());
+        assumeFalse(Platform.isDarwin(), "MacOS doesn't implement nice");
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {sh 'echo niceness=`nice`'}", true));
-        Assume.assumeThat("test only works if mvn test is not itself niced", JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))), containsString("niceness=0"));
+        assumeTrue(JenkinsRule.getLog(j.assertBuildStatusSuccess(p.scheduleBuild2(0))).contains("niceness=0"), "test only works if mvn test is not itself niced");
         p.setDefinition(new CpsFlowDefinition("node {nice {sh 'echo niceness=`nice`'}}", true));
         j.assertLogContains("niceness=10", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
         p.setDefinition(new CpsFlowDefinition("node {nice {nice {sh 'echo niceness=`nice`'}}}", true));
         j.assertLogContains("niceness=19", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
+
     public static class NiceStep extends Step {
         @DataBoundConstructor public NiceStep() {}
         @Override public StepExecution start(StepContext context) {
             return new Execution(context);
         }
         public static class Execution extends StepExecution {
+            @Serial
             private static final long serialVersionUID = 1;
             Execution(StepContext context) {
                 super(context);
@@ -285,13 +296,14 @@ public class ShellStepTest {
             }
         }
         private static class Decorator extends LauncherDecorator implements Serializable {
+            @Serial
             private static final long serialVersionUID = 1;
             @NonNull
             @Override public Launcher decorate(Launcher launcher, @NonNull Node node) {
                 return launcher.decorateByPrefix("nice");
             }
         }
-        @TestExtension({"launcherDecorator[watching=false]", "launcherDecorator[watching=true]"}) public static class DescriptorImpl extends StepDescriptor {
+        @TestExtension("launcherDecorator") public static class DescriptorImpl extends StepDescriptor {
             @Override public Set<? extends Class<?>> getRequiredContext() {
                 return Collections.emptySet();
             }
@@ -309,14 +321,16 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-40734")
-    @Test public void envWithShellChar() throws Exception {
+    @Test
+    void envWithShellChar() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {withEnv(['MONEY=big$$money']) {isUnix() ? sh('echo \"MONEY=$MONEY\"') : bat('echo \"MONEY=%MONEY%\"')}}", true));
         j.assertLogContains("MONEY=big$$money", j.buildAndAssertSuccess(p));
     }
 
     @Issue("JENKINS-26133")
-    @Test public void configRoundTrip() throws Exception {
+    @Test
+    void configRoundTrip() throws Exception {
         ShellStep s = new ShellStep("echo hello");
         s = new StepConfigTester(j).configRoundTrip(s);
         assertEquals("echo hello", s.getScript());
@@ -354,8 +368,9 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-26133")
-    @Test public void returnStdout() throws Exception {
-        Assume.assumeTrue("TODO Windows equivalent TBD", new File("/usr/bin/tr").canExecute());
+    @Test
+    void returnStdout() throws Exception {
+        assumeTrue(new File("/usr/bin/tr").canExecute(), "TODO Windows equivalent TBD");
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("def msg; node {msg = sh(script: 'echo hello world | tr [a-z] [A-Z]', returnStdout: true).trim()}; echo \"it said ${msg}\"", true));
         j.assertLogContains("it said HELLO WORLD", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
@@ -364,31 +379,34 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-26133")
-    @Test public void returnStatus() throws Exception {
+    @Test
+    void returnStatus() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {echo \"truth is ${isUnix() ? sh(script: 'true', returnStatus: true) : bat(script: 'echo', returnStatus: true)} but falsity is ${isUnix() ? sh(script: 'false', returnStatus: true) : bat(script: 'type nonexistent' , returnStatus: true)}\"}", true));
         j.assertLogContains("truth is 0 but falsity is 1", j.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
-    
-    
-    @Test public void label() throws Exception {
+
+
+    @Test
+    void label() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: 'Step with label') : bat(script: 'echo', label: 'Step with label')}", true));
-        
+
         WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
 
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
         t.build();
         assertThat(t.getRows().stream().map(Row::getDisplayName).toArray(String[]::new), hasItemInArray(containsString("Step with label")));
     }
-    
-    @Test public void labelShortened() throws Exception {
+
+    @Test
+    void labelShortened() throws Exception {
         String singleLabel = "0123456789".repeat(10);
         String label = singleLabel + singleLabel;
-        
+
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node {isUnix() ? sh(script: 'true', label: '" + label + "') : bat(script: 'echo', label: '" + label + "')}", true));
-        
+
         WorkflowRun b = j.assertBuildStatus(Result.SUCCESS, p.scheduleBuild2(0).get());
 
         FlowGraphTable t = new FlowGraphTable(b.getExecution());
@@ -397,7 +415,8 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-38381")
-    @Test public void remoteLogger() throws Exception {
+    @Test
+    void remoteLogger() throws Exception {
         assumeTrue(useWatching);
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
@@ -408,7 +427,7 @@ public class ShellStepTest {
         CredentialsProvider.lookupStores(j.jenkins).iterator().next().addCredentials(Domain.global(), c);
         DumbSlave s = j.createSlave("remote", null, null);
         j.waitOnline(s);
-        j.showAgentLogs(s, logging);
+        j.showAgentLogs(s, Map.of(DurableTaskStep.class.getName(), Level.FINE, FileMonitoringTask.class.getName(), Level.FINE));
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
@@ -430,7 +449,7 @@ public class ShellStepTest {
         j.assertLogNotContains(password.toUpperCase(Locale.ENGLISH), b);
         j.assertLogContains("CURL -U **** HTTP://SERVER/ [master → remote]", b);
     }
-    @TestExtension("remoteLogger[watching=true]") public static class LogFile implements LogStorageFactory {
+    @TestExtension("remoteLogger") public static class LogFile implements LogStorageFactory {
         @Override public LogStorage forBuild(FlowExecutionOwner b) {
             final LogStorage base;
             try {
@@ -459,6 +478,7 @@ public class ShellStepTest {
         }
     }
     private static class RemotableBuildListener extends OutputStreamTaskListener.Default implements BuildListener {
+        @Serial
         private static final long serialVersionUID = 1;
         /** actual implementation */
         private final TaskListener delegate;
@@ -495,6 +515,7 @@ public class ShellStepTest {
             }
             return out;
         }
+        @Serial
         private Object writeReplace() {
             /* To see serialization happening from BourneShellScript.launchWithCookie & FileMonitoringController.watch:
             Thread.dumpStack();
@@ -505,7 +526,8 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-54133")
-    @Test public void remoteConsoleNotes() throws Exception {
+    @Test
+    void remoteConsoleNotes() throws Exception {
         assumeTrue(useWatching);
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         j.createSlave("remote", null, null);
@@ -609,9 +631,10 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-31096")
-    @Test public void encoding() throws Exception {
+    @Test
+    void encoding() throws Exception {
         // Like JenkinsRule.createSlave but passing a system encoding:
-        Slave remote = new DumbSlave("remote", tmp.getRoot().getAbsolutePath(),
+        Slave remote = new DumbSlave("remote", tmp.getAbsolutePath(),
             new SimpleCommandLauncher("'" + System.getProperty("java.home") + "/bin/java' -Dfile.encoding=ISO-8859-2 -jar '" + new File(j.jenkins.getJnlpJars("slave.jar").getURL().toURI()) + "'"));
         j.jenkins.addNode(remote);
         j.waitOnline(remote);
@@ -632,7 +655,8 @@ public class ShellStepTest {
         j.assertLogContains("¡Čau → there!", j.buildAndAssertSuccess(p));
     }
 
-    @Test public void missingNewline() throws Exception {
+    @Test
+    void missingNewline() throws Exception {
         assumeFalse(Functions.isWindows()); // TODO create Windows equivalent
         String credentialsId = "creds";
         String username = "bob";
@@ -642,7 +666,7 @@ public class ShellStepTest {
         DumbSlave s = j.createSlave("remote", null, null);
         j.waitOnline(s);
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE);
-        j.showAgentLogs(s, logging);
+        j.showAgentLogs(s, Map.of(DurableTaskStep.class.getName(), Level.FINE, FileMonitoringTask.class.getName(), Level.FINE));
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         String builtInNodeLabel = j.jenkins.getSelfLabel().getName(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition(
@@ -657,16 +681,17 @@ public class ShellStepTest {
         String log = JenkinsRule.getLog(j.buildAndAssertSuccess(p));
         for (String node : new String[] {builtInNodeLabel, "remote"}) {
             for (String mode : new String[] {"with", "missing"}) {
-                errors.checkThat(log, containsString("node=" + node + " " + mode + " final newline"));
+                assertThat(log, containsString("node=" + node + " " + mode + " final newline"));
             }
         }
-        errors.checkThat("no blank lines", log, not(containsString("\n\n")));
+        assertThat(log, not(containsString("\n\n")));
         // TODO more robust to assert against /missing final newline./ in line mode
-        errors.checkThat(log, not(containsString("missing final newline[Pipeline]")));
+        assertThat(log, not(containsString("missing final newline[Pipeline]")));
     }
 
     @Issue("JENKINS-34021")
-    @Test public void deadStep() throws Exception {
+    @Test
+    void deadStep() throws Exception {
         logging.record(DurableTaskStep.class, Level.INFO).record(CpsStepContext.class, Level.INFO).capture(100);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         // Test fails on ci.jenkins.io with timeout == 1 on Windows
@@ -685,9 +710,10 @@ public class ShellStepTest {
             assertNull(record.getThrown());
         }
     }
-    
+
     @Issue("JENKINS-49707")
-    @Test public void removingAgentIsFatal() throws Exception {
+    @Test
+    void removingAgentIsFatal() throws Exception {
         logging.record(DurableTaskStep.class, Level.FINE).record(FileMonitoringTask.class, Level.FINE).record(ExecutorStepExecution.class, Level.FINE);
         DumbSlave s = j.createSlave("remote", null, null);
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
@@ -699,7 +725,8 @@ public class ShellStepTest {
         j.waitForMessage(new ExecutorStepExecution.RemovedNodeCause().getShortDescription(), b);
     }
 
-    @Test public void permanentlyDisconnectingAgentIsFatal() throws Exception {
+    @Test
+    void permanentlyDisconnectingAgentIsFatal() throws Exception {
         DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
         logging.record(DurableTaskStep.class, Level.FINE);
         var s = j.createSlave("remote", null, null);
@@ -713,7 +740,8 @@ public class ShellStepTest {
         j.waitForMessage(new ExecutorStepExecution.RemovedNodeTimeoutCause().getShortDescription(), b);
     }
 
-    @Test public void temporarilyDisconnectingAgentIsNotFatal() throws Exception {
+    @Test
+    void temporarilyDisconnectingAgentIsNotFatal() throws Exception {
         DurableTaskStep.WATCHING_RECURRENCE_PERIOD = Duration.ofSeconds(30).toMillis();
         WindowsBatchScript.USE_BINARY_WRAPPER = true;
         logging.record(DurableTaskStep.class, Level.FINE);
@@ -734,19 +762,20 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-44521")
-    @Test public void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
+    @Test
+    void shouldInvokeLauncherDecoratorForShellStep() throws Exception {
         DumbSlave slave = j.createSlave("slave", null, null);
-        
+
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition("node('slave') {isUnix() ? sh('echo INJECTED=$INJECTED') : bat('echo INJECTED=%INJECTED%')}", true));
         WorkflowRun run = j.buildAndAssertSuccess(p);
-        
+
         j.assertLogContains("INJECTED=MYVAR-" + slave.getNodeName(), run);
-        
     }
 
     @Issue("JENKINS-28822")
-    @Test public void interruptingAbortsBuild() throws Exception {
+    @Test
+    void interruptingAbortsBuild() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         // Test fails unexpectedly on ci.jenkins.io Windows agents with fewer pings
         p.setDefinition(new CpsFlowDefinition("node {\n" +
@@ -764,7 +793,8 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-28822")
-    @Test public void interruptingAbortsBuildEvenWithReturnStatus() throws Exception {
+    @Test
+    void interruptingAbortsBuildEvenWithReturnStatus() throws Exception {
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         // Test fails unexpectedly on ci.jenkins.io Windows agents with fewer pings
         p.setDefinition(new CpsFlowDefinition("node() {\n" +
@@ -782,20 +812,22 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-62014")
-    @Test public void envVarFilters() throws Exception {
+    @Test
+    void envVarFilters() throws Exception {
         EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new RemoveSpecificVariablesFilter("FOO"));
         EnvVarsFilterGlobalConfiguration.getAllActivatedGlobalRules().add(new VariableContributingFilter("BAZ", "QUX"));
         WorkflowJob p = j.jenkins.createProject(WorkflowJob.class, "p");
         p.setDefinition(new CpsFlowDefinition(
-                "node() {\n" +
-                "  withEnv(['FOO=BAR']) {\n" +
-                "    if (isUnix()) {\n" +
-                "      sh('echo FOO=$FOO and BAZ=$BAZ')\n" +
-                "    } else {\n" +
-                "      bat('ECHO FOO=%FOO% and BAZ=%BAZ%')\n" +
-                "    }\n" +
-                "  }\n" +
-                "}", true));
+            """
+                node() {
+                  withEnv(['FOO=BAR']) {
+                    if (isUnix()) {
+                      sh('echo FOO=$FOO and BAZ=$BAZ')
+                    } else {
+                      bat('ECHO FOO=%FOO% and BAZ=%BAZ%')
+                    }
+                  }
+                }""", true));
         WorkflowRun b = j.buildAndAssertSuccess(p);
         j.assertLogContains("FOO=", b);
         j.assertLogNotContains("FOO=BAR", b);
@@ -803,7 +835,8 @@ public class ShellStepTest {
     }
 
     @Issue("JENKINS-62014")
-    @Test public void ensureTypes() {
+    @Test
+    void ensureTypes() {
         final List<Descriptor> descriptors = BuilderUtil.allDescriptors();
 
         MatcherAssert.assertThat(descriptors , containsInAnyOrder(
@@ -822,8 +855,8 @@ public class ShellStepTest {
             Thread.sleep(100);
         }
     }
-    
-    @TestExtension({"shouldInvokeLauncherDecoratorForShellStep[watching=false]", "shouldInvokeLauncherDecoratorForShellStep[watching=true]"})
+
+    @TestExtension("shouldInvokeLauncherDecoratorForShellStep")
     public static final class MyNodeLauncherDecorator extends LauncherDecorator {
 
         @NonNull
@@ -833,7 +866,7 @@ public class ShellStepTest {
             Map<String, String> env = new HashMap<>();
             env.put("INJECTED", "MYVAR-" + node.getNodeName());
             return lnchr.decorateByEnv(new EnvVars(env));
-        }  
+        }
     }
 }
 

@@ -34,23 +34,30 @@ import java.util.regex.Pattern;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
  * Verifies that specific environment variables are available.
  *
  */
-public class EnvWorkflowTest {
+@WithJenkins
+class EnvWorkflowTest {
 
-    @Rule public JenkinsRule r = new JenkinsRule();
+    private JenkinsRule r;
 
+    @BeforeEach
+    void setUp(JenkinsRule rule) {
+        r = rule;
+    }
     /**
      * Verifies if NODE_NAME environment variable is available on an agent node and on the built-in node.
      */
-    @Test public void isNodeNameAvailable() throws Exception {
+    @Test
+    void isNodeNameAvailable() throws Exception {
         r.createSlave("node-test", "unix fast", null);
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "workflow-test");
 
@@ -109,7 +116,8 @@ public class EnvWorkflowTest {
     /**
      * Verifies if EXECUTOR_NUMBER environment variable is available on an agent node and on the built-in node.
      */
-    @Test public void isExecutorNumberAvailable() throws Exception {
+    @Test
+    void isExecutorNumberAvailable() throws Exception {
         r.jenkins.setNumExecutors(1);
         r.createSlave("node-test", null, null);
         String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
@@ -123,15 +131,18 @@ public class EnvWorkflowTest {
         r.assertLogContains("Executor number on built-in node is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
 
         p.setDefinition(new CpsFlowDefinition(
-                "node('node-test') {\n" +
-                        "  echo \"My number on an agent is ${env.EXECUTOR_NUMBER}\"\n" +
-                        "}\n",
+            """
+                node('node-test') {
+                  echo "My number on an agent is ${env.EXECUTOR_NUMBER}"
+                }
+                """,
                 true));
         r.assertLogContains("My number on an agent is 0", r.assertBuildStatusSuccess(p.scheduleBuild2(0)));
     }
 
     @Issue("JENKINS-33511")
-    @Test public void isWorkspaceAvailable() throws Exception {
+    @Test
+    void isWorkspaceAvailable() throws Exception {
         WorkflowJob p = r.jenkins.createProject(WorkflowJob.class, "p");
         String builtInNodeLabel = r.jenkins.getSelfLabel().getExpression(); // compatibility with 2.307+
         p.setDefinition(new CpsFlowDefinition("node('" + builtInNodeLabel + "') {echo(/running in ${env.WORKSPACE}/)}", true));

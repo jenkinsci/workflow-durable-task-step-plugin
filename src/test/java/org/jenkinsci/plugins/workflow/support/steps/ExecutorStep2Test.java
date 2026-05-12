@@ -55,34 +55,37 @@ import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.runners.Parameterized;
-import org.jvnet.hudson.test.BuildWatcher;
 import org.jvnet.hudson.test.Issue;
-import org.jvnet.hudson.test.JenkinsSessionRule;
-import org.jvnet.hudson.test.LoggerRule;
+import org.jvnet.hudson.test.LogRecorder;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
 import org.jvnet.hudson.test.TestExtension;
+import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 
 /**
  * Like {@link ExecutorStepTest} but not using {@link Parameterized} which appears incompatible with {@link TestExtension}.
  */
-public final class ExecutorStep2Test {
+class ExecutorStep2Test {
 
-    @ClassRule public static BuildWatcher buildWatcher = new BuildWatcher();
-    @Rule public JenkinsSessionRule rr = new JenkinsSessionRule();
-    @Rule public LoggerRule logging = new LoggerRule();
+    @RegisterExtension
+    private static final BuildWatcherExtension buildWatcher = new BuildWatcherExtension();
+    @RegisterExtension
+    private final JenkinsSessionExtension rr = new JenkinsSessionExtension();
+    private final LogRecorder logging = new LogRecorder();
 
     @Issue("JENKINS-53837")
-    @Test public void queueTaskOwnerCorrectWhenRestarting() throws Throwable {
+    @Test
+    void queueTaskOwnerCorrectWhenRestarting() throws Throwable {
         rr.then(r -> {
             ExtensionList.lookupSingleton(PipelineOnlyTaskDispatcher.class);
             WorkflowJob p = r.createProject(WorkflowJob.class, "p1");
-            p.setDefinition(new CpsFlowDefinition("node {\n" +
-                    "  semaphore('wait')\n" +
-                    "}", true));
+            p.setDefinition(new CpsFlowDefinition("""
+                node {
+                  semaphore('wait')
+                }""", true));
             WorkflowRun b = p.scheduleBuild2(0).waitForStart();
             SemaphoreStep.waitForStart("wait/1", b);
         });
@@ -120,7 +123,8 @@ public final class ExecutorStep2Test {
         }
     }
 
-    @Test public void cloud() throws Throwable {
+    @Test
+    void cloud() throws Throwable {
         rr.then(r -> {
             ExtensionList.lookupSingleton(TestCloud.DescriptorImpl.class);
             r.jenkins.clouds.add(new TestCloud());
@@ -189,7 +193,8 @@ public final class ExecutorStep2Test {
         }
     }
 
-    @Test public void selfNameVsLabel() throws Throwable {
+    @Test
+    void selfNameVsLabel() throws Throwable {
         logging.recordPackage(ExecutorStepExecution.class, Level.FINE);
         rr.then(r -> {
             r.jenkins.setNumExecutors(0);
