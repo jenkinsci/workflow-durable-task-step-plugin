@@ -652,7 +652,6 @@ class ExecutorStepTest {
                 Queue.Item[] items = Queue.getInstance().getItems();
                 assertEquals(1, items.length);
                 assertEquals(p, items[0].task.getOwnerTask());
-                // // TODO 2.389+ remove cast
                 assertEquals(b, items[0].task.getOwnerExecutable());
                 assertEquals(items[0], QueueItemAction.getQueueItem(executorStartNode));
 
