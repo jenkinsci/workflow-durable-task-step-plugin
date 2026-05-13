@@ -27,14 +27,14 @@ THE SOFTWARE.
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:st="jelly:stapler">
     <st:include page="config-details" class="${descriptor.clazz}"/>
     <f:advanced>
-        <f:entry field="returnStdout" title="${%Return standard output}">
-            <f:checkbox/>
+        <f:entry field="returnStdout">
+            <f:checkbox title="${%Return standard output}"/>
         </f:entry>
         <f:entry field="encoding" title="${%Encoding of standard output}">
             <f:textbox/>
         </f:entry>
-        <f:entry field="returnStatus" title="${%Return exit status}">
-            <f:checkbox/>
+        <f:entry field="returnStatus">
+            <f:checkbox title="${%Return exit status}"/>
         </f:entry>
         <f:entry field="label" title="${%Label}">
             <f:textbox/>
