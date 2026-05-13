@@ -27,4 +27,8 @@ THE SOFTWARE.
     <f:entry field="script" title="Windows PowerShell Script">
         <f:textarea/>
     </f:entry>
+    <f:entry field="loadProfile" title="Load Profile">
+        <f:checkbox />
+    </f:entry>
+
 </j:jelly>

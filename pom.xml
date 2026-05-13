@@ -91,6 +91,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>durable-task</artifactId>
+            <version>1.36-rc473.404fedc2031a</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
