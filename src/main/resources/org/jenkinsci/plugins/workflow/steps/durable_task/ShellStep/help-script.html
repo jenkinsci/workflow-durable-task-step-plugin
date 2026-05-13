@@ -9,4 +9,16 @@
     Otherwise the system default shell will be run, using the <code>-xe</code> flags
     (you can specify <code>set +e</code> and/or <code>set +x</code> to disable those).
     </p>
+    <p>
+    NOTE: Depending on the underlying OS, the script is launched and monitored using a binary (for *NIX) with the
+          prefix <code>durable-task-monitor-</code> or a shell wrapper (all other environments).
+          Because the binary/shell wrapper is launched as a background process, please ensure that the target script
+          environment  is able to reap orphaned processes (i.e. zombie-reaping). For example, in Docker, you may use the
+          <a href="https://docs.docker.com/engine/reference/run/?#specify-an-init-process"><code>--init</code> flag</a>,
+          while in Kubernetes, you may leverage
+          <a href="https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/"> shared process namespace</a>.
+          With shared process namespaces, the pod sandbox will be assigned PID 1 and assume zombie-reaping responsibilities.
+          To force durable-task to always use the shell wrapper, pass the system property
+          `org.jenkinsci.plugins.durabletask.BourneShellScript.FORCE_SHELL_WRAPPER=true` to the Java command line used to start Jenkins.
+    </p>
 </div>
