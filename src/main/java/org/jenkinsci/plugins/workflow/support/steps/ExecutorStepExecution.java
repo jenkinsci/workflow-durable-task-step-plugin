@@ -812,12 +812,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          *     }
          * </pre>
          *
-         * In case there's no context available or we get a timeout we'll just return <code>baseLabel</code>
-         *
-         * */
-        private String concatenateAllEnclosingLabels(StringBuilder labelName) {
+         * Returns {@code null} if the flow context was not ready or the FlowNode lookup failed/timed out,
+         * letting callers (e.g. {@link #getAffinityKey()}) distinguish a transient miss from a successful
+         * compute that simply produced no enclosing labels.
+         */
+        private String computeAffinityKey(StringBuilder labelName) {
             if (!context.isReady()) {
-                return labelName.toString();
+                return null;
             }
             FlowNode executorStepNode = null;
             try (Timeout t = Timeout.limit(100, TimeUnit.MILLISECONDS)) {
@@ -826,16 +827,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                 LOGGER.log(Level.FINE, null, x);
             }
 
-            if (executorStepNode != null) {
-                for(FlowNode node: executorStepNode.getEnclosingBlocks()) {
-                    String currentLabelName = findLabelName(node);
-                    if (currentLabelName != null) {
-                        labelName.append("#");
-                        labelName.append(currentLabelName);
-                    }
+            if (executorStepNode == null) {
+                return null;
+            }
+            for (FlowNode node : executorStepNode.getEnclosingBlocks()) {
+                String currentLabelName = findLabelName(node);
+                if (currentLabelName != null) {
+                    labelName.append("#");
+                    labelName.append(currentLabelName);
                 }
             }
-
             return labelName.toString();
         }
 
@@ -849,12 +850,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             String k = cachedAffinityKey;
             if (k == null) {
                 String ownerName = getOwnerTask().getName();
-                StringBuilder ownerTaskName = new StringBuilder(ownerName);
-                k = concatenateAllEnclosingLabels(ownerTaskName);
-                // Only cache when we got the full enclosing-labels result to avoid caching less specific affinity key
-                if (!k.equals(ownerName)) {
-                    cachedAffinityKey = k;
+                String computed = computeAffinityKey(new StringBuilder(ownerName));
+                if (computed != null) {
+                    cachedAffinityKey = computed;
+                    return computed;
                 }
+                // Transient miss: don't cache, retry on next call.
+                return ownerName;
             }
             return k;
         }
