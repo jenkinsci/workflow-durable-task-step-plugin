@@ -571,15 +571,22 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
+        private transient volatile Node cachedLastBuiltOn;
+
         @Override public Node getLastBuiltOn() {
-            if (label == null) {
-                return null;
+            Node n = cachedLastBuiltOn;
+            if (n == null) {
+                if (label == null) {
+                    return null;
+                }
+                Jenkins j = Jenkins.getInstanceOrNull();
+                if (j == null) {
+                    return null;
+                }
+                n = j.getNode(label);
+                cachedLastBuiltOn = n;
             }
-            Jenkins j = Jenkins.getInstanceOrNull();
-            if (j == null) {
-                return null;
-            }
-            return j.getNode(label);
+            return n;
         }
 
         @Restricted(NoExternalUse.class)
@@ -839,13 +846,20 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             return labelName.toString();
         }
 
+        private transient volatile String cachedAffinityKey;
+
         /**
         * Provide unique key which will be used to prioritize the list of possible build agents to use
         * */
         @Override
         public String getAffinityKey() {
-            StringBuilder ownerTaskName = new StringBuilder(getOwnerTask().getName());
-            return concatenateAllEnclosingLabels(ownerTaskName);
+            String k = cachedAffinityKey;
+            if (k == null) {
+                StringBuilder ownerTaskName = new StringBuilder(getOwnerTask().getName());
+                k = concatenateAllEnclosingLabels(ownerTaskName);
+                cachedAffinityKey = k;
+            }
+            return k;
         }
 
         /** hash code of list of heads */
