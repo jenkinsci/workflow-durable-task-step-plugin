@@ -571,22 +571,15 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
             }
         }
 
-        private transient volatile Node cachedLastBuiltOn;
-
         @Override public Node getLastBuiltOn() {
-            Node n = cachedLastBuiltOn;
-            if (n == null) {
-                if (label == null) {
-                    return null;
-                }
-                Jenkins j = Jenkins.getInstanceOrNull();
-                if (j == null) {
-                    return null;
-                }
-                n = j.getNode(label);
-                cachedLastBuiltOn = n;
+            if (label == null) {
+                return null;
             }
-            return n;
+            Jenkins j = Jenkins.getInstanceOrNull();
+            if (j == null) {
+                return null;
+            }
+            return j.getNode(label);
         }
 
         @Restricted(NoExternalUse.class)
@@ -855,9 +848,13 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
         public String getAffinityKey() {
             String k = cachedAffinityKey;
             if (k == null) {
-                StringBuilder ownerTaskName = new StringBuilder(getOwnerTask().getName());
+                String ownerName = getOwnerTask().getName();
+                StringBuilder ownerTaskName = new StringBuilder(ownerName);
                 k = concatenateAllEnclosingLabels(ownerTaskName);
-                cachedAffinityKey = k;
+                // Only cache when we got the full enclosing-labels result to avoid caching less specific affinity key
+                if (!k.equals(ownerName)) {
+                    cachedAffinityKey = k;
+                }
             }
             return k;
         }
