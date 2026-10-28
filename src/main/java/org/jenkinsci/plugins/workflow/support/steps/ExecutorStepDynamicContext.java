@@ -92,7 +92,9 @@ public final class ExecutorStepDynamicContext implements Serializable {
 
     void resume(StepContext context) throws Exception {
         if (executor != null) {
-            throw new IllegalStateException("Already resumed");
+            // The PlaceholderTask restored from the queue may start before steps are resumed.
+            LOGGER.fine(() -> "already running " + path + " on " + node);
+            return;
         }
         // TODO: Do we need to check executor slots too in case there was a task in the queue that has already started?
         ScheduleResult result = Queue.getInstance().schedule2(task, 0);
