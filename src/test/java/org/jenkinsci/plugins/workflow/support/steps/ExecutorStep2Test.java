@@ -57,7 +57,7 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.params.ParameterizedClass;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.LogRecorder;
 import org.jvnet.hudson.test.SimpleCommandLauncher;
@@ -66,7 +66,7 @@ import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
 import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 
 /**
- * Like {@link ExecutorStepTest} but not using {@link Parameterized} which appears incompatible with {@link TestExtension}.
+ * Like {@link ExecutorStepTest} but not using {@link ParameterizedClass} which appears incompatible with {@link TestExtension}.
  */
 class ExecutorStep2Test {
 

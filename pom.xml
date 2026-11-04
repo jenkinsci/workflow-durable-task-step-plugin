@@ -71,6 +71,7 @@
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
+        <ban-junit4-imports.skip>false</ban-junit4-imports.skip>
     </properties>
     <dependencyManagement>
         <dependencies>
