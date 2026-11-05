@@ -426,15 +426,19 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                         LOGGER.log(Level.FINE, x, () -> task.getFullDisplayName() + " possibly already finished");
                         continue;
                     }
-                    task.withExecution(execution -> {
-                        BodyExecution body = execution.body;
-                        if (body == null) {
-                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
-                            return;
-                        }
-                        listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
-                        body.cancel(new FlowInterruptedException(Result.ABORTED, false, causes));
-                    });
+                    try {
+                        task.withExecution(execution -> {
+                            BodyExecution body = execution.body;
+                            if (body == null) {
+                                listener.getLogger().println("Agent " + node.getNodeName() + " was deleted, but do not have a node body to cancel");
+                                return;
+                            }
+                            listener.getLogger().println("Agent " + node.getNodeName() + " was deleted; cancelling node body");
+                            body.cancel(new FlowInterruptedException(Result.ABORTED, false, causes));
+                        });
+                    } catch (IOException | InterruptedException x) {
+                        LOGGER.log(Level.FINE, x, () -> task.getFullDisplayName() + " withExecution failed during cancelOwnerExecution");
+                    }
                 }
             }
         }
@@ -519,24 +523,54 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
          * since it could not be serialized via XStream in {@link Queue}.
          * Instead we keep only {@link #context} and look up the execution as needed.
          */
-        private void withExecution(Consumer<ExecutorStepExecution> executionCallback) {
-            try {
-                Futures.addCallback(context.get(FlowExecution.class).getCurrentExecutions(false), new FutureCallback<List<StepExecution>>() {
-                    @Override public void onSuccess(List<StepExecution> result) {
-                        for (StepExecution execution : result) {
-                            if (execution instanceof ExecutorStepExecution && execution.getContext().equals(context)) {
-                                executionCallback.accept((ExecutorStepExecution) execution);
-                            }
+        /**
+         * JENKINS-60507: this used to silently swallow {@link IOException} from
+         * {@code context.get(FlowExecution.class)}, which can happen e.g. during a
+         * controller shutdown where {@code WorkflowRun$Owner.get} throws
+         * "<run> did not yet start". The async callback never fired, the body was
+         * never started, and the caller fell through to register an
+         * {@link AsynchronousExecution} that pinned the executor forever. Now the
+         * caller gets the exception and is responsible for failing the step
+         * (typically {@code PlaceholderExecutable.run}'s outer catch).
+         *
+         * Under contention {@link FlowExecution#getCurrentExecutions} can fire with
+         * a result that doesn't yet contain the matching ESE; retry the async
+         * lookup up to {@value #WITH_EXECUTION_MAX_ATTEMPTS} times.
+         */
+        private void withExecution(Consumer<ExecutorStepExecution> executionCallback) throws IOException, InterruptedException {
+            FlowExecution flowExec = context.get(FlowExecution.class);
+            withExecutionAsync(executionCallback, flowExec, 0);
+        }
+
+        private void withExecutionAsync(Consumer<ExecutorStepExecution> executionCallback, FlowExecution flowExec, int attempt) {
+            Futures.addCallback(flowExec.getCurrentExecutions(false), new FutureCallback<List<StepExecution>>() {
+                @Override public void onSuccess(List<StepExecution> result) {
+                    boolean found = false;
+                    for (StepExecution execution : result) {
+                        if (execution instanceof ExecutorStepExecution && execution.getContext().equals(context)) {
+                            executionCallback.accept((ExecutorStepExecution) execution);
+                            found = true;
                         }
                     }
-                    @Override public void onFailure(Throwable x) {
-                        LOGGER.log(Level.WARNING, null, x);
+                    if (!found) {
+                        if (attempt < WITH_EXECUTION_MAX_ATTEMPTS) {
+                            if (attempt == 0) {
+                                LOGGER.log(FINE, () -> "JENKINS-60507: withExecution no match on attempt=" + attempt + " for " + context + "; will retry");
+                            }
+                            Timer.get().schedule(() -> withExecutionAsync(executionCallback, flowExec, attempt + 1), 500, TimeUnit.MILLISECONDS);
+                        } else {
+                            LOGGER.log(SEVERE, () -> "JENKINS-60507: withExecution exhausted retries (" + attempt + ") for " + context
+                                    + "; executionCallback will not fire");
+                        }
                     }
-                }, MoreExecutors.directExecutor());
-            } catch (IOException | InterruptedException x) {
-                LOGGER.log(Level.WARNING, null, x);
-            }
+                }
+                @Override public void onFailure(Throwable x) {
+                    LOGGER.log(Level.WARNING, x, () -> "JENKINS-60507: withExecution future failed for " + context);
+                }
+            }, MoreExecutors.directExecutor());
         }
+
+        private static final int WITH_EXECUTION_MAX_ATTEMPTS = 20;
 
         /**
          * Gives {@link FlowNode}, waiting to be executed  in build {@link Queue}.
@@ -721,6 +755,16 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                     return null;
                 }
                 return context.get(Run.class);
+            } catch (IOException x) {
+                // JENKINS-60507: WorkflowRun$Owner.get throws "<run> did not yet start"
+                // when the run isn't loaded yet (e.g., during controller startup right
+                // after an H3-style restart). This is transient — the run will load
+                // shortly. Don't fire finish() / RunningTasks.remove() here: prior
+                // behavior tore down the placeholder permanently, leaving the CPS
+                // step alive with no callback path to complete, stranding the run in
+                // IN_PROGRESS forever.
+                LOGGER.log(FINE, x, () -> "JENKINS-60507: run not yet loaded for " + context + "; returning null without shutdown");
+                return null;
             } catch (Exception x) {
                 LOGGER.log(FINE, "broken " + context, x);
                 finish(context, cookie); // probably broken, so just shut it down
@@ -1182,13 +1226,17 @@ public class ExecutorStepExecution extends AbstractStepExecutionImpl {
                             Timer.get().submit(() -> { // JENKINS-46738
                                 Executor thisExecutor = /* AsynchronousExecution. */ getExecutor();
                                 AtomicReference<Boolean> cancelledBodyExecution = new AtomicReference(false);
-                                withExecution(execution -> {
-                                    BodyExecution body = execution.body;
-                                    if (body != null) {
-                                        body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
-                                        cancelledBodyExecution.set(true);
-                                    }
-                                });
+                                try {
+                                    withExecution(execution -> {
+                                        BodyExecution body = execution.body;
+                                        if (body != null) {
+                                            body.cancel(thisExecutor != null ? thisExecutor.getCausesOfInterruption().toArray(new CauseOfInterruption[0]) : new CauseOfInterruption[0]);
+                                            cancelledBodyExecution.set(true);
+                                        }
+                                    });
+                                } catch (IOException | InterruptedException x) {
+                                    LOGGER.log(Level.FINE, x, () -> "JENKINS-60507: withExecution failed during interrupt for " + context);
+                                }
                                 if (!cancelledBodyExecution.get()) { // anomalous state; perhaps build already aborted but this was left behind; let user manually cancel executor slot
                                     if (thisExecutor != null) {
                                         thisExecutor.recordCauseOfInterruption(r, _listener);

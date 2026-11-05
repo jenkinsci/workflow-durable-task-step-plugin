@@ -31,10 +31,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.google.common.base.Predicate;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Computer;
+import hudson.model.Action;
 import hudson.model.Executor;
 import hudson.model.Job;
 import hudson.model.Label;
@@ -56,6 +59,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -67,12 +72,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
@@ -98,6 +106,9 @@ import org.jenkinsci.plugins.workflow.actions.WorkspaceAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepAtomNode;
 import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
+import org.jenkinsci.plugins.workflow.flow.FlowExecution;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.flow.GraphListener;
 import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
@@ -105,7 +116,10 @@ import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.graphanalysis.NodeStepTypePredicate;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.EchoStep;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.steps.durable_task.Messages;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
@@ -989,6 +1003,228 @@ class ExecutorStepTest {
             WorkflowRun run2 = r.buildAndAssertSuccess(p);
             Map<String, String> nodeMapping2 = mapNodeNameToLogText(run2);
             assertEquals(nodeMapping1, nodeMapping2);
+        });
+    }
+
+    /**
+     * JENKINS-60507: under contention {@link FlowExecution#getCurrentExecutions} can fire
+     * with a result that does not yet contain the matching {@code ExecutorStepExecution}.
+     * Pre-fix {@code withExecution} was single-shot: it scanned that first result, found no
+     * match, and the {@code executionCallback} never fired — the body was never cancelled.
+     * The fix retries the async lookup (bounded) until the matching execution appears.
+     *
+     * <p>Deterministic reproduction: a {@link FlowExecution} whose {@code getCurrentExecutions}
+     * returns an empty list on the first call and the matching execution on the next. The
+     * discriminator is whether the callback ever fires: pre-fix it does not (single-shot),
+     * post-fix it does (after one retry). {@code withExecution} is private, so it is invoked
+     * reflectively.
+     */
+    @Issue("JENKINS-60507")
+    @Test
+    void withExecutionRetriesUntilMatchingExecutionAppears() throws Throwable {
+        sessions.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("echo 'a real run to supply an id'", true));
+            WorkflowRun b = r.buildAndAssertSuccess(p);
+
+            final StepContext[] ctxRef = new StepContext[1];
+            // A FlowExecution whose getCurrentExecutions misses the matching execution on the
+            // first call and surfaces it on the next, reproducing the contention window.
+            final int[] calls = {0};
+            FlowExecution flowExec = new FlowExecution() {
+                @Override public ListenableFuture<List<StepExecution>> getCurrentExecutions(boolean ignored) {
+                    if (calls[0]++ == 0) {
+                        return Futures.immediateFuture(Collections.emptyList());
+                    }
+                    // getContext().equals(ctx) holds because ctx uses identity equality.
+                    return Futures.immediateFuture(Collections.singletonList(
+                            new ExecutorStepExecution(ctxRef[0], new ExecutorStep("x"))));
+                }
+                @Override public void start() {}
+                @Override public FlowExecutionOwner getOwner() { return null; }
+                @Override public List<FlowNode> getCurrentHeads() { return Collections.emptyList(); }
+                @Override public boolean isCurrentHead(FlowNode n) { return false; }
+                @Override public void interrupt(Result rr, CauseOfInterruption... causes) {}
+                @Override public void addListener(GraphListener listener) {}
+                @Override public FlowNode getNode(String id) { return null; }
+                @Override public List<Action> loadActions(FlowNode n) { return Collections.emptyList(); }
+                @Override public void saveActions(FlowNode n, List<Action> actions) {}
+            };
+
+            StepContext ctx = new StepContext() {
+                @SuppressWarnings("unchecked")
+                @Override public <T> T get(Class<T> key) {
+                    if (key == Run.class) {
+                        return (T) b;
+                    }
+                    if (key == FlowExecution.class) {
+                        return (T) flowExec;
+                    }
+                    return null;
+                }
+                @Override public boolean isReady() { return true; }
+                @Override public void onSuccess(Object result) {}
+                @Override public void onFailure(Throwable t) {}
+                @Override public void setResult(Result rr) {}
+                @Override public BodyInvoker newBodyInvoker() { throw new UnsupportedOperationException(); }
+                @Override public ListenableFuture<Void> saveState() { return Futures.immediateFuture(null); }
+                @Override public boolean equals(Object o) { return o == this; }
+                @Override public int hashCode() { return System.identityHashCode(this); }
+            };
+            ctxRef[0] = ctx;
+
+            ExecutorStepExecution.PlaceholderTask task = new ExecutorStepExecution.PlaceholderTask(ctx, "x");
+
+            // withExecution is private; reach it reflectively.
+            Method withExecution = ExecutorStepExecution.PlaceholderTask.class
+                    .getDeclaredMethod("withExecution", Consumer.class);
+            withExecution.setAccessible(true);
+            AtomicBoolean fired = new AtomicBoolean(false);
+            Consumer<ExecutorStepExecution> callback = e -> fired.set(true);
+
+            withExecution.invoke(task, callback);
+
+            // The fix: the callback fires once the matching execution appears on a retry.
+            // Pre-fix withExecution was single-shot, so it never fired and this times out.
+            await().atMost(10, TimeUnit.SECONDS).untilTrue(fired);
+        });
+    }
+
+    /**
+     * JENKINS-60507: the deprecated {@link ExecutorStepExecution.PlaceholderTask#run()}
+     * accessor must not tear the task down when the run is merely not loaded yet.
+     * Pre-fix, an {@link IOException} from {@code context.get(Run.class)} — i.e.
+     * {@code WorkflowRun$Owner.get} throwing {@code "<run> did not yet start"} during a
+     * restart/startup window — fell into the generic {@code catch}, which called
+     * {@code finish()} and {@code RunningTasks.remove()}, stranding the run
+     * IN_PROGRESS forever. The fix catches {@link IOException} and returns {@code null}
+     * without tearing down, because the condition is transient.
+     *
+     * <p>Deterministic reproduction of that path: a real run supplies a valid id at
+     * construction, then the wrapping {@link StepContext} is "armed" to throw on the
+     * next {@code get(Run.class)} exactly as the not-yet-loaded window would. The
+     * discriminator is whether the {@code RunningTask} survives the call.
+     */
+    @Issue("JENKINS-60507")
+    @Test
+    void runAccessorDoesNotTearDownTaskWhenRunNotYetLoaded() throws Throwable {
+        sessions.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("echo 'a real run to supply an id'", true));
+            WorkflowRun b = r.buildAndAssertSuccess(p);
+
+            // A StepContext that delegates to the real run for construction, but can be
+            // "armed" to throw the not-yet-loaded IOException on get(Run.class), exactly
+            // as WorkflowRun$Owner.get does during a restart window.
+            final boolean[] armed = {false};
+            StepContext ctx = new StepContext() {
+                @SuppressWarnings("unchecked")
+                @Override public <T> T get(Class<T> key) throws IOException {
+                    if (key == Run.class) {
+                        if (armed[0]) {
+                            throw new IOException(b + " did not yet start");
+                        }
+                        return (T) b;
+                    }
+                    return null;
+                }
+                @Override public boolean isReady() { return true; }
+                @Override public void onSuccess(Object result) {}
+                @Override public void onFailure(Throwable t) {}
+                @Override public void setResult(Result rr) {}
+                @Override public BodyInvoker newBodyInvoker() { throw new UnsupportedOperationException(); }
+                @Override public ListenableFuture<Void> saveState() { return Futures.immediateFuture(null); }
+                @Override public boolean equals(Object o) { return o == this; }
+                @Override public int hashCode() { return System.identityHashCode(this); }
+            };
+
+            ExecutorStepExecution.PlaceholderTask task = new ExecutorStepExecution.PlaceholderTask(ctx, "x");
+            assertNotNull(ExecutorStepExecution.RunningTasks.get(ctx), "task should be registered after construction");
+
+            // Enter the not-yet-loaded window and exercise the public run() accessor.
+            armed[0] = true;
+            assertNull(task.run(), "run() returns null when the run cannot be loaded");
+
+            // The fix: a transient load failure must NOT tear the task down. Pre-fix the
+            // generic catch removed it (and stranded the build); post-fix it survives.
+            assertNotNull(ExecutorStepExecution.RunningTasks.get(ctx),
+                    "JENKINS-60507: placeholder task must survive a transient \"did not yet start\"; "
+                    + "pre-fix it was removed, stranding the run");
+        });
+    }
+
+    /**
+     * JENKINS-60507: {@link ExecutorStepExecution.PlaceholderTask}'s {@code withExecution}
+     * must surface a transient failure to load the {@link FlowExecution} to its caller,
+     * rather than swallowing it. Pre-fix, an {@link IOException} from
+     * {@code context.get(FlowExecution.class)} — e.g. {@code WorkflowRun$Owner.get}
+     * throwing "<run> did not yet start" during a controller shutdown window — was caught
+     * and merely logged inside {@code withExecution}. The async callback never fired, the
+     * body never started, and the caller fell through to register an
+     * {@code AsynchronousExecution} that pinned the executor forever. The fix lets
+     * {@code withExecution} throw, so the caller (the {@code PlaceholderExecutable.run}
+     * outer catch) fails the step and frees the executor.
+     *
+     * <p>Deterministic reproduction: a real run supplies a valid id at construction, then
+     * the wrapping {@link StepContext} is "armed" to throw on the next
+     * {@code get(FlowExecution.class)} exactly as the not-yet-loaded window would. The
+     * discriminator is whether the failure reaches the caller (post-fix) or is swallowed
+     * (pre-fix). {@code withExecution} is private, so it is invoked reflectively.
+     */
+    @Issue("JENKINS-60507")
+    @Test
+    void withExecutionPropagatesTransientFlowExecutionLoadFailure() throws Throwable {
+        sessions.then(r -> {
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("echo 'a real run to supply an id'", true));
+            WorkflowRun b = r.buildAndAssertSuccess(p);
+
+            // A StepContext that delegates to the real run for construction (get(Run.class)),
+            // but can be "armed" to throw the not-yet-loaded IOException on
+            // get(FlowExecution.class), exactly as WorkflowRun$Owner.get does during a
+            // controller shutdown window.
+            final boolean[] armed = {false};
+            StepContext ctx = new StepContext() {
+                @SuppressWarnings("unchecked")
+                @Override public <T> T get(Class<T> key) throws IOException {
+                    if (key == Run.class) {
+                        return (T) b;
+                    }
+                    if (key == FlowExecution.class && armed[0]) {
+                        throw new IOException(b + " did not yet start");
+                    }
+                    return null;
+                }
+                @Override public boolean isReady() { return true; }
+                @Override public void onSuccess(Object result) {}
+                @Override public void onFailure(Throwable t) {}
+                @Override public void setResult(Result rr) {}
+                @Override public BodyInvoker newBodyInvoker() { throw new UnsupportedOperationException(); }
+                @Override public ListenableFuture<Void> saveState() { return Futures.immediateFuture(null); }
+                @Override public boolean equals(Object o) { return o == this; }
+                @Override public int hashCode() { return System.identityHashCode(this); }
+            };
+
+            ExecutorStepExecution.PlaceholderTask task = new ExecutorStepExecution.PlaceholderTask(ctx, "x");
+
+            // withExecution is private; reach it reflectively. The signature is identical
+            // pre- and post-fix (only the thrown exceptions / catch differ).
+            Method withExecution = ExecutorStepExecution.PlaceholderTask.class
+                    .getDeclaredMethod("withExecution", Consumer.class);
+            withExecution.setAccessible(true);
+            Consumer<ExecutorStepExecution> noop = e -> {};
+
+            // Enter the not-yet-loaded window and exercise withExecution.
+            armed[0] = true;
+
+            // The fix: the transient load failure must reach the caller. Pre-fix it was
+            // swallowed inside withExecution (callback never fired, executor pinned), so
+            // the reflective invoke returned normally — no InvocationTargetException.
+            InvocationTargetException thrown = assertThrows(InvocationTargetException.class,
+                    () -> withExecution.invoke(task, noop),
+                    "JENKINS-60507: withExecution must propagate a transient FlowExecution "
+                    + "load failure; pre-fix it was swallowed, pinning the executor");
+            assertThat(thrown.getCause(), instanceOf(IOException.class));
         });
     }
 
