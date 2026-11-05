@@ -26,8 +26,11 @@ package org.jenkinsci.plugins.workflow.support.steps;
 
 import hudson.ExtensionList;
 import hudson.FilePath;
+import hudson.init.InitMilestone;
+import hudson.init.Initializer;
 import hudson.model.Computer;
 import hudson.model.Descriptor;
+import hudson.model.Executor;
 import hudson.model.Item;
 import hudson.model.Label;
 import hudson.model.Node;
@@ -47,11 +50,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.logging.Level;
+import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.emptyArray;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionList;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
@@ -120,6 +128,66 @@ class ExecutorStep2Test {
                     return "Non-Pipeline tasks are forbidden! Not building: " + finalT;
                 }
             };
+        }
+    }
+
+    @Test
+    void queuedNodeBlockStartsBeforeResume() throws Throwable {
+        logging.record(ExecutorStepExecution.class, Level.FINE).record(ExecutorStepDynamicContext.class, Level.FINE).record(FlowExecutionList.class, Level.FINE);
+        rr.then(r -> {
+            ExtensionList.lookupSingleton(BlockPlaceholderTasks.class);
+            BlockPlaceholderTasks.blocked = true;
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node {semaphore 'wait'}", true));
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            r.waitForMessage("Still waiting to schedule task", b);
+        });
+        BlockPlaceholderTasks.blocked = false;
+        HoldStartup.active = true;
+        try {
+            rr.then(r -> {
+                WorkflowJob p = r.jenkins.getItemByFullName("p", WorkflowJob.class);
+                WorkflowRun b = p.getBuildByNumber(1);
+                SemaphoreStep.waitForStart("wait/1", b);
+                assertTrue(HoldStartup.placeholderTaskRunning(), "node block lost its executor");
+                SemaphoreStep.success("wait/1", null);
+                r.assertBuildStatusSuccess(r.waitForCompletion(b));
+                assertThat(r.jenkins.getQueue().getItems(), emptyArray());
+            });
+        } finally {
+            HoldStartup.active = false;
+        }
+    }
+    @TestExtension("queuedNodeBlockStartsBeforeResume")
+    public static class BlockPlaceholderTasks extends QueueTaskDispatcher {
+        static volatile boolean blocked;
+        @Override
+        public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
+            return blocked && item.task instanceof ExecutorStepExecution.PlaceholderTask ? new CauseOfBlockage() {
+                @Override
+                public String getShortDescription() {
+                    return "blocked by test";
+                }
+            } : null;
+        }
+    }
+    /**
+     * Steps are resumed only once startup completes, so holding it lets the restored queue item take an executor first.
+     */
+    public static final class HoldStartup {
+        static volatile boolean active;
+        @Initializer(after = InitMilestone.JOB_CONFIG_ADAPTED, before = InitMilestone.COMPLETED)
+        public static void waitForRestoredPlaceholderTask() {
+            if (!active) {
+                return;
+            }
+            await("restored node block running").until(HoldStartup::placeholderTaskRunning);
+        }
+        static boolean placeholderTaskRunning() {
+            return Stream.of(Jenkins.get().getComputers())
+                    .flatMap(c -> c.getExecutors().stream())
+                    .map(Executor::getCurrentExecutable)
+                    .anyMatch(e -> e instanceof ExecutorStepExecution.PlaceholderTask.PlaceholderExecutable && ((ExecutorStepExecution.PlaceholderTask.PlaceholderExecutable) e).willContinue());
         }
     }
 
