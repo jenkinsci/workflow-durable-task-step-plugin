@@ -28,7 +28,7 @@
     <parent>
         <groupId>org.jenkins-ci.plugins</groupId>
         <artifactId>plugin</artifactId>
-        <version>6.2236.v12dd4c483242</version>
+        <version>6.2250.va_d01d559a_209</version>
         <relativePath/>
     </parent>
     <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -71,6 +71,7 @@
         <useBeta>true</useBeta>
         <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <hpi.compatibleSinceVersion>2.40</hpi.compatibleSinceVersion>
+        <ban-junit4-imports.skip>false</ban-junit4-imports.skip>
     </properties>
     <dependencyManagement>
         <dependencies>
