@@ -192,6 +192,46 @@ class AgentErrorConditionTest {
         });
     }
 
+    /**
+     * A brief channel drop (e.g. a WebSocket agent reconnecting) should be absorbed by the bounded
+     * wait in {@link FilePathDynamicContext} / {@link ExecutorStepDynamicContext.FilePathTranslator}
+     * rather than failing the step outright, so no {@code retry} wrapper is needed here.
+     */
+    @Test
+    void reconnectWithinWaitWindowAvoidsFailure() throws Throwable {
+        sessions.then(r -> {
+            System.setProperty(FilePathDynamicContext.WAIT_FOR_RECONNECT_PROPERTY, "20");
+            try {
+                Slave s = r.createSlave(Label.get("remote"));
+                WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+                p.setDefinition(new CpsFlowDefinition(
+                    """
+                        node('remote') {
+                          semaphore 'wait'
+                          pwd()
+                        }""", true));
+                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+                SemaphoreStep.waitForStart("wait/1", b);
+                // Simulate a transient channel drop (e.g. a WebSocket agent blip) by closing the
+                // live channel directly, rather than Computer#disconnect: that method records a
+                // termination request, which is reserved for an explicit admin/API disconnect and
+                // would make FilePathDynamicContext give up immediately instead of waiting.
+                ((hudson.remoting.Channel) s.toComputer().getChannel()).close();
+                while (s.toComputer().isOnline()) {
+                    Thread.sleep(100);
+                }
+                SemaphoreStep.success("wait/1", null);
+                // Proves the step is actually inside the bounded wait, not just about to fail:
+                r.waitForMessage("to reconnect before giving up on", b);
+                s.toComputer().connect(false);
+                r.assertBuildStatusSuccess(r.waitForCompletion(b));
+                r.assertLogNotContains("Unable to create live FilePath", b);
+            } finally {
+                System.clearProperty(FilePathDynamicContext.WAIT_FOR_RECONNECT_PROPERTY);
+            }
+        });
+    }
+
     @Test
     void queueTaskCancelled() throws Throwable {
         sessions.then(r -> {
