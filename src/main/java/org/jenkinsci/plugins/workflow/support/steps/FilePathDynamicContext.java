@@ -82,7 +82,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
                 }
             }
             TaskListener listener = context.get(TaskListener.class);
-            if (listener != null) {
+            if (listener != null && c != null) {
                 OfflineCause oc = c.getOfflineCause();
                 if (oc != null) {
                     listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
