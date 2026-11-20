@@ -107,6 +107,14 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
      * WebSocket-connected inbound agent reestablishing its connection behind a proxy) rather than failing
      * immediately with {@link AgentOfflineException}.
      * {@code 0}, the default, preserves the historic fail-fast behavior.
+     * <p>The wait runs synchronously on the calling step's CPS VM lane, since {@link DynamicContext#get} has no
+     * asynchronous variant. It is reachable only from step start (for example {@code sh}/{@code bat}/{@code pwsh}
+     * or {@code pushd}), not from the loop that polls an already-running durable task, which resolves the
+     * workspace independently and already retries asynchronously; so the wait can only delay the dispatch of a
+     * step whose agent happens to look transiently unreachable at that moment, not a step already in progress.
+     * It is also self-limiting: once the agent's {@link hudson.model.Computer} is conclusively marked offline or
+     * terminated, {@link #mightReconnect} stops retrying, so a permanently lost agent does not accumulate
+     * repeated waits across a chain of steps.
      */
     static final String WAIT_FOR_RECONNECT_PROPERTY = FilePathDynamicContext.class.getName() + ".reconnectWaitSeconds";
 
