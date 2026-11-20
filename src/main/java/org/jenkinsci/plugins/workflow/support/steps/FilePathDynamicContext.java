@@ -28,6 +28,7 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
+import hudson.Util;
 import hudson.model.Computer;
 import hudson.model.TaskListener;
 import hudson.slaves.OfflineCause;
@@ -128,10 +129,10 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(waitMillis);
         while (System.nanoTime() < deadline) {
             if (listener != null && !printed) {
-                listener.getLogger().println("Waiting for " + c.getDisplayName() + " to reconnect before giving up on " + path);
+                listener.getLogger().println("Waiting up to " + Util.getTimeSpanString(waitMillis) + " for " + c.getDisplayName() + " to reconnect before giving up on " + path);
                 printed = true;
             }
-            Thread.sleep(1000);
+            TimeUnit.SECONDS.sleep(1);
             FilePath f = FilePathUtils.find(nodeName, path);
             if (f != null) {
                 return f;
