@@ -101,8 +101,10 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
 
     /**
      * Name (in seconds) of a system property controlling how long to keep retrying {@link FilePathUtils#find}
-     * for an agent that looks like it is merely reconnecting (for example a WebSocket agent reestablishing its
-     * connection) rather than failing immediately with {@link AgentOfflineException}.
+     * for an agent that looks like it is merely reconnecting (a transient loss of its channel that resolves
+     * itself without the controller recording a deliberate disconnect, most commonly seen with a
+     * WebSocket-connected inbound agent reestablishing its connection behind a proxy) rather than failing
+     * immediately with {@link AgentOfflineException}.
      * {@code 0}, the default, preserves the historic fail-fast behavior.
      */
     static final String WAIT_FOR_RECONNECT_PROPERTY = FilePathDynamicContext.class.getName() + ".reconnectWaitSeconds";
