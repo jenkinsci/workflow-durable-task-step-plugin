@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
@@ -32,9 +33,11 @@ import hudson.model.TaskListener;
 import hudson.slaves.OfflineCause;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
+import jenkins.util.SystemProperties;
 import org.jenkinsci.plugins.workflow.FilePathUtils;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
@@ -70,7 +73,11 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
                 LOGGER.fine(() -> "not skipping " + r.path + "@" + r.slave + " since at depth " + r.depth + " it is deeper than " + esdc.node + "@" + esdc.path + " at depth " + esdc.depth);
             }
         }
+        TaskListener listener = context.get(TaskListener.class);
         FilePath f = FilePathUtils.find(r.slave, r.path);
+        if (f == null) {
+            f = waitForReconnect(r.slave, r.path, listener);
+        }
         if (f != null) {
             LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
         } else {
@@ -81,7 +88,6 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
                     e.addSuppressed(tr);
                 }
             }
-            TaskListener listener = context.get(TaskListener.class);
             if (listener != null && c != null) {
                 OfflineCause oc = c.getOfflineCause();
                 if (oc != null) {
@@ -91,6 +97,53 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
             throw e;
         }
         return f;
+    }
+
+    /**
+     * Name (in seconds) of a system property controlling how long to keep retrying {@link FilePathUtils#find}
+     * for an agent that looks like it is merely reconnecting (for example a WebSocket agent reestablishing its
+     * connection) rather than failing immediately with {@link AgentOfflineException}.
+     * {@code 0}, the default, preserves the historic fail-fast behavior.
+     */
+    static final String WAIT_FOR_RECONNECT_PROPERTY = FilePathDynamicContext.class.getName() + ".reconnectWaitSeconds";
+
+    /**
+     * Polls {@link FilePathUtils#find} for up to {@link #WAIT_FOR_RECONNECT_PROPERTY} seconds while the named
+     * agent's {@link Computer} looks like it could still come back on its own, rather than having been
+     * deliberately taken offline or removed.
+     * @return a live {@link FilePath}, or null if it never became available (or the wait is disabled)
+     */
+    static @CheckForNull FilePath waitForReconnect(@NonNull String nodeName, @NonNull String path, @CheckForNull TaskListener listener) throws InterruptedException {
+        long waitMillis = TimeUnit.SECONDS.toMillis(SystemProperties.getLong(WAIT_FOR_RECONNECT_PROPERTY, 0L));
+        if (waitMillis <= 0) {
+            return null;
+        }
+        Computer c = Jenkins.get().getComputer(nodeName);
+        if (!mightReconnect(c)) {
+            return null;
+        }
+        boolean printed = false;
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(waitMillis);
+        while (System.nanoTime() < deadline) {
+            if (listener != null && !printed) {
+                listener.getLogger().println("Waiting for " + c.getDisplayName() + " to reconnect before giving up on " + path);
+                printed = true;
+            }
+            Thread.sleep(1000);
+            FilePath f = FilePathUtils.find(nodeName, path);
+            if (f != null) {
+                return f;
+            }
+            c = Jenkins.get().getComputer(nodeName);
+            if (!mightReconnect(c)) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static boolean mightReconnect(@CheckForNull Computer c) {
+        return c != null && c.getTerminatedBy().isEmpty() && !c.isTemporarilyOffline();
     }
 
     /**
