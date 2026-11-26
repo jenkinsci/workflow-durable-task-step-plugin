@@ -105,7 +105,7 @@ class FilePathDynamicContextTest {
         String path = s.getRootPath().getRemote();
         dropChannel(s);
         System.setProperty(FilePathDynamicContext.WAIT_FOR_RECONNECT_PROPERTY, "15");
-        CompletableFuture<FilePath> future = CompletableFuture.supplyAsync(() -> {
+        var future = CompletableFuture.supplyAsync(() -> {
             try {
                 return FilePathDynamicContext.waitForReconnect(node, path, TaskListener.NULL);
             } catch (InterruptedException x) {
