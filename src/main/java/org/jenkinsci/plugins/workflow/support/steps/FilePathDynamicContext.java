@@ -24,6 +24,7 @@
 
 package org.jenkinsci.plugins.workflow.support.steps;
 
+import com.google.common.annotations.VisibleForTesting;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
@@ -40,6 +41,8 @@ import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
 import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * Analogue of {@link FilePathPickle}.
@@ -49,6 +52,15 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
 @Extension(ordinal = 100) public final class FilePathDynamicContext extends DynamicContext.Typed<FilePath> {
 
     private static final Logger LOGGER = Logger.getLogger(FilePathDynamicContext.class.getName());
+
+    @VisibleForTesting
+    interface FilePathHook {
+        void accept(FilePath resolved) throws IOException;
+    }
+
+    @Restricted(NoExternalUse.class)
+    @VisibleForTesting
+    static FilePathHook afterFilePathResolved = resolved -> {};
 
     @NonNull
     @Override protected Class<FilePath> type() {
@@ -90,6 +102,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
             }
             throw e;
         }
+        afterFilePathResolved.accept(f);
         return f;
     }
 

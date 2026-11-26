@@ -39,6 +39,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import jenkins.model.Jenkins;
 import org.jenkinsci.Symbol;
@@ -56,6 +58,7 @@ import org.jenkinsci.plugins.workflow.steps.StepExecutions;
 import org.jenkinsci.plugins.workflow.steps.SynchronousResumeNotSupportedErrorCondition;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.Issue;
@@ -79,6 +82,11 @@ class AgentErrorConditionTest {
     @RegisterExtension
     private final InboundAgentExtension inboundAgents = new InboundAgentExtension();
     private final LogRecorder logging = new LogRecorder();
+
+    @AfterEach
+    void tearDown() {
+        FilePathDynamicContext.afterFilePathResolved = resolved -> {};
+    }
 
     @Test
     void retryNodeBlock() throws Throwable {
@@ -187,6 +195,36 @@ class AgentErrorConditionTest {
             SemaphoreStep.success("wait/1", null);
             r.waitForMessage(RetryThis.MESSAGE, b);
             SemaphoreStep.success("wait/2", null);
+            s.toComputer().connect(false);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
+        });
+    }
+
+    @Test
+    void networkBlipRightAfterFilePathResolutionDoesNotFailTheBuild() throws Throwable {
+        sessions.then(r -> {
+            Slave s = r.createOnlineSlave(Label.get("remote"));
+            WorkflowJob p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition(
+                """
+                    node('remote') {
+                      dir('sub') {
+                        if (isUnix()) {sh 'true'} else {bat 'echo true'}
+                      }
+                    }""", true));
+            var stepStartResolution = 2;
+            var resolutions = new AtomicInteger();
+            var blipped = new CountDownLatch(1);
+            FilePathDynamicContext.afterFilePathResolved = resolved -> {
+                if (resolutions.incrementAndGet() == stepStartResolution) { // only for the `sh`
+                    // commenting out this line will make this test pass.
+                    s.toComputer().getChannel().close();
+                    blipped.countDown();
+                }
+            };
+            WorkflowRun b = p.scheduleBuild2(0).waitForStart();
+            blipped.await();
+            s.toComputer().waitUntilOffline();
             s.toComputer().connect(false);
             r.assertBuildStatusSuccess(r.waitForCompletion(b));
         });
