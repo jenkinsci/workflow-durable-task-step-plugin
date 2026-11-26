@@ -107,6 +107,15 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
      * WebSocket-connected inbound agent reestablishing its connection behind a proxy) rather than failing
      * immediately with {@link AgentOfflineException}.
      * {@code 0}, the default, preserves the historic fail-fast behavior.
+     * <p>Keep this well under the time limit imposed on an individual CPS thunk (on the order of minutes);
+     * a value in the 15-30 second range is recommended as a starting point.
+     */
+    static final String WAIT_FOR_RECONNECT_PROPERTY = FilePathDynamicContext.class.getName() + ".reconnectWaitSeconds";
+
+    /**
+     * Polls {@link FilePathUtils#find} for up to {@link #WAIT_FOR_RECONNECT_PROPERTY} seconds while the named
+     * agent's {@link Computer} looks like it could still come back on its own, rather than having been
+     * deliberately taken offline or removed.
      * <p>The wait runs synchronously on the calling step's CPS VM lane, since {@link DynamicContext#get} has no
      * asynchronous variant. It is reachable only from step start (for example {@code sh}/{@code bat}/{@code pwsh}
      * or {@code pushd}), not from the loop that polls an already-running durable task, which resolves the
@@ -115,13 +124,6 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
      * It is also self-limiting: once the agent's {@link hudson.model.Computer} is conclusively marked offline or
      * terminated, {@link #mightReconnect} stops retrying, so a permanently lost agent does not accumulate
      * repeated waits across a chain of steps.
-     */
-    static final String WAIT_FOR_RECONNECT_PROPERTY = FilePathDynamicContext.class.getName() + ".reconnectWaitSeconds";
-
-    /**
-     * Polls {@link FilePathUtils#find} for up to {@link #WAIT_FOR_RECONNECT_PROPERTY} seconds while the named
-     * agent's {@link Computer} looks like it could still come back on its own, rather than having been
-     * deliberately taken offline or removed.
      * @return a live {@link FilePath}, or null if it never became available (or the wait is disabled)
      */
     static @CheckForNull FilePath waitForReconnect(@NonNull String nodeName, @NonNull String path, @CheckForNull TaskListener listener) throws InterruptedException {
