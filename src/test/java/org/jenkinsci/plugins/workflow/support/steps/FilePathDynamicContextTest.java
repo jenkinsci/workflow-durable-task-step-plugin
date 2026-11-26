@@ -51,12 +51,6 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
  * offline) *before* calling the method, rather than racing a real reconnect against real step
  * execution. End-to-end coverage through a running pipeline lives in
  * {@link AgentErrorConditionTest#reconnectWithinWaitWindowAvoidsFailure}.
- *
- * <p>Note that {@link hudson.model.Computer#disconnect} deliberately records a termination
- * request (see {@code recordTermination}), which is reserved for an explicit admin/API disconnect
- * and makes {@link FilePathDynamicContext} give up immediately rather than wait. A transient
- * channel drop (a WebSocket agent blip) never goes through that method: the channel just closes
- * out from under it. These tests simulate that by closing the {@link Channel} directly.
  */
 @WithJenkins
 class FilePathDynamicContextTest {
