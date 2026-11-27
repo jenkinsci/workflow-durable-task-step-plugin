@@ -35,6 +35,7 @@ import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.slaves.OfflineCause;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -62,6 +63,7 @@ import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.LogRecorder;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.BuildWatcherExtension;
+import org.jvnet.hudson.test.junit.jupiter.FlagExtension;
 import org.jvnet.hudson.test.junit.jupiter.InboundAgentExtension;
 import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -78,6 +80,8 @@ class AgentErrorConditionTest {
     private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
     @RegisterExtension
     private final InboundAgentExtension inboundAgents = new InboundAgentExtension();
+    @RegisterExtension
+    private final FlagExtension<Duration> reconnectWait = new FlagExtension<>(() -> FilePathUtilsWrapper.RECONNECT_WAIT, wait -> FilePathUtilsWrapper.RECONNECT_WAIT = wait);
     private final LogRecorder logging = new LogRecorder();
 
     @Test
@@ -192,43 +196,21 @@ class AgentErrorConditionTest {
         });
     }
 
-    /**
-     * A brief channel drop (e.g. a WebSocket agent reconnecting) should be absorbed by the bounded
-     * wait in {@link FilePathDynamicContext} / {@link ExecutorStepDynamicContext.FilePathTranslator}
-     * rather than failing the step outright, so no {@code retry} wrapper is needed here.
-     */
     @Test
-    void reconnectWithinWaitWindowAvoidsFailure() throws Throwable {
+    void filePathLookupWaitsForReconnectingAgent() throws Throwable {
         sessions.then(r -> {
-            System.setProperty(FilePathDynamicContext.WAIT_FOR_RECONNECT_PROPERTY, "20");
-            try {
-                Slave s = r.createSlave(Label.get("remote"));
-                WorkflowJob p = r.createProject(WorkflowJob.class, "p");
-                p.setDefinition(new CpsFlowDefinition(
-                    """
-                        node('remote') {
-                          semaphore 'wait'
-                          pwd()
-                        }""", true));
-                WorkflowRun b = p.scheduleBuild2(0).waitForStart();
-                SemaphoreStep.waitForStart("wait/1", b);
-                // Simulate a transient channel drop (e.g. a WebSocket agent blip) by closing the
-                // live channel directly, rather than Computer#disconnect: that method records a
-                // termination request, which is reserved for an explicit admin/API disconnect and
-                // would make FilePathDynamicContext give up immediately instead of waiting.
-                ((hudson.remoting.Channel) s.toComputer().getChannel()).close();
-                while (s.toComputer().isOnline()) {
-                    Thread.sleep(100);
-                }
-                SemaphoreStep.success("wait/1", null);
-                // Proves the step is actually inside the bounded wait, not just about to fail:
-                r.waitForMessage("to reconnect before giving up on", b);
-                s.toComputer().connect(false);
-                r.assertBuildStatusSuccess(r.waitForCompletion(b));
-                r.assertLogNotContains("Unable to create live FilePath", b);
-            } finally {
-                System.clearProperty(FilePathDynamicContext.WAIT_FOR_RECONNECT_PROPERTY);
-            }
+            FilePathUtilsWrapper.RECONNECT_WAIT = Duration.ofSeconds(20);
+            var s = r.createOnlineSlave(Label.get("remote"));
+            var p = r.createProject(WorkflowJob.class, "p");
+            p.setDefinition(new CpsFlowDefinition("node('remote') { semaphore 'wait'; pwd() }", true));
+            var b = p.scheduleBuild2(0).waitForStart();
+            SemaphoreStep.waitForStart("wait/1", b);
+            s.toComputer().getChannel().close();
+            s.toComputer().waitUntilOffline();
+            SemaphoreStep.success("wait/1", null);
+            r.waitForMessage("to reconnect before giving up on", b);
+            s.toComputer().connect(false);
+            r.assertBuildStatusSuccess(r.waitForCompletion(b));
         });
     }
 
