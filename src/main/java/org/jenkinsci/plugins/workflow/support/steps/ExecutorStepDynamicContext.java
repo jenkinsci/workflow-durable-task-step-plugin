@@ -167,12 +167,17 @@ public final class ExecutorStepDynamicContext implements Serializable {
             if (LOGGER.isLoggable(Level.FINER)) {
                 LOGGER.finer("ESDC=" + context.get(ExecutorStepDynamicContext.class) + " FPR=" + context.get(FilePathDynamicContext.FilePathRepresentation.class));
             }
-            return super.get(context);
+            ExecutorStepDynamicContext c = context.get(ExecutorStepDynamicContext.class);
+            return c == null || c.lease == null ? null : get(c, context.get(TaskListener.class));
         }
 
         @Override FilePath get(ExecutorStepDynamicContext c) throws IOException {
+            return get(c, null);
+        }
+
+        private FilePath get(ExecutorStepDynamicContext c, @Nullable TaskListener listener) throws IOException {
             if (c.lease.path.toComputer() == null) {
-                FilePath f = FilePathUtils.find(c.node, c.path);
+                FilePath f = FilePathUtilsWrapper.find(c.node, c.path, listener);
                 if (f != null) {
                     LOGGER.fine(() -> c.node + " disconnected and reconnected; getting a new FilePath on " + c.path + " with the new Channel");
                     return f;

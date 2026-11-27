@@ -70,7 +70,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
                 LOGGER.fine(() -> "not skipping " + r.path + "@" + r.slave + " since at depth " + r.depth + " it is deeper than " + esdc.node + "@" + esdc.path + " at depth " + esdc.depth);
             }
         }
-        FilePath f = FilePathUtils.find(r.slave, r.path);
+        FilePath f = FilePathUtilsWrapper.find(r.slave, r.path, context.get(TaskListener.class));
         if (f != null) {
             LOGGER.log(Level.FINE, "serving {0}:{1}", new Object[] {r.slave, r.path});
         } else {
@@ -82,7 +82,7 @@ import org.jenkinsci.plugins.workflow.support.pickles.FilePathPickle;
                 }
             }
             TaskListener listener = context.get(TaskListener.class);
-            if (listener != null) {
+            if (listener != null && c != null) {
                 OfflineCause oc = c.getOfflineCause();
                 if (oc != null) {
                     listener.getLogger().println(c.getDisplayName() + " was marked offline: " + oc);
